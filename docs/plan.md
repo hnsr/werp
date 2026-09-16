@@ -1,6 +1,6 @@
 # Procast implementation plan
 
-Status: proposed implementation sequence; no application code has been built yet.
+Status: M0 implemented and verified; M1–M6 remain planned.
 Updated: 2026-09-16.
 Requirements: [outline.md](outline.md).
 
@@ -26,9 +26,9 @@ working behaviour behind, with each larger milestone split into small changes.
 - Start with a known-good MP4 containing compatible H.264 video and AAC audio,
   plus an external UTF-8 SRT or WebVTT file. Validate codec profiles, resolution,
   and frame rate against the actual receiver; the extension alone is insufficient.
-- The exact Chromecast model and representative files are still to be supplied.
-  They are inputs to M1 hardware validation, not blockers for scaffolding or
-  automated tests. Do not claim device compatibility before those tests pass.
+- A representative MKV has been supplied and inspected. The exact Chromecast
+  model and a known-good direct-play clip are still inputs to M1 hardware
+  validation. Do not claim device compatibility before those tests pass.
 - The host must remain awake during playback. Automatic suspend inhibition comes
   after the initial casting implementation.
 - The installed development toolchain is rustc/Cargo 1.96.0. Start with the Rust
@@ -139,6 +139,23 @@ unreachable receivers, media rejection, and unavailable conversion capabilities.
 ## Milestones
 
 ### M0 — Minimal workspace and media inspection
+
+**Complete.** The Cargo workspace, `procast inspect`, optional JSON output,
+logging, typed errors, and subprocess lifecycle handling are implemented. See
+[README.md](../README.md) for setup, commands, and checks.
+
+Verified with Rust 1.96.0 and FFmpeg/ffprobe 8.1.2:
+
+- Formatting and Clippy passed; 10 ordinary tests passed.
+- The explicitly enabled FFmpeg integration test passed using a generated MKV
+  containing video, audio, and subtitles.
+- A supplied MKV reported 1080p H.264, six-channel E-AC-3, and 26 embedded text
+  subtitles in both human-readable and JSON output.
+- Missing executables, malformed media, missing files, bounded output, timeout,
+  and cancellation were checked. Signal tests verified exit codes and reaping
+  with normal host execution; they hung inside the development sandbox.
+
+Implemented scope:
 
 - Create the workspace, basic help, shared error types, and logging.
 - Add `procast inspect <file>` as a useful diagnostic for container, stream codecs,
@@ -316,11 +333,11 @@ Run `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 and `cargo test --workspace` once the workspace exists. Separate hardware and
 FFmpeg-capability-dependent tests so skipped prerequisites are visible rather
 than mistaken for passing coverage. Select a CI provider when a repository host
-exists; the current directory contains only documentation and is not a Git repo.
+exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Implement M0, then M1. Do not invest in automatic transcoding or frontend design
+Proceed to M1. Do not invest in automatic transcoding or frontend design
 until a real local video with visible subtitles passes the Cast feasibility test.
 
 ## Technical references
