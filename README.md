@@ -1,7 +1,8 @@
 # Procast
 
 A Rust CLI and reusable backend for casting local videos and subtitles to
-Chromecast. **M0 implements media inspection; casting is not implemented yet.**
+Chromecast. **Media inspection is available in the CLI; casting is currently an
+explicit M1 hardware-test example.**
 
 ## Development setup
 
@@ -68,6 +69,43 @@ that cancellation/timeouts leave no live or zombie child process. Unix tests use
 the usual shell/coreutils tools. The ignored integration test generates a tiny
 temporary video with audio and subtitles, then removes it. A missing FFmpeg is a
 failure when this test is explicitly requested. No test contacts Cast devices.
+Cast transport tests use generated certificates and fake receivers on loopback.
+The test environment must allow local sockets and normal process-signal delivery.
+
+## Cast feasibility example (M1)
+
+Generate a silent 12-minute H.264/AAC MP4 and external WebVTT cues. This requires
+FFmpeg with `libx264` and AAC encoding. Generated files stay in ignored `samples/`.
+The script refuses to overwrite an existing fixture.
+
+```sh
+bash scripts/generate-m1-fixture.sh
+cargo run --locked -p procast-core --example cast_probe -- --discover
+cargo run --locked -p procast-core --example cast_probe -- \
+  --device "Living Room" \
+  --video samples/m1/test.mp4 --subtitles samples/m1/subtitles.vtt \
+  --http-port 8010 --seconds 620 --exercise-controls
+```
+
+Choose an exact discovered name or ID. The test replaces playback on that receiver
+and keeps serving for the requested duration. `--exercise-controls` pauses at
+20 seconds, resumes at 25, seeks forward to 90 seconds at 40, and back to 20 at 60.
+Without that flag it simply plays and reports status. Ctrl+C/SIGTERM triggers
+cleanup. The example treats cancellation as a successful test exit; this is
+separate from the production `inspect` exit-code contract above.
+
+`--host IP --cast-port 8009` bypasses discovery. `--bind-address IP` can override
+the local address chosen from the route to the receiver. The default HTTP port
+is OS-assigned; the example above chooses a fixed port for firewall diagnosis.
+The receiver must be able to reach this port. Procast does not edit firewall rules.
+Only the two selected resources are served, under random session URLs.
+
+This prototype uses IPv4 discovery, requires an already compatible MP4 and valid
+WebVTT, and does not inspect/convert the inputs or extract embedded subtitles.
+The host must remain awake. It uses encrypted Cast transport without device
+authentication, for use on a trusted LAN; see the [M1 decision](docs/decisions/001-cast-library.md).
+
+The final `procast devices` / `procast cast` commands belong to M2.
 
 Keep personal sample videos outside the repository or under the ignored
 `samples/` directory.

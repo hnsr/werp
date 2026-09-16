@@ -1,7 +1,7 @@
 # Procast outline
 
 Status: agreed direction and input for detailed planning.
-Last updated: 2026-09-16.
+Last updated: 2026-09-17.
 
 ## Purpose
 
@@ -31,8 +31,8 @@ backend should also be reusable by a GNOME/GTK frontend or other platforms.
   language bindings, plugin system, or IPC protocol prematurely.
 
 Rust was preferred over Go because the Chromecast ecosystem comparison did not
-establish a decisive advantage for Go for this project's requirements. This does
-not settle which Rust Cast library to use.
+establish a decisive advantage for Go for this project's requirements. M1 later
+selected oxicast 0.0.3 after testing on the user's KPN DIW7022 receiver.
 
 ## Initial CLI experience
 
@@ -95,11 +95,12 @@ The initial research identified:
 | `oxicast` | Async/Tokio client advertising discovery, heartbeats, reconnection, and optional local-file HTTP serving | Alternative worth evaluating, but its short project history warrants careful validation |
 | `go-chromecast` | Existing Go CLI with discovery, local-file serving, controls, and FFmpeg integration | Useful reference and comparison tool; not the selected implementation language |
 
-These findings came from documentation and API inspection, not hardware tests.
-No candidate is adopted yet. In particular, a complete external-subtitle workflow
-was not verified in the Rust candidates. The inspected published media types for
-oxicast and go-chromecast lacked subtitle-track fields. Budget for extending
-protocol support if needed rather than assuming subtitles work out of the box.
+The initial findings came from documentation and API inspection. M1 subsequently
+selected oxicast 0.0.3 and verified video, external subtitles, playback controls,
+and cleanup on the KPN DIW7022. Its typed media API lacks subtitle-track fields;
+Procast supplies these through the library's raw-message API. No dependency patch
+was needed. See the [M1 decision](decisions/001-cast-library.md) for evidence and
+limitations, including the trusted-LAN TLS model.
 
 The Cast layer must handle TLS, message framing/serialization, heartbeats,
 request/response handling, timeouts, receiver state, and disconnects, whether
@@ -178,16 +179,17 @@ inhibition should be considered after the basic casting path works.
 
 ## Validation and detailed-planning questions
 
-First prove discovery, a real receiver connection, local compatible video playback,
+M1 proved discovery, a real receiver connection, local compatible video playback,
 visible external subtitles, and clean interruption on the user's hardware. Verify
 pause, resume, seek, and subtitle synchronization as playback controls are added.
 Use automated checks for backend behaviour alongside real-device testing.
 
 Resolve next:
 
-1. What Chromecast model and representative media files define our first target?
-2. Which Rust Cast library works best on that device, and what subtitle support
-   must be added?
+1. Which additional receivers and real-world media files should expand the
+   existing KPN DIW7022 / prepared MP4 and WebVTT baseline?
+2. What further state-transition and ownership handling does the proven oxicast
+   adapter need for the user-facing CLI?
 3. What crate structure, runtime, discovery library, and HTTP server fit the
    reusable backend and CLI?
 4. How should device selection, playback controls, errors, and cancellation behave?

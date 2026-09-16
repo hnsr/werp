@@ -1,7 +1,7 @@
 # Procast implementation plan
 
-Status: M0 implemented and verified; M1–M6 remain planned.
-Updated: 2026-09-16.
+Status: M0 and M1 implemented and verified; M2–M6 remain planned.
+Updated: 2026-09-17.
 Requirements: [outline.md](outline.md).
 
 ## Approach
@@ -26,9 +26,9 @@ working behaviour behind, with each larger milestone split into small changes.
 - Start with a known-good MP4 containing compatible H.264 video and AAC audio,
   plus an external UTF-8 SRT or WebVTT file. Validate codec profiles, resolution,
   and frame rate against the actual receiver; the extension alone is insufficient.
-- A representative MKV has been supplied and inspected. The exact Chromecast
-  model and a known-good direct-play clip are still inputs to M1 hardware
-  validation. Do not claim device compatibility before those tests pass.
+- A representative MKV has been supplied and inspected. M1 verified a generated
+  direct-play clip with external subtitles on a KPN DIW7022 receiver. Broader
+  device and format compatibility still require testing.
 - The host must remain awake during playback. Automatic suspend inhibition comes
   after the initial casting implementation.
 - The installed development toolchain is rustc/Cargo 1.96.0. Start with the Rust
@@ -77,7 +77,7 @@ Proposed supporting crates:
 | Discovery | mdns-sd | Evaluate direct mDNS on Fedora; no assumed Avahi daemon dependency |
 | HTTP | axum + tower-http ServeFile | Reuse file/range handling; register individual resources, not a directory |
 | Temporary artifacts | tempfile | Session-owned cleanup; source files remain untouched |
-| Cast transport | rust_cast first, oxicast alternative | Selection is gated by M1 |
+| Cast transport | oxicast 0.0.3 | Selected after M1 validation; pinned behind the adapter |
 
 Check compatible releases and features when implementing; commit Cargo.lock for
 reproducible application builds. Do not pin every crate to the versions observed
@@ -171,6 +171,19 @@ clearly, and interrupt a running probe without leaving a child behind. Run Cargo
 formatting, linting, and relevant automated checks.
 
 ### M1 — Cast feasibility prototype and dependency decision
+
+**Complete.** The `cast_probe` example discovered the target, launched the Default
+Media Receiver, served a generated MP4 and WebVTT, and activated subtitles that
+the user confirmed on the TV. A 622-second run passed pause/resume and both seek
+directions; subsequent SIGINT/SIGTERM runs stopped playback and closed the server
+within 100 ms. Automated tests cover connection failure, cancellation, partial
+frames, correlation, ownership, HTTP serving, and cleanup.
+
+Selected oxicast 0.0.3 without a dependency patch; Procast supplies subtitle
+messages through its raw request API. See the [decision and evidence](decisions/001-cast-library.md)
+and [reproduction commands](../README.md#cast-feasibility-example-m1).
+
+Implemented scope:
 
 Build a small backend example before committing to a full session implementation.
 
@@ -337,8 +350,9 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Proceed to M1. Do not invest in automatic transcoding or frontend design
-until a real local video with visible subtitles passes the Cast feasibility test.
+Proceed to M2: turn the proven prototype into the user-facing `devices` and `cast`
+commands, with prerequisite validation, SRT conversion, and complete session-state
+handling. Transcoding and frontend design remain deferred.
 
 ## Technical references
 

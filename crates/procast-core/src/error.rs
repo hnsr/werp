@@ -2,6 +2,12 @@ use std::{io, path::PathBuf, process::ExitStatus, time::Duration};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProcastError {
+    #[error("Cast operation failed: {0}")]
+    Cast(String),
+    #[error("device discovery failed: {0}")]
+    Discovery(String),
+    #[error("local media server failed: {0}")]
+    Serve(String),
     #[error("cannot access input {path:?}: {source}")]
     InputIo { path: PathBuf, source: io::Error },
     #[error("input is not a regular file: {0:?}")]
