@@ -4,7 +4,8 @@ Date: 2026-09-17. Development baseline: Fedora 44, Rust 1.96.0,
 FFmpeg/ffprobe 8.1.2. **Implementation and automated verification are complete.
 The user verified visible video/subtitles and Ctrl+C shutdown with both external
 WebVTT and SRT on the test receiver. After fixing terminal-event handling, natural
-completion with WebVTT and serving-port closure also passed. Remaining hardware
+completion with WebVTT and serving-port closure also passed. The user additionally
+verified SIGTERM during playback with cleanup reported and exit code 143. Remaining hardware
 checks are listed below.**
 
 Initial M2 development used simulated receivers only. The user subsequently
@@ -92,6 +93,10 @@ Using the generated MP4 fixture in separate CLI runs, the user confirmed:
 
 - External WebVTT: video played with visible subtitles; Ctrl+C shut down correctly.
 - External SRT: video played with visible subtitles; Ctrl+C shut down correctly.
+- SIGTERM during WebVTT playback: the CLI transitioned from `Playing` to
+  `Stopping`, reported `Cancelled; cleanup completed.`, and returned exit code
+  143, which the user checked in the casting terminal. No separate serving-port
+  check was reported for this run.
 - The WebVTT run reported loading, playing, buffering, and a return to playing.
 - Both casting runs resolved an IPv4 endpoint and reached playback.
 
@@ -183,8 +188,8 @@ fixtures. For SIGTERM, start another casting run, then identify its PID with
 the termination-signal path separately from Ctrl+C's SIGINT path. Expect playback
 to stop, cleanup to complete, and exit code 143 in the casting terminal.
 
-Still unverified on the M2 hardware path: natural completion with SRT, SIGTERM
-shutdown, interrupted loading, and explicit serving-port closure after signal
+Still unverified on the M2 hardware path: natural completion with SRT,
+interrupted loading, and explicit serving-port closure after signal
 shutdown. Natural completion and port closure now passed with WebVTT. These other
 paths have automated coverage. Add a full real-world compatible MP4 if
 available; the generated clip does not establish broad format compatibility.

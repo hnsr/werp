@@ -27,6 +27,10 @@ backend should also be reusable by a GNOME/GTK frontend or other platforms.
   possibilities, not initial support commitments.
 - Keep the first milestone small: compatible video, external subtitles, and
   reliable session startup and shutdown. Add more media handling incrementally.
+- With the basic CLI working, park M3 playback controls and prioritize M5 media
+  compatibility: original-file playback first, stream-copy remuxing next, and
+  encoding only after those options have been evaluated. See the
+  [local format inventory](media-inventory.md) for representative test cases.
 - Preserve the option of platform-specific frontends without designing their
   language bindings, plugin system, or IPC protocol prematurely.
 - Use generic receiver names and sample filenames in documentation, committed
@@ -65,9 +69,9 @@ state, and cleanup; frontends observe a latest-state channel and cancel via a
 token. See the [plan](plan.md) and [M2 validation](m2-validation.md) for exact
 scope and remaining hardware checks.
 
-Pause, resume, seek, volume, and richer status reporting are the next control
-capabilities. Whether these use an interactive CLI, separate commands, or another
-mechanism remains open; do not assume a persistent background daemon.
+Pause, resume, seek, volume, and richer status reporting remain planned control
+capabilities, currently parked while media compatibility takes priority. The
+plan proposes optional interactive CLI input; no persistent daemon is required.
 
 ## Backend boundary
 
@@ -195,13 +199,15 @@ Use automated checks for backend behaviour alongside real-device testing.
 
 Resolve next:
 
-1. Which additional receivers and real-world media files should expand the
-   existing KPN DIW7022 / prepared MP4 and WebVTT baseline?
-2. Do M2 natural completion with SRT and SIGTERM pass on hardware? Natural
+1. Which combinations in the [75-file inventory](media-inventory.md) can the
+   existing receiver play as-is, and which need only a container remux? Establish
+   actual support for multichannel audio, HEVC, and the experimental AV1 case.
+2. Does M2 natural completion with SRT pass on hardware? SIGTERM during WebVTT
+   playback passed with cleanup reported and exit code 143. Natural
    completion with WebVTT and port closure passed after a terminal-event fix.
    Visible subtitles and Ctrl+C have passed with both SRT and VTT. The IPv6-first discovery issue has
    been fixed with explicit hostname resolution and verified on the test LAN.
-3. How should M3 expose playback commands while preserving backend independence?
+3. When M3 resumes, how should playback commands preserve backend independence?
 4. What conversion and caching strategy preserves seeking and subtitle timing?
 5. What Fedora versions, Rust toolchain, FFmpeg capabilities, and packaging should
    we support, and how should firewall configuration be handled?

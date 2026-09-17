@@ -1,8 +1,11 @@
 # Procast implementation plan
 
 Status: M0 and M1 verified; M2 implemented with automated checks passed and
-user-confirmed SRT/WebVTT playback and Ctrl+C shutdown. The IPv4 discovery issue
-is fixed and verified; remaining hardware checks are recorded below. M3–M6 remain planned.
+user-confirmed SRT/WebVTT playback, Ctrl+C shutdown, and SIGTERM cleanup with exit
+code 143. The IPv4 discovery issue
+is fixed and verified; remaining hardware checks are recorded below. M3 is parked;
+M5 compatibility work is next, starting with playback without re-encoding. The
+local media inventory is complete; broader casting support is not implemented yet.
 Updated: 2026-09-17.
 Requirements: [outline.md](outline.md).
 
@@ -16,9 +19,11 @@ Use Rust for a reusable backend and a thin CLI. Keep the Cast implementation beh
 an internal adapter. Choose that dependency based on actual playback, subtitle,
 and cancellation behaviour, not its advertised feature list.
 
-The first usable release is **M2** below. Playback controls follow in **M3**;
-conversion is deliberately separate. Milestones are sequential and should leave
-working behaviour behind, with each larger milestone split into small changes.
+The first usable release is **M2** below. **M3 is parked in favour of M5**, first
+expanding original-file playback and then stream-copy remuxing. Audio/video
+encoding stays deferred until these paths have been evaluated. Milestone numbers
+retain their original meaning, but no longer prescribe execution order. Each
+small change should leave working behaviour behind.
 
 ## Initial scope and assumptions
 
@@ -231,8 +236,9 @@ before discovery. The user subsequently confirmed visible video/subtitles and
 correct Ctrl+C shutdown in separate WebVTT and SRT CLI runs. A subsequent
 natural-completion failure revealed an ignored FINISHED broadcast; consuming
 terminal events alongside polls fixed it. The short WebVTT clip now completes
-with exit code 0 and a closed HTTP port. Natural completion with SRT, SIGTERM,
-and explicit port closure after signals remain unverified on this hardware path.
+with exit code 0 and a closed HTTP port. The user also verified SIGTERM during
+WebVTT playback: cleanup completed and the exit code was 143. Natural completion
+with SRT and explicit port closure after signals remain unverified on this hardware path.
 The empty IPv4 lists in discovery were traced to IPv6-only service resolution;
 explicit hostname lookups fixed it in eight subsequent LAN scans. Three added
 regression tests brought the ordinary suite to 30 passing tests; the terminal-event
@@ -275,6 +281,9 @@ Unsupported files must fail clearly without modifying the source.
 
 ### M3 — Playback controls and session robustness
 
+**Parked while M5 compatibility work takes priority.** Existing signal handling,
+session ownership, and cleanup remain requirements for the expanded media paths.
+
 - Add a simple optional line-oriented control input to the running `cast` process:
   `pause`, `resume`, `seek 120`, `volume 0.5`, `status`, and `stop`.
 - Enable it only for an interactive terminal. Noninteractive runs remain alive
@@ -307,11 +316,55 @@ Acceptance: selected embedded text tracks and external subtitles display correct
 and remain synchronized after seeking. Tests cover ambiguous matches, missing
 tracks, Unicode paths, and explicit overrides.
 
-### M5 — Remuxing and transcoding
+### M5 — Broader playback, remuxing, and eventual transcoding
 
-First add a pure media-decision step that explains why a file can play directly,
-needs remuxing, or needs conversion. Check available encoders/decoders/filters
-against the actual FFmpeg build before starting work.
+**Current priority: avoid re-encoding wherever practical.** The
+[local media inventory](media-inventory.md) covers 75 videos and 14 format
+combinations, with neutral local symlinks and a per-file CSV. It separates 73
+original-file/remux candidates from 2 HDR-signalling review cases. These are
+provisional classifications, not playback results or a universal support list.
+
+#### M5a — Original-file compatibility
+
+- Expand the pure media-decision step to distinguish verified support, plausible
+  receiver-specific trials, container-only preparation, and unsupported codecs.
+  Explain uncertainty instead of equating the M2 guard with hardware capability.
+- Prioritize MP4 H.264 with multichannel AAC, MP4 HEVC Main 10 with AAC, and
+  MP4 H.264 with AC-3. Then evaluate original MKV delivery experimentally and
+  AV1 separately. Use representatives from the inventory rather than launching
+  every video; hardware tests remain explicit.
+- Carry actual container/MIME information through serving and Cast LOAD instead
+  of assuming every resource is MP4. Do not merely remove the existing guard.
+- Record receiver model and whether the original file actually produced correct
+  picture, colour, audio, subtitle timing, completion, and clean cancellation.
+  Distinguish metadata predictions from observed results. Receiver hardware
+  specifications alone do not prove Cast application support.
+- Keep audio/video encoding disabled during this phase. Diagnose rejection
+  before choosing a fallback; a server/network problem does not justify encoding.
+
+Acceptance: representative original files for newly supported combinations play
+on the test receiver, with clear handling of unsupported and uncertain cases.
+Keep the existing external subtitle and lifecycle behaviour working.
+
+#### M5b — Stream-copy remuxing
+
+For files that need a different container, preserve selected encoded video and
+audio streams. Start with MKV to MP4 where the codecs are compatible. Text
+subtitle extraction can be shared with M4 when needed; embedded subtitle and
+attachment streams must not be blindly copied into MP4. Remuxing is preparation
+without re-encoding, not original-file playback.
+
+Acceptance: representative MKVs play after stream-copy remuxing, with unchanged
+video/audio codecs, correct timing, bounded cancellation, and source preservation.
+
+#### M5c — Encoding fallback (deferred)
+
+Add audio-only encoding first when video can be preserved, then video encoding
+for confirmed incompatible cases. Check available encoders/decoders/filters
+against the actual FFmpeg build before starting work. The inventory's unusual
+HDR cases need inspection, not automatic tone mapping or metadata removal.
+
+#### Shared preparation strategy
 
 Proposed first conversion strategy: **prepare a complete temporary MP4 before
 casting**. This is an implementation proposal, not a previously settled product
@@ -379,11 +432,16 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Finish M2's remaining hardware checks: natural completion with SRT, SIGTERM,
-interrupted loading, and explicit port closure after signals. WebVTT natural
-completion and port closure passed after the terminal-event fix. The IPv4 discovery issue is fixed.
-Visible subtitles and Ctrl+C already passed with both SRT and
-WebVTT. M3 adds playback controls; transcoding and frontend design remain deferred.
+Use the [inventory](media-inventory.md) to implement M5a's media decisions and
+original-file trials, starting with the MP4 combinations. Proceed to stream-copy
+remuxing for container compatibility before implementing encoding. M3 controls
+and frontend design are parked.
+
+M2's remaining hardware checks stay tracked: natural completion with SRT,
+interrupted loading, and explicit port closure after signals. Include relevant
+checks when exercising the expanded playback paths. WebVTT natural completion
+and port closure, SIGTERM cleanup with exit 143, and visible subtitles/Ctrl+C
+with both SRT and WebVTT have already passed; IPv4 discovery is fixed.
 
 ## Technical references
 
