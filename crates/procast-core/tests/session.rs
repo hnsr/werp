@@ -15,6 +15,7 @@ use std::{
 
 use procast_core::{
     CancellationToken, ProcastError,
+    media::DirectPlayPolicy,
     session::{self, CastRequest, Phase, SessionState, Target},
 };
 use prost::Message;
@@ -357,6 +358,57 @@ fn fake_probe(directory: &Path, metadata: &str) -> PathBuf {
     fs::write(directory.join("fake ffprobe.json"), metadata).unwrap();
     fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
     program
+}
+
+#[tokio::test]
+async fn experimental_surround_requires_opt_in_and_serves_original_bytes() {
+    let directory = tempfile::tempdir().unwrap();
+    let video = directory.path().join("surround.mp4");
+    let bytes = b"original surround video bytes";
+    fs::write(&video, bytes).unwrap();
+    let mut metadata: Value = serde_json::from_str(include_str!("fixtures/h264.json")).unwrap();
+    metadata["streams"][1]["channels"] = json!(6);
+    let probe = fake_probe(directory.path(), &metadata.to_string());
+    let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
+    let mut request = CastRequest::new(video.clone());
+    request.target = Target::Host(address);
+    request.probe.executable = probe;
+    request.ffmpeg = directory.path().join("missing-ffmpeg");
+    let (progress, updates) = watch::channel(SessionState::default());
+    let error = session::run(request.clone(), progress, &CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ProcastError::UnsupportedMedia(_)));
+    assert_eq!(updates.borrow().phase, Phase::Failed);
+    // The receiver is still waiting for its first connection after preflight rejection.
+    request.direct_play_policy = DirectPlayPolicy::Experimental;
+    let (progress, updates) = watch::channel(SessionState::default());
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        session::run(request, progress, &CancellationToken::new()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(updates.borrow().phase, Phase::Completed);
+    let log = tokio::time::timeout(Duration::from_secs(1), receiver)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(log.loads, 1);
+    assert_eq!(log.video, bytes);
+    assert_eq!(fs::read(&video).unwrap(), bytes);
+    let host = log
+        .url
+        .strip_prefix("http://")
+        .unwrap()
+        .split('/')
+        .next()
+        .unwrap();
+    assert!(
+        TcpStream::connect(host).await.is_err(),
+        "server survived completion"
+    );
 }
 
 #[tokio::test]

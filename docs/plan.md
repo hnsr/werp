@@ -326,6 +326,17 @@ provisional classifications, not playback results or a universal support list.
 
 #### M5a — Original-file compatibility
 
+Baseline progress: the user confirmed good picture and sound for `sample-009`,
+`sample-014`, and `sample-017` through the existing MP4 H.264/AAC-stereo path.
+See [playback evidence and its limits](media-inventory.md#user-playback-results).
+The first compatibility decision step and `--experimental-direct-play` are now
+implemented: the default remains conservative, while opt-in trials admit MP4
+H.264 with one 3–6 channel AAC-LC track. All existing video/container checks
+remain, and the backend reports the experimental assessment. Automated checks
+cover policy boundaries, CLI propagation, original-byte serving without FFmpeg,
+and completion cleanup against a simulated receiver. Hardware surround playback
+is pending; HEVC, AC-3, and broader container decisions remain future steps.
+
 - Expand the pure media-decision step to distinguish verified support, plausible
   receiver-specific trials, container-only preparation, and unsupported codecs.
   Explain uncertainty instead of equating the M2 guard with hardware capability.
@@ -432,8 +443,9 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Use the [inventory](media-inventory.md) to implement M5a's media decisions and
-original-file trials, starting with the MP4 combinations. Proceed to stream-copy
+Use the [inventory](media-inventory.md) to test MP4 H.264/surround AAC through
+`--experimental-direct-play`, then expand M5a decisions to the other MP4
+combinations once outcomes are recorded. Proceed to stream-copy
 remuxing for container compatibility before implementing encoding. M3 controls
 and frontend design are parked.
 

@@ -4,7 +4,8 @@ Scanned 2026-09-17 using ffprobe 8.1.2. Recursively found and successfully probe
 **75 videos (88.63 GiB): 45 Matroska/MKV and 30 MP4**. No probe failures.
 Also found **230 external SRT files**; their contents and matching video/language
 associations were not checked. Archives were not unpacked. Source media was not
-modified, copied, decoded in full, or cast to a receiver.
+modified, copied, decoded in full, or cast to a receiver during the scan.
+Subsequent user playback checks are recorded below.
 
 ## Two provisional sets
 
@@ -13,7 +14,9 @@ modified, copied, decoded in full, or cast to a receiver.
 | `samples/library/no-transcode-candidates/` | 73 | Worth testing without video or audio encoding: 28 original MP4 candidates and 45 MKV candidates that may need stream-copy remuxing. Includes one low-confidence AV1 case. |
 | `samples/library/likely-transcode-or-review/` | 2 | Unusual 8-bit H.264 with PQ/BT.2020 signalling. Review colour correctness before choosing conversion or a metadata repair. |
 
-These are metadata-based hypotheses for testing, **not verified playback support**.
+These sets are metadata-based hypotheses, not blanket playback guarantees.
+The CSV records the original scan assessment; subsequent playback evidence is
+recorded separately below.
 No file is proven to require transcoding by this scan. The second set identifies
 the strongest video-conversion concerns, not an unconditional instruction to encode.
 Files can move between sets after actual receiver tests. A receiver without HEVC
@@ -103,12 +106,35 @@ Default Media Receiver compatibility or AV1 support.
 
 Procast's current M2 guard is intentionally narrower: MP4-family H.264 with
 mono/stereo AAC-LC and conservative video limits. Only **6** library files fit
-that apparent format envelope; they still need actual validation. Inventory
-membership does not bypass that guard, and no application support changed here.
+that apparent format envelope; three now have user-confirmed picture and sound.
+Inventory
+membership does not bypass that guard. The new `--experimental-direct-play`
+option additionally admits one 3–6 channel AAC-LC track with the same H.264/MP4
+limits. It serves the original bytes and reports uncertain audio support; it
+does not enable the HEVC, AC-3, MKV, or HDR cases in this inventory.
+
+## User playback results
+
+On 2026-09-17, the user confirmed good video and sound for all three suggested
+MP4 H.264/AAC-stereo baseline samples using the existing direct-play path:
+
+| Sample | Video dimensions / frame rate | Picture | Sound |
+| --- | --- | --- | --- |
+| `sample-009` | 1920×816 / 24 fps | Confirmed good | Confirmed good |
+| `sample-014` | 1280×690 / 24 fps | Confirmed good | Confirmed good |
+| `sample-017` | 1920×800 / approximately 23.976 fps | Confirmed good | Confirmed good |
+
+This establishes real-file picture/audio playback for these three samples on the
+existing test receiver. No remuxing or transcoding was needed. It does not establish
+support on other receivers or validate the three remaining files in this group.
+Subtitles, full-duration playback, explicit A/V synchronization checks, natural
+completion, and shutdown were not reported for these runs. Earlier generated
+fixture results remain separate evidence.
 
 ## Suggested M5 test order
 
-1. Establish a real-file MP4 H.264/AAC-stereo baseline with external subtitles.
+1. MP4 H.264/AAC-stereo picture and sound now pass for three real files above.
+   External subtitles and lifecycle checks on these files remain to be exercised.
 2. Try original MP4 H.264/AAC-surround, then MP4 HEVC Main 10/AAC and H.264/AC-3.
    Confirm picture, colour, audible audio, timing, completion, and cancellation.
 3. Exercise MKV H.264/AAC, HEVC Main/Main 10 with AAC/HE-AAC, and H.264/HEVC

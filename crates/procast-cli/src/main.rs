@@ -9,7 +9,7 @@ use std::{
 use clap::{Parser, Subcommand};
 use procast_core::{
     CancellationToken, ProcastError, discovery,
-    media::{self, MediaInfo, ProbeOptions},
+    media::{self, DirectPlayPolicy, MediaInfo, ProbeOptions},
     session::{self, CastRequest, Phase, Target},
 };
 use tracing_subscriber::EnvFilter;
@@ -50,6 +50,9 @@ enum Commands {
         cast_port: u16,
         #[arg(long)]
         subtitles: Option<PathBuf>,
+        /// Try MP4 H.264 with 3–6 channel AAC-LC; receiver audio support is unverified
+        #[arg(long)]
+        experimental_direct_play: bool,
         /// Reachable local IP to advertise to the receiver
         #[arg(long)]
         bind_address: Option<IpAddr>,
@@ -200,6 +203,7 @@ async fn execute(
             host,
             cast_port,
             subtitles,
+            experimental_direct_play,
             bind_address,
             http_port,
             scan_seconds,
@@ -216,6 +220,11 @@ async fn execute(
                 Target::Auto
             };
             request.subtitles = subtitles;
+            request.direct_play_policy = if experimental_direct_play {
+                DirectPlayPolicy::Experimental
+            } else {
+                DirectPlayPolicy::Conservative
+            };
             request.bind_address = bind_address;
             request.http_port = http_port;
             request.scan_duration = Duration::from_secs(scan_seconds);
@@ -339,6 +348,7 @@ mod tests {
             vec!["procast", "cast", "movie.mp4"],
             vec!["procast", "cast", "movie.mp4", "--device", "Living Room"],
             vec!["procast", "cast", "movie.mp4", "--host", "127.0.0.1"],
+            vec!["procast", "cast", "movie.mp4", "--experimental-direct-play"],
         ] {
             assert!(Cli::try_parse_from(args).is_ok());
         }

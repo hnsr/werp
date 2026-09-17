@@ -187,11 +187,36 @@ fn parse_rate(rate: &str) -> Option<f64> {
     (rate.is_finite() && rate > 0.0).then_some(rate)
 }
 
+/// Local admission policy, not receiver capability negotiation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DirectPlayPolicy {
+    #[default]
+    Conservative,
+    /// Additionally allow AAC-LC with 3–6 channels; retain all video/container checks.
+    Experimental,
+}
+
+/// An assessment of metadata, not a promise of successful receiver playback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectPlayAssessment {
+    ConservativeProfile,
+    ExperimentalAacSurround { channels: u32 },
+}
+
 /// Conservative M2 policy, not receiver capability negotiation or a full decode.
 pub fn validate_direct_play(info: &MediaInfo) -> Result<(), ProcastError> {
+    assess_direct_play(info, DirectPlayPolicy::Conservative).map(|_| ())
+}
+
+/// Decide whether the original MP4 can be tried under the selected policy.
+/// This never prepares, remuxes, or transcodes media.
+pub fn assess_direct_play(
+    info: &MediaInfo,
+    policy: DirectPlayPolicy,
+) -> Result<DirectPlayAssessment, ProcastError> {
     let unsupported = |reason: &str| {
         ProcastError::UnsupportedMedia(format!(
-            "{reason}. M2 supports MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Remuxing/transcoding is not implemented yet"
+            "{reason}. Direct play requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC; experimental mode additionally permits 3–6 channel AAC-LC. Remuxing/transcoding is not implemented yet"
         ))
     };
     if !info.container.split(',').any(|format| format == "mp4") {
@@ -252,22 +277,91 @@ pub fn validate_direct_play(info: &MediaInfo) -> Result<(), ProcastError> {
             || audio.profile.as_deref() != Some("LC")
             || !audio
                 .channels
-                .is_some_and(|channels| (1..=2).contains(&channels))
+                .is_some_and(|channels| (1..=6).contains(&channels))
             || !audio
                 .sample_rate_hz
                 .is_some_and(|rate| (8000..=48000).contains(&rate)))
     {
         return Err(unsupported(&format!(
-            "audio stream #{} needs conversion",
+            "audio stream #{} is outside the available direct-play profiles (or lacks required metadata)",
             audio.index
         )));
     }
-    Ok(())
+    if let Some(channels) = audio.first().and_then(|audio| audio.channels)
+        && channels > 2
+    {
+        return match policy {
+            DirectPlayPolicy::Conservative => Err(unsupported(
+                "multichannel AAC-LC is unverified; use --experimental-direct-play to try the original file and check audible audio/downmix on your receiver",
+            )),
+            DirectPlayPolicy::Experimental => {
+                Ok(DirectPlayAssessment::ExperimentalAacSurround { channels })
+            }
+        };
+    }
+    Ok(DirectPlayAssessment::ConservativeProfile)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn experimental_policy_only_relaxes_aac_lc_channel_count() {
+        let mut fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/h264.json")).unwrap();
+        let check = |value: &serde_json::Value, policy| {
+            let info = parse(&serde_json::to_vec(value).unwrap(), "movie.mp4".into()).unwrap();
+            assess_direct_play(&info, policy)
+        };
+        assert_eq!(
+            check(&fixture, DirectPlayPolicy::Experimental).unwrap(),
+            DirectPlayAssessment::ConservativeProfile
+        );
+        for channels in 3..=6 {
+            fixture["streams"][1]["channels"] = serde_json::json!(channels);
+            let error = check(&fixture, DirectPlayPolicy::Conservative).unwrap_err();
+            assert!(error.to_string().contains("--experimental-direct-play"));
+            assert_eq!(
+                check(&fixture, DirectPlayPolicy::Experimental).unwrap(),
+                DirectPlayAssessment::ExperimentalAacSurround { channels }
+            );
+        }
+        for (pointer, value) in [
+            ("/format/format_name", serde_json::json!("matroska,webm")),
+            ("/format/duration", serde_json::json!("N/A")),
+            ("/streams/0/codec_name", serde_json::json!("hevc")),
+            ("/streams/0/level", serde_json::json!(42)),
+            ("/streams/0/pix_fmt", serde_json::json!("yuv420p10le")),
+            ("/streams/0/width", serde_json::json!(3840)),
+            ("/streams/0/r_frame_rate", serde_json::json!("60/1")),
+            ("/streams/1/codec_name", serde_json::json!("ac3")),
+            ("/streams/1/profile", serde_json::json!("HE-AAC")),
+            ("/streams/1/channels", serde_json::json!(8)),
+            ("/streams/1/channels", serde_json::json!(0)),
+            ("/streams/1/channels", serde_json::Value::Null),
+            ("/streams/1/sample_rate", serde_json::json!("96000")),
+            ("/streams/1/sample_rate", serde_json::Value::Null),
+        ] {
+            let mut invalid = fixture.clone();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(
+                check(&invalid, DirectPlayPolicy::Experimental).is_err(),
+                "{pointer}"
+            );
+        }
+        for transfer in ["smpte2084", "arib-std-b67"] {
+            let mut hdr = fixture.clone();
+            hdr["streams"][0]["color_transfer"] = serde_json::json!(transfer);
+            assert!(check(&hdr, DirectPlayPolicy::Experimental).is_err());
+        }
+        let mut multiple = fixture.clone();
+        multiple["streams"]
+            .as_array_mut()
+            .unwrap()
+            .push(fixture["streams"][1].clone());
+        assert!(check(&multiple, DirectPlayPolicy::Experimental).is_err());
+    }
 
     #[test]
     fn direct_play_policy_rejects_unsupported_and_unknown_metadata() {

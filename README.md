@@ -56,9 +56,24 @@ M2 validates a conservative direct-play profile before contacting a receiver:
 - Optional external UTF-8 `.srt` or `.vtt`, up to 4 MiB, with valid timed cues.
 
 The profile is a preflight policy, not a guarantee that every receiver can decode
-every accepted file. Receiver rejection remains a runtime error. MKV, E-AC-3,
-multichannel audio, embedded subtitle extraction, and remuxing/transcoding are
-not implemented yet. Subtitles are used only when explicitly selected; source
+every accepted file. Receiver rejection remains a runtime error. For an explicit
+trial of **3–6 channel AAC-LC** with the same H.264/MP4 limits, use:
+
+```sh
+cargo run --locked -- cast /path/to/surround.mp4 \
+  --device "Living Room" --experimental-direct-play --http-port 8010
+```
+
+The experimental flag serves the original file without audio/video conversion
+and reports uncertain receiver audio support. Check audible dialogue and correct
+downmix or surround output on your actual setup. It does not enable HEVC, AC-3,
+E-AC-3, MKV, HDR, unknown required metadata, or multiple audio tracks. Omitting
+the flag keeps the conservative policy. The reusable backend exposes the policy
+and assessment independently of the CLI. See the [media inventory and hardware
+results](docs/media-inventory.md) for current evidence.
+
+Embedded subtitle extraction and remuxing/transcoding are not implemented yet.
+Subtitles are used only when explicitly selected; source
 files are never modified. SRT conversion has a 30-second limit, and temporary
 files are session-owned. WebVTT cue timing is validated; styling semantics are
 left to the receiver. Track activation and HTTP requests do not prove visual

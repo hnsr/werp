@@ -14,7 +14,7 @@ use crate::{
     CancellationToken, ProcastError,
     cast::CastSession,
     discovery,
-    media::{self, ProbeOptions},
+    media::{self, DirectPlayAssessment, DirectPlayPolicy, ProbeOptions},
     serve::{MediaServer, address_toward},
     subtitles,
 };
@@ -36,6 +36,7 @@ pub struct CastRequest {
     pub scan_duration: Duration,
     pub probe: ProbeOptions,
     pub ffmpeg: PathBuf,
+    pub direct_play_policy: DirectPlayPolicy,
 }
 
 impl CastRequest {
@@ -49,6 +50,7 @@ impl CastRequest {
             scan_duration: Duration::from_secs(5),
             probe: ProbeOptions::default(),
             ffmpeg: "ffmpeg".into(),
+            direct_play_policy: DirectPlayPolicy::default(),
         }
     }
 }
@@ -117,7 +119,13 @@ pub async fn run(
             Some("Inspecting media".into()),
         );
         let info = media::inspect(&request.file, &request.probe, cancel).await?;
-        media::validate_direct_play(&info)?;
+        let assessment = media::assess_direct_play(&info, request.direct_play_policy)?;
+        if let DirectPlayAssessment::ExperimentalAacSurround { channels } = assessment {
+            tracing::warn!(
+                channels,
+                "Experimental direct play: AAC-LC surround support is unverified on this receiver. Serving the original file without conversion; check audible audio and correct downmix or surround output."
+            );
+        }
         if let Some(path) = &request.subtitles {
             report(
                 &progress,
