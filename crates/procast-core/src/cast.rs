@@ -1,7 +1,10 @@
 //! Cast adapter. Third-party types stay private; Procast owns the media session.
 use std::{future::Future, net::SocketAddr, time::Duration};
 
-use oxicast::CastClient;
+use oxicast::{
+    CastClient, CastEvent,
+    types::{IdleReason, MediaStatus, PlayerState},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -180,19 +183,58 @@ impl CastSession {
         &mut self,
         cancel: &CancellationToken,
     ) -> Result<Option<PlaybackSnapshot>, ProcastError> {
+        self.wait_for_status(Duration::ZERO, cancel).await
+    }
+
+    /// Consume terminal broadcasts while waiting for the next poll and its reply.
+    /// A receiver may broadcast FINISHED only once, then return an empty status.
+    pub async fn wait_for_status(
+        &mut self,
+        poll_delay: Duration,
+        cancel: &CancellationToken,
+    ) -> Result<Option<PlaybackSnapshot>, ProcastError> {
         let app = self
             .app
             .as_ref()
             .ok_or_else(|| ProcastError::Cast("receiver has not launched".into()))?;
-        let value = self
-            .request(
+        let value = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(ProcastError::Cancelled),
+            terminal = self.terminal_event() => return terminal.map(Some),
+            value = async {
+                tokio::time::sleep(poll_delay).await;
+                self.request(
                 MEDIA,
                 &app.transport_id,
                 json!({"type":"GET_STATUS"}),
                 cancel,
-            )
-            .await?;
+                ).await
+            } => value?,
+        };
         self.adopt_status(&value)
+    }
+
+    async fn terminal_event(&self) -> Result<PlaybackSnapshot, ProcastError> {
+        loop {
+            match self.client.next_event().await {
+                Some(CastEvent::MediaStatusChanged(status)) => {
+                    if let Some(content) = &self.content_id
+                        && let Some(terminal) = owned_terminal(&status, content, self.media_id)
+                    {
+                        tracing::debug!(state = %terminal.player_state, reason = ?terminal.idle_reason, "received owned terminal media event");
+                        return Ok(terminal);
+                    }
+                }
+                // MediaSessionEnded lacks content identity. Use the accompanying
+                // MediaStatusChanged event, which permits the full ownership check.
+                Some(CastEvent::Disconnected(_)) | None => {
+                    return Err(ProcastError::Cast(
+                        "receiver disconnected; playback was not restarted".into(),
+                    ));
+                }
+                _ => {}
+            }
+        }
     }
 
     fn adopt_status(&mut self, response: &Value) -> Result<Option<PlaybackSnapshot>, ProcastError> {
@@ -350,6 +392,40 @@ fn owns_status(status: &Value, content: &str, id: Option<i64>) -> bool {
         id.is_some_and(|id| status.get("mediaSessionId").and_then(Value::as_i64) == Some(id));
     (reported_content == Some(content) && id.is_none_or(|_| same_id))
         || (reported_content.is_none() && same_id)
+}
+
+fn owned_terminal(
+    status: &MediaStatus,
+    content: &str,
+    id: Option<i64>,
+) -> Option<PlaybackSnapshot> {
+    let reported_id = i64::from(status.media_session_id);
+    if reported_id <= 0 || status.player_state != PlayerState::Idle {
+        return None;
+    }
+    let reason = match status.idle_reason? {
+        IdleReason::Finished => "FINISHED",
+        IdleReason::Cancelled => "CANCELLED",
+        IdleReason::Interrupted => "INTERRUPTED",
+        IdleReason::Error => "ERROR",
+        _ => return None,
+    };
+    let mut identity = json!({"mediaSessionId":reported_id});
+    if let Some(media) = &status.media {
+        identity["media"] = json!({"contentId":media.content_id});
+    }
+    if !owns_status(&identity, content, id) {
+        return None;
+    }
+    Some(PlaybackSnapshot {
+        media_session_id: reported_id,
+        player_state: "IDLE".into(),
+        current_time: status.current_time,
+        idle_reason: Some(reason.into()),
+        // oxicast's typed events omit tracks. Confirmation comes from the raw
+        // LOAD/EDIT/status replies, not an invented track state at completion.
+        active_track_ids: vec![],
+    })
 }
 
 fn load_payload(session: &str, video: &str, subtitles: Option<&str>, title: &str) -> Value {

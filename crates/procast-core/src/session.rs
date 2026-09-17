@@ -211,11 +211,6 @@ pub async fn run(
                     "media server exited during playback".into(),
                 ));
             }
-            if !cast.is_connected() {
-                return Err(ProcastError::Cast(
-                    "receiver disconnected; playback was not restarted".into(),
-                ));
-            }
             let mut phase = Phase::Loading;
             if let Some(status) = &current {
                 if status.player_state != "IDLE" && serving.subtitle_url.is_some() && !tracks_enabled {
@@ -286,12 +281,8 @@ pub async fn run(
                 current.as_ref().map(|s| s.current_time),
                 None,
             );
-            tokio::select! {
-                _ = cancel.cancelled() => return Err(ProcastError::Cancelled),
-                _ = tokio::time::sleep(Duration::from_secs(1)) => {}
-            }
             current = cast
-                .status(cancel)
+                .wait_for_status(Duration::from_secs(1), cancel)
                 .await
                 .map_err(|e| delivery_error(e, serving))?;
         }

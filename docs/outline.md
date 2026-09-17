@@ -197,8 +197,9 @@ Resolve next:
 
 1. Which additional receivers and real-world media files should expand the
    existing KPN DIW7022 / prepared MP4 and WebVTT baseline?
-2. Do M2 natural completion and SIGTERM pass on hardware? Visible subtitles and
-   Ctrl+C have passed with both SRT and VTT. The IPv6-first discovery issue has
+2. Do M2 natural completion with SRT and SIGTERM pass on hardware? Natural
+   completion with WebVTT and port closure passed after a terminal-event fix.
+   Visible subtitles and Ctrl+C have passed with both SRT and VTT. The IPv6-first discovery issue has
    been fixed with explicit hostname resolution and verified on the test LAN.
 3. How should M3 expose playback commands while preserving backend independence?
 4. What conversion and caching strategy preserves seeking and subtitle timing?

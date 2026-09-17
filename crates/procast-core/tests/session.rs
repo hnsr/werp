@@ -21,7 +21,7 @@ use prost::Message;
 use rustls::{ServerConfig, pki_types::PrivatePkcs8KeyDer};
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::watch,
 };
@@ -54,6 +54,12 @@ enum Mode {
     Takeover,
     RejectTracks,
     MissingSubtitles,
+    BroadcastFinished,
+    BroadcastError,
+    BroadcastDuringPoll,
+    BroadcastThenDisconnect,
+    ForeignFinished,
+    ZeroFinished,
 }
 
 #[derive(Default, Debug)]
@@ -71,6 +77,13 @@ fn status(url: &str, state: &str, tracks: bool) -> Value {
     json!({"mediaSessionId":7,"playerState":state,"currentTime":1.0,
         "media":{"contentId":url,"contentType":"video/mp4"},
         "activeTrackIds": if tracks { vec![1] } else { vec![] }})
+}
+
+async fn send(stream: &mut (impl AsyncWrite + Unpin), message: &Envelope) -> std::io::Result<()> {
+    let bytes = message.encode_to_vec();
+    stream.write_u32(bytes.len() as u32).await?;
+    stream.write_all(&bytes).await?;
+    stream.flush().await
 }
 
 async fn download(url: &str) -> Vec<u8> {
@@ -167,11 +180,23 @@ async fn receiver(
                         let mut foreign = status("another-sender", "PLAYING", false);
                         foreign["mediaSessionId"] = json!(99);
                         json!({"type":"MEDIA_STATUS","status":[foreign]})
-                    } else if mode == Mode::Transient && log.polls == 1 {
+                    } else if matches!(
+                        mode,
+                        Mode::BroadcastFinished
+                            | Mode::BroadcastError
+                            | Mode::BroadcastDuringPoll
+                            | Mode::BroadcastThenDisconnect
+                    ) || (mode == Mode::Transient && log.polls == 1)
+                    {
                         json!({"type":"MEDIA_STATUS","status":[]})
                     } else {
-                        state = if matches!(mode, Mode::Complete | Mode::MissingSubtitles)
-                            || (mode == Mode::Transient && log.polls >= 4)
+                        state = if matches!(
+                            mode,
+                            Mode::Complete
+                                | Mode::MissingSubtitles
+                                | Mode::ForeignFinished
+                                | Mode::ZeroFinished
+                        ) || (mode == Mode::Transient && log.polls >= 4)
                         {
                             "IDLE"
                         } else if mode == Mode::Transient && log.polls == 2 {
@@ -210,16 +235,42 @@ async fn receiver(
                 namespace: message.namespace,
                 payload_type: 0,
                 payload_utf8: Some(reply.to_string()),
-            }
-            .encode_to_vec();
-            if stream.write_u32(response.len() as u32).await.is_err() {
+            };
+            // Exercise a FINISHED broadcast while GET_STATUS never replies.
+            let pending_poll = mode == Mode::BroadcastDuringPoll && payload["type"] == "GET_STATUS";
+            if !pending_poll && send(&mut stream, &response).await.is_err() {
                 break;
             }
-            if stream.write_all(&response).await.is_err() {
-                break;
-            }
-            if stream.flush().await.is_err() {
-                break;
+            let after_tracks = payload["type"] == "EDIT_TRACKS_INFO"
+                && matches!(
+                    mode,
+                    Mode::BroadcastFinished
+                        | Mode::BroadcastError
+                        | Mode::BroadcastThenDisconnect
+                        | Mode::ForeignFinished
+                        | Mode::ZeroFinished
+                );
+            if after_tracks || pending_poll {
+                let mut entry = json!({"mediaSessionId":7,"playerState":"IDLE","idleReason":"FINISHED","currentTime":0});
+                if mode == Mode::ForeignFinished {
+                    entry["media"] = json!({"contentId":"another-senders-file"});
+                } else if mode == Mode::ZeroFinished {
+                    entry["mediaSessionId"] = json!(0);
+                } else if mode == Mode::BroadcastError {
+                    entry["idleReason"] = json!("ERROR");
+                }
+                let event = Envelope {
+                    payload_utf8: Some(
+                        json!({"type":"MEDIA_STATUS","requestId":0,"status":[entry]}).to_string(),
+                    ),
+                    ..response.clone()
+                };
+                if send(&mut stream, &event).await.is_err() {
+                    break;
+                }
+                if mode == Mode::BroadcastThenDisconnect {
+                    break;
+                }
             }
             if mode == Mode::Disconnect && log.loads > 0 {
                 break;
@@ -228,6 +279,76 @@ async fn receiver(
         log
     });
     (address, task)
+}
+
+#[tokio::test]
+async fn terminal_broadcasts_complete_promptly_and_do_not_confuse_other_sessions() {
+    for mode in [
+        Mode::BroadcastFinished,
+        Mode::BroadcastError,
+        Mode::BroadcastDuringPoll,
+        Mode::BroadcastThenDisconnect,
+        Mode::ForeignFinished,
+        Mode::ZeroFinished,
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let video = directory.path().join("movie.mp4");
+        fs::write(&video, "selected video bytes").unwrap();
+        let subs = directory.path().join("captions.vtt");
+        fs::write(&subs, "WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n").unwrap();
+        let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
+        let mut request = CastRequest::new(video);
+        request.target = Target::Host(address);
+        request.subtitles = Some(subs);
+        request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
+        let (progress, updates) = watch::channel(SessionState::default());
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            session::run(request, progress, &CancellationToken::new()),
+        )
+        .await
+        .expect("terminal broadcast was ignored or waited for a request timeout");
+        if mode == Mode::BroadcastError {
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("playback ended: ERROR")
+            );
+            assert_eq!(updates.borrow().phase, Phase::Failed);
+        } else {
+            assert!(result.is_ok(), "{mode:?}: {result:?}");
+            assert_eq!(updates.borrow().phase, Phase::Completed);
+        }
+        let log = tokio::time::timeout(Duration::from_secs(1), receiver)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(log.loads, 1);
+        assert!(log.stops.is_empty(), "{mode:?}");
+        if matches!(
+            mode,
+            Mode::ForeignFinished | Mode::ZeroFinished | Mode::BroadcastDuringPoll
+        ) {
+            assert_eq!(
+                log.polls, 1,
+                "must still poll after an unowned terminal event"
+            );
+        } else if mode != Mode::BroadcastError {
+            assert_eq!(log.polls, 0, "should finish before the next poll");
+        }
+        let host = log
+            .url
+            .strip_prefix("http://")
+            .unwrap()
+            .split('/')
+            .next()
+            .unwrap();
+        assert!(
+            TcpStream::connect(host).await.is_err(),
+            "server survived completion"
+        );
+    }
 }
 
 fn fake_probe(directory: &Path, metadata: &str) -> PathBuf {

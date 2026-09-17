@@ -228,11 +228,15 @@ with formatting and Clippy. Tests cover actual HTTP delivery to simulated TLS
 receivers, SRT conversion, WebVTT without FFmpeg, transient status, natural
 completion, failure, takeover, and cancellation. The supplied MKV is rejected
 before discovery. The user subsequently confirmed visible video/subtitles and
-correct Ctrl+C shutdown in separate WebVTT and SRT CLI runs. Natural completion,
-SIGTERM, and explicit port-closure checks remain unverified on this hardware path.
+correct Ctrl+C shutdown in separate WebVTT and SRT CLI runs. A subsequent
+natural-completion failure revealed an ignored FINISHED broadcast; consuming
+terminal events alongside polls fixed it. The short WebVTT clip now completes
+with exit code 0 and a closed HTTP port. Natural completion with SRT, SIGTERM,
+and explicit port closure after signals remain unverified on this hardware path.
 The empty IPv4 lists in discovery were traced to IPv6-only service resolution;
 explicit hostname lookups fixed it in eight subsequent LAN scans. Three added
-regression tests bring the ordinary suite to 30 passing tests. See
+regression tests brought the ordinary suite to 30 passing tests; the terminal-event
+regression brings it to 31. See
 [validation details](m2-validation.md).
 
 Implemented scope:
@@ -375,8 +379,9 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Finish M2's remaining hardware checks: natural playback completion, SIGTERM,
-interrupted loading, and explicit port closure. The IPv4 discovery issue is fixed.
+Finish M2's remaining hardware checks: natural completion with SRT, SIGTERM,
+interrupted loading, and explicit port closure after signals. WebVTT natural
+completion and port closure passed after the terminal-event fix. The IPv4 discovery issue is fixed.
 Visible subtitles and Ctrl+C already passed with both SRT and
 WebVTT. M3 adds playback controls; transcoding and frontend design remain deferred.
 

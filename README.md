@@ -79,6 +79,8 @@ random session URLs, with range requests and subtitle CORS support.
 
 Cast connections use TLS without receiver identity verification, and media is
 served over HTTP. Use a trusted LAN; see the [transport decision](docs/decisions/001-cast-library.md).
+Procast consumes terminal broadcasts alongside status polls, so a one-time
+FINISHED notification completes the session even if later polls would be empty.
 Transient empty/IDLE statuses are not completion. A lost connection fails without
 automatically restarting the video. Inactive loading/buffering has a 30-second
 limit; individual Cast requests have a 10-second limit. Cleanup attempts remote
@@ -135,9 +137,31 @@ The test environment must allow local sockets and normal process-signal delivery
 
 See [M2 validation and the remaining hardware check](docs/m2-validation.md).
 
+## Short playback fixture
+
+For a quick natural-completion check, generate a separate 30-second moving test
+pattern with silent audio and matching WebVTT/SRT cues every five seconds:
+
+```sh
+bash scripts/generate-m1-fixture.sh samples/short 30
+cargo run --locked -- cast samples/short/test.mp4 \
+  --device "Living Room" --subtitles samples/short/subtitles.vtt --http-port 8010
+```
+
+Replace `Living Room` with your selected receiver. Use `subtitles.srt` to check
+SRT conversion. Let playback finish without interrupting it; the CLI should
+report `Playback completed.` and exit. The original 12-minute fixture is retained.
+
+For a separate SIGTERM check, start casting again. While it plays, use another
+terminal to run `pgrep -a -x procast`, identify that casting process, and run
+`kill -TERM PID` with its numeric PID. SIGTERM is a normal termination request;
+Ctrl+C sends SIGINT instead. Both should stop the owned playback and clean up.
+After SIGTERM, `echo $?` in the casting terminal should report 143. Do not use
+`kill -9`, which prevents cleanup.
+
 ## Cast feasibility example (M1)
 
-Generate a silent 12-minute H.264/AAC MP4 and external WebVTT cues. This requires
+Generate a silent 12-minute H.264/AAC MP4 and external WebVTT/SRT cues. This requires
 FFmpeg with `libx264` and AAC encoding. Generated files stay in ignored `samples/`.
 The script refuses to overwrite an existing fixture.
 
