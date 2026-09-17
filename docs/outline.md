@@ -197,9 +197,9 @@ Resolve next:
 
 1. Which additional receivers and real-world media files should expand the
    existing KPN DIW7022 / prepared MP4 and WebVTT baseline?
-2. Do M2 natural completion and SIGTERM pass on hardware, and why did one discovery
-   scan show empty IPv4 lists before successful casting scans? Visible subtitles
-   and Ctrl+C have passed with both SRT and VTT.
+2. Do M2 natural completion and SIGTERM pass on hardware? Visible subtitles and
+   Ctrl+C have passed with both SRT and VTT. The IPv6-first discovery issue has
+   been fixed with explicit hostname resolution and verified on the test LAN.
 3. How should M3 expose playback commands while preserving backend independence?
 4. What conversion and caching strategy preserves seeking and subtitle timing?
 5. What Fedora versions, Rust toolchain, FFmpeg capabilities, and packaging should

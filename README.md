@@ -4,7 +4,7 @@ A Rust CLI and reusable backend for casting local videos and subtitles to
 Chromecast. **The CLI now supports discovery, direct-play casting, and external
 SRT/WebVTT subtitles.** The M2 CLI has passed automated tests, and the user has
 verified visible subtitles and Ctrl+C shutdown with both formats on a KPN DIW7022.
-Further hardware and discovery checks are tracked in the validation notes.
+Further hardware checks are tracked in the validation notes.
 
 ## Development setup
 

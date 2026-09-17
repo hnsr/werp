@@ -1,8 +1,8 @@
 # Procast implementation plan
 
 Status: M0 and M1 verified; M2 implemented with automated checks passed and
-user-confirmed SRT/WebVTT playback and Ctrl+C shutdown. Remaining hardware and
-discovery checks are recorded below. M3–M6 remain planned.
+user-confirmed SRT/WebVTT playback and Ctrl+C shutdown. The IPv4 discovery issue
+is fixed and verified; remaining hardware checks are recorded below. M3–M6 remain planned.
 Updated: 2026-09-17.
 Requirements: [outline.md](outline.md).
 
@@ -230,8 +230,10 @@ completion, failure, takeover, and cancellation. The supplied MKV is rejected
 before discovery. The user subsequently confirmed visible video/subtitles and
 correct Ctrl+C shutdown in separate WebVTT and SRT CLI runs. Natural completion,
 SIGTERM, and explicit port-closure checks remain unverified on this hardware path.
-The device listing also showed empty IPv4 lists before successful casting scans;
-investigate this intermittent discovery result. See [validation details](m2-validation.md).
+The empty IPv4 lists in discovery were traced to IPv6-only service resolution;
+explicit hostname lookups fixed it in eight subsequent LAN scans. Three added
+regression tests bring the ordinary suite to 30 passing tests. See
+[validation details](m2-validation.md).
 
 Implemented scope:
 
@@ -374,8 +376,8 @@ exists; this workspace now has a local Git repository.
 ## Immediate next step
 
 Finish M2's remaining hardware checks: natural playback completion, SIGTERM,
-interrupted loading, and explicit port closure. Investigate the empty IPv4 lists
-seen in discovery. Visible subtitles and Ctrl+C already passed with both SRT and
+interrupted loading, and explicit port closure. The IPv4 discovery issue is fixed.
+Visible subtitles and Ctrl+C already passed with both SRT and
 WebVTT. M3 adds playback controls; transcoding and frontend design remain deferred.
 
 ## Technical references

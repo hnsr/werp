@@ -93,14 +93,36 @@ Using the generated MP4 fixture in separate CLI runs, the user confirmed:
 - Both casting runs resolved an IPv4 endpoint and reached playback.
 
 The preceding `devices` command listed the video receiver and an audio-only
-receiver, but both had empty IPv4 address lists. Each command performs a separate
-scan. The listing filters resolved addresses to IPv4, so an IPv6-only result can
-appear as `[]`; the supplied output does not establish why IPv4 resolution varied
-between scans. Track this as a discovery follow-up rather than claiming discovery
-is consistently reliable. A longer `--scan-seconds` or explicit `cast --host IP`
-is available for diagnosis; neither workaround was tested in this report.
+receiver, but both had empty IPv4 address lists. The follow-up investigation and
+fix are recorded below.
 
 Device names, IDs, local addresses, and personal media filenames are omitted.
+
+## IPv4 discovery follow-up
+
+The issue reproduced in JSON output: two of three initial read-only scans had
+no IPv4 address for the video receiver. It was not a display-formatting bug.
+`mdns-sd` 0.21.3 treats a service with only an IPv6/AAAA address as resolved. Its
+normal service-resolution path skips the hostname address query once any address
+record is cached. Procast filtered out IPv6 for its IPv4-only transport, leaving
+an empty list unless an IPv4/A record arrived separately.
+
+Procast now explicitly resolves the hostname when a service snapshot lacks IPv4.
+New address records produce updated service snapshots through the existing
+browse channel. Lookups are deduplicated per hostname, stay within the original
+scan deadline, and have their reply consumers joined on timeout or cancellation.
+Daemon shutdown stops the DNS queries. No previous scan's addresses are retained.
+
+All eight read-only scans after the fix returned IPv4 addresses for both test
+devices. Three diagnostic scans each showed the IPv6-only result, the explicit
+lookup, and a later snapshot containing IPv4. No receiver application was
+launched or controlled. This verifies the fallback on the current LAN; it does
+not guarantee discovery through firewalls or for devices that only support IPv6.
+
+Three new regression tests cover the IPv6-first sequence and duplicate events,
+already-resolved IPv4, and unanswered lookups under deadline/cancellation. The
+ordinary suite now has 30 passing tests; formatting and Clippy also pass. The
+two FFmpeg tests passed previously and were not rerun for this discovery-only fix.
 
 ## Reproduction and remaining hardware acceptance
 
@@ -129,6 +151,6 @@ SIGTERM shutdown, interrupted loading, and explicit checks that the serving port
 closes. These paths have automated coverage, but the user's report confirms
 Ctrl+C and visible playback only. Add a full real-world compatible MP4 if
 available; the generated clip does not establish broad format compatibility.
-Complete those checks and investigate intermittent IPv4 discovery before marking
-all M2 acceptance complete. M3 remains playback controls. The commands above are
+Complete those checks before marking all M2 acceptance complete. M3 remains
+playback controls. The commands above are
 manual reproduction instructions, not a scheduled hardware test.
