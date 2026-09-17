@@ -7,7 +7,10 @@ fn help_and_argument_errors_are_available_without_ffprobe() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("inspect"));
+    let help = String::from_utf8_lossy(&output.stdout);
+    for command in ["inspect", "devices", "cast"] {
+        assert!(help.contains(command));
+    }
     let output = Command::new(env!("CARGO_BIN_EXE_procast"))
         .args(["inspect", "movie.mkv", "--timeout", "0"])
         .output()
@@ -20,7 +23,12 @@ fn help_and_argument_errors_are_available_without_ffprobe() {
 #[tokio::test]
 async fn signals_wait_for_probe_cleanup_and_return_distinct_exit_codes() {
     use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Stdio, time::Duration};
-    for (signal, exit_code) in [("-INT", 130), ("-TERM", 143)] {
+    for (command, signal, exit_code) in [
+        ("inspect", "-INT", 130),
+        ("inspect", "-TERM", 143),
+        ("cast", "-INT", 130),
+        ("cast", "-TERM", 143),
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let probe = dir.path().join("probe");
         fs::write(&probe, "#!/bin/sh\necho $$ > \"$0.pid\"\nexec sleep 60\n").unwrap();
@@ -28,7 +36,7 @@ async fn signals_wait_for_probe_cleanup_and_return_distinct_exit_codes() {
         let file = dir.path().join("movie");
         fs::write(&file, "placeholder").unwrap();
         let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_procast"))
-            .arg("inspect")
+            .arg(command)
             .arg(file)
             .arg("--ffprobe")
             .arg(&probe)

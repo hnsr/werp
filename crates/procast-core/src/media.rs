@@ -39,6 +39,10 @@ pub struct StreamInfo {
     pub kind: String,
     pub codec: Option<String>,
     pub profile: Option<String>,
+    pub level: Option<i32>,
+    pub pixel_format: Option<String>,
+    pub frame_rate: Option<f64>,
+    pub color_transfer: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub sample_rate_hz: Option<u32>,
@@ -86,7 +90,7 @@ pub async fn inspect(
     command.args([
         "-v", "error", "-print_format", "json", "-show_format", "-show_streams",
         "-show_entries",
-        "format=format_name,duration:stream=index,codec_type,codec_name,profile,width,height,sample_rate,channels:stream_tags=language,title:stream_disposition=default,forced,attached_pic",
+        "format=format_name,duration:stream=index,codec_type,codec_name,profile,level,pix_fmt,r_frame_rate,avg_frame_rate,color_transfer,width,height,sample_rate,channels:stream_tags=language,title:stream_disposition=default,forced,attached_pic",
         "-i",
     ]).arg(&canonical);
     let bytes = process::capture(&mut command, cancellation, options.timeout).await?;
@@ -112,6 +116,11 @@ struct ProbeStream {
     codec_type: Option<String>,
     codec_name: Option<String>,
     profile: Option<String>,
+    level: Option<i32>,
+    pix_fmt: Option<String>,
+    r_frame_rate: Option<String>,
+    avg_frame_rate: Option<String>,
+    color_transfer: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
     sample_rate: Option<String>,
@@ -141,6 +150,14 @@ fn parse(bytes: &[u8], path: PathBuf) -> Result<MediaInfo, ProcastError> {
                 kind: stream.codec_type.unwrap_or_else(|| "unknown".into()),
                 codec: stream.codec_name,
                 profile: stream.profile,
+                level: stream.level,
+                pixel_format: stream.pix_fmt,
+                frame_rate: [stream.r_frame_rate, stream.avg_frame_rate]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|rate| parse_rate(&rate))
+                    .reduce(f64::max),
+                color_transfer: stream.color_transfer,
                 width: stream.width,
                 height: stream.height,
                 sample_rate_hz: stream.sample_rate.and_then(|text| text.parse().ok()),
@@ -164,9 +181,136 @@ fn parse(bytes: &[u8], path: PathBuf) -> Result<MediaInfo, ProcastError> {
     })
 }
 
+fn parse_rate(rate: &str) -> Option<f64> {
+    let (numerator, denominator) = rate.split_once('/')?;
+    let rate = numerator.parse::<f64>().ok()? / denominator.parse::<f64>().ok()?;
+    (rate.is_finite() && rate > 0.0).then_some(rate)
+}
+
+/// Conservative M2 policy, not receiver capability negotiation or a full decode.
+pub fn validate_direct_play(info: &MediaInfo) -> Result<(), ProcastError> {
+    let unsupported = |reason: &str| {
+        ProcastError::UnsupportedMedia(format!(
+            "{reason}. M2 supports MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Remuxing/transcoding is not implemented yet"
+        ))
+    };
+    if !info.container.split(',').any(|format| format == "mp4") {
+        return Err(unsupported(&format!(
+            "container {} needs a supported container",
+            info.container
+        )));
+    }
+    if !info
+        .duration_seconds
+        .is_some_and(|duration| duration.is_finite() && duration > 0.0)
+    {
+        return Err(unsupported(
+            "a finite positive duration could not be determined",
+        ));
+    }
+    let videos: Vec<_> = info
+        .streams
+        .iter()
+        .filter(|s| s.kind == "video" && !s.attached_picture)
+        .collect();
+    if videos.len() != 1 {
+        return Err(unsupported("exactly one video stream is required"));
+    }
+    let video = videos[0];
+    if video.codec.as_deref() != Some("h264")
+        || !matches!(
+            video.profile.as_deref(),
+            Some("Constrained Baseline" | "Baseline" | "Main" | "High")
+        )
+        || !video.level.is_some_and(|level| (9..=41).contains(&level))
+        || video.pixel_format.as_deref() != Some("yuv420p")
+        || !video.width.is_some_and(|width| (1..=1920).contains(&width))
+        || !video
+            .height
+            .is_some_and(|height| (1..=1080).contains(&height))
+        || !video
+            .frame_rate
+            .is_some_and(|rate| rate.is_finite() && rate > 0.0 && rate <= 30.01)
+        || matches!(
+            video.color_transfer.as_deref(),
+            Some("smpte2084" | "arib-std-b67")
+        )
+    {
+        return Err(unsupported(&format!(
+            "video stream #{} is outside the supported profile (or lacks required metadata)",
+            video.index
+        )));
+    }
+    let audio: Vec<_> = info.streams.iter().filter(|s| s.kind == "audio").collect();
+    if audio.len() > 1 {
+        return Err(unsupported(
+            "multiple audio tracks need explicit selection/remuxing",
+        ));
+    }
+    if let Some(audio) = audio.first()
+        && (audio.codec.as_deref() != Some("aac")
+            || audio.profile.as_deref() != Some("LC")
+            || !audio
+                .channels
+                .is_some_and(|channels| (1..=2).contains(&channels))
+            || !audio
+                .sample_rate_hz
+                .is_some_and(|rate| (8000..=48000).contains(&rate)))
+    {
+        return Err(unsupported(&format!(
+            "audio stream #{} needs conversion",
+            audio.index
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn direct_play_policy_rejects_unsupported_and_unknown_metadata() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/h264.json")).unwrap();
+        let check = |value: &serde_json::Value| {
+            let info = parse(&serde_json::to_vec(value).unwrap(), "movie.mp4".into()).unwrap();
+            validate_direct_play(&info)
+        };
+        assert!(check(&fixture).is_ok());
+        for (pointer, value) in [
+            ("/format/format_name", serde_json::json!("matroska,webm")),
+            ("/format/duration", serde_json::json!("N/A")),
+            ("/streams/0/codec_name", serde_json::json!("hevc")),
+            ("/streams/0/profile", serde_json::json!("High 10")),
+            ("/streams/0/pix_fmt", serde_json::json!("yuv420p10le")),
+            ("/streams/0/level", serde_json::json!(42)),
+            ("/streams/0/width", serde_json::json!(3840)),
+            ("/streams/0/r_frame_rate", serde_json::json!("60/1")),
+            ("/streams/1/codec_name", serde_json::json!("eac3")),
+            ("/streams/1/channels", serde_json::json!(6)),
+            ("/streams/1/profile", serde_json::json!("HE-AAC")),
+        ] {
+            let mut value_fixture = fixture.clone();
+            *value_fixture.pointer_mut(pointer).unwrap() = value;
+            assert!(check(&value_fixture).is_err(), "{pointer}");
+        }
+        let mut unknown = fixture.clone();
+        unknown["streams"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("pix_fmt");
+        assert!(check(&unknown).is_err());
+        let mut silent = fixture.clone();
+        silent["streams"].as_array_mut().unwrap().truncate(1);
+        assert!(check(&silent).is_ok());
+        let mut multiple = fixture.clone();
+        multiple["streams"]
+            .as_array_mut()
+            .unwrap()
+            .push(fixture["streams"][1].clone());
+        assert!(check(&multiple).is_err());
+    }
 
     #[test]
     fn parses_tracks_and_tolerates_unavailable_metadata() {

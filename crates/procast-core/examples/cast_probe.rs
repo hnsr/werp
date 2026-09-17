@@ -121,9 +121,13 @@ async fn run(args: Args, token: &CancellationToken) -> Result<(), ProcastError> 
         Some(bind) => bind,
         None => address_toward(receiver).await?,
     };
-    let server =
-        MediaServer::start(SocketAddr::new(bind, args.http_port), &video, &subtitles).await?;
-    eprintln!("Serving {} and {}", server.video_url, server.subtitle_url);
+    let server = MediaServer::start(
+        SocketAddr::new(bind, args.http_port),
+        &video,
+        Some(&subtitles),
+    )
+    .await?;
+    eprintln!("Serving {} and {:?}", server.video_url, server.subtitle_url);
     let connected = CastSession::connect(receiver, token).await;
     let mut session = match connected {
         Ok(session) => session,
@@ -136,7 +140,12 @@ async fn run(args: Args, token: &CancellationToken) -> Result<(), ProcastError> 
         session.launch(token).await?;
         eprintln!("Default Media Receiver launched.");
         let initial = session
-            .load(&server.video_url, &server.subtitle_url, token)
+            .load(
+                &server.video_url,
+                server.subtitle_url.as_deref(),
+                "Procast M1 test",
+                token,
+            )
             .await?;
         eprintln!("LOAD + subtitle activation: {initial:?}");
         let start = Instant::now();
@@ -151,7 +160,9 @@ async fn run(args: Args, token: &CancellationToken) -> Result<(), ProcastError> 
                     "connection lost; automatic reconnect disabled".into(),
                 ));
             }
-            let status = session.status(token).await?;
+            let Some(status) = session.status(token).await? else {
+                continue;
+            };
             println!(
                 "elapsed={}s state={} position={:.1}s subtitles={:?} HTTP={}",
                 start.elapsed().as_secs(),

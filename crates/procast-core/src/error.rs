@@ -2,6 +2,10 @@ use std::{io, path::PathBuf, process::ExitStatus, time::Duration};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProcastError {
+    #[error("unsupported media: {0}")]
+    UnsupportedMedia(String),
+    #[error("invalid subtitles: {0}")]
+    Subtitles(String),
     #[error("Cast operation failed: {0}")]
     Cast(String),
     #[error("device discovery failed: {0}")]
@@ -12,7 +16,9 @@ pub enum ProcastError {
     InputIo { path: PathBuf, source: io::Error },
     #[error("input is not a regular file: {0:?}")]
     NotRegularFile(PathBuf),
-    #[error("executable {0:?} was not found; install ffprobe or specify its path with --ffprobe")]
+    #[error(
+        "executable {0:?} was not found; install it or provide its path with --ffprobe / --ffmpeg"
+    )]
     MissingExecutable(PathBuf),
     #[error("could not run {program:?}: {source}")]
     ProcessIo { program: PathBuf, source: io::Error },
@@ -22,9 +28,9 @@ pub enum ProcastError {
         status: ExitStatus,
         stderr: String,
     },
-    #[error("ffprobe metadata exceeded the {limit}-byte limit")]
+    #[error("subprocess output exceeded the {limit}-byte limit")]
     OutputLimit { limit: usize },
-    #[error("media inspection timed out after {0:?}")]
+    #[error("subprocess timed out after {0:?}")]
     TimedOut(Duration),
     #[error("operation cancelled")]
     Cancelled,

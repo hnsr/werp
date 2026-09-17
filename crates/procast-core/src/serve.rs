@@ -1,4 +1,4 @@
-//! Session-scoped, selected-file HTTP serving for the feasibility prototype.
+//! Session-scoped HTTP serving of explicitly selected media and subtitle files.
 use std::{
     net::{IpAddr, SocketAddr},
     path::Path,
@@ -23,8 +23,10 @@ use crate::{CancellationToken, ProcastError};
 
 pub struct MediaServer {
     pub video_url: String,
-    pub subtitle_url: String,
+    pub subtitle_url: Option<String>,
     pub requests: Arc<AtomicU64>,
+    pub video_requests: Arc<AtomicU64>,
+    pub subtitle_requests: Arc<AtomicU64>,
     cancel: CancellationToken,
     task: JoinHandle<Result<(), std::io::Error>>,
 }
@@ -33,9 +35,9 @@ impl MediaServer {
     pub async fn start(
         address: SocketAddr,
         video: &Path,
-        subtitles: &Path,
+        subtitles: Option<&Path>,
     ) -> Result<Self, ProcastError> {
-        for path in [video, subtitles] {
+        for path in std::iter::once(video).chain(subtitles) {
             let meta = tokio::fs::metadata(path)
                 .await
                 .map_err(|e| ProcastError::Serve(e.to_string()))?;
@@ -49,18 +51,40 @@ impl MediaServer {
         let video_path = format!("/{token}/video.mp4");
         let subtitle_path = format!("/{token}/subtitles.vtt");
         let requests = Arc::new(AtomicU64::new(0));
+        let video_requests = Arc::new(AtomicU64::new(0));
+        let subtitle_requests = Arc::new(AtomicU64::new(0));
         let counter = requests.clone();
-        let router = Router::new()
-            .route_service(&video_path, ServeFile::new_with_mime(video, &"video/mp4".parse().unwrap()))
-            .route_service(&subtitle_path, ServeFile::new_with_mime(subtitles, &"text/vtt".parse().unwrap()))
+        let video_counter = video_requests.clone();
+        let subtitle_counter = subtitle_requests.clone();
+        let expected_video = video_path.clone();
+        let expected_subtitles = subtitle_path.clone();
+        let mut router = Router::new().route_service(
+            &video_path,
+            ServeFile::new_with_mime(video, &"video/mp4".parse().unwrap()),
+        );
+        if let Some(subtitles) = subtitles {
+            router = router.route_service(
+                &subtitle_path,
+                ServeFile::new_with_mime(subtitles, &"text/vtt".parse().unwrap()),
+            );
+        }
+        let router = router
             .layer(CorsLayer::new().allow_origin(Any).allow_methods([Method::GET, Method::HEAD, Method::OPTIONS]).allow_headers(Any))
             .layer(middleware::from_fn(move |request: axum::extract::Request, next: middleware::Next| {
                 let counter = counter.clone();
+                let video_counter = video_counter.clone();
+                let subtitle_counter = subtitle_counter.clone();
+                let expected_video = expected_video.clone();
+                let expected_subtitles = expected_subtitles.clone();
                 async move {
                     let method = request.method().clone();
                     let path = request.uri().path().to_owned();
                     let response = next.run(request).await;
                     counter.fetch_add(1, Ordering::Relaxed);
+                    if method == Method::GET && response.status().is_success() {
+                        if path == expected_video { video_counter.fetch_add(1, Ordering::Relaxed); }
+                        if path == expected_subtitles { subtitle_counter.fetch_add(1, Ordering::Relaxed); }
+                    }
                     tracing::info!(%method, %path, status = %response.status(), "media HTTP request");
                     response
                 }
@@ -97,11 +121,17 @@ impl MediaServer {
         });
         Ok(Self {
             video_url: format!("http://{address}{video_path}"),
-            subtitle_url: format!("http://{address}{subtitle_path}"),
+            subtitle_url: subtitles.map(|_| format!("http://{address}{subtitle_path}")),
             requests,
+            video_requests,
+            subtitle_requests,
             cancel,
             task,
         })
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.task.is_finished()
     }
 
     pub async fn shutdown(mut self) -> Result<(), ProcastError> {

@@ -1,6 +1,7 @@
 # Procast implementation plan
 
-Status: M0 and M1 implemented and verified; M2–M6 remain planned.
+Status: M0 and M1 verified; M2 implemented and automated checks passed, with
+real-TV acceptance pending. M3–M6 remain planned.
 Updated: 2026-09-17.
 Requirements: [outline.md](outline.md).
 
@@ -86,8 +87,9 @@ in research. No FFmpeg C library bindings are needed.
 ### Backend interface and concurrency
 
 Expose Procast types such as `Device`, `MediaInfo`, `CastRequest`,
-`PlaybackSnapshot`, and `ProcastError`. A session handle accepts commands and
-provides state/events. Keep third-party Cast types private.
+`PlaybackSnapshot`, and `ProcastError`. M2 exposes `session::run(CastRequest, ... )`,
+a cancellation token, and a Tokio watch channel of `SessionState`. M3 adds a
+command interface. Keep third-party Cast types private.
 
 Use a bounded command channel and a latest-state snapshot for routine playback
 updates. Deliver completion and errors reliably; a slow consumer must not stall
@@ -211,6 +213,23 @@ works, document the concrete gap and revise the plan before writing a new Cast
 stack. Do not proceed on the assumption that either candidate already passes.
 
 ### M2 — First usable CLI: local video and external subtitles
+
+**Implemented; hardware acceptance pending.** The `devices` and `cast` commands,
+reusable session coordinator, direct-play validation, external subtitle
+preparation, and cleanup are in place. The current direct-play policy accepts
+MP4-family H.264 up to 1080p30, level 4.1, 8-bit 4:2:0 with zero or one mono/stereo
+AAC-LC track. Unknown required metadata fails conservatively. Broader profiles,
+remuxing, and audio conversion remain M5 work.
+
+Verification: 27 ordinary tests and both opt-in FFmpeg tests passed, together
+with formatting and Clippy. Tests cover actual HTTP delivery to simulated TLS
+receivers, SRT conversion, WebVTT without FFmpeg, transient status, natural
+completion, failure, takeover, and cancellation. The supplied MKV is rejected
+before discovery. No real receiver was contacted during M2 development while
+the user slept; M1 evidence does not replace M2 hardware acceptance. See
+[validation details and the remaining check](m2-validation.md).
+
+Implemented scope:
 
 - Turn the successful prototype into the core session and the `devices`/`cast`
   commands. Verify media prerequisites before changing playback on the receiver.
@@ -350,9 +369,10 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Proceed to M2: turn the proven prototype into the user-facing `devices` and `cast`
-commands, with prerequisite validation, SRT conversion, and complete session-state
-handling. Transcoding and frontend design remain deferred.
+Run the M2 CLI hardware acceptance on the test receiver with the user present: full
+playback with SRT and VTT in separate runs, visible subtitles, and interrupted
+playback cleanup. Then proceed to M3's controls. Transcoding and frontend design
+remain deferred.
 
 ## Technical references
 

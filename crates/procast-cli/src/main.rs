@@ -1,5 +1,6 @@
 use std::{
     io::{self, Write},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     process::ExitCode,
     time::Duration,
@@ -7,8 +8,9 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use procast_core::{
-    CancellationToken, ProcastError,
+    CancellationToken, ProcastError, discovery,
     media::{self, MediaInfo, ProbeOptions},
+    session::{self, CastRequest, Phase, Target},
 };
 use tracing_subscriber::EnvFilter;
 
@@ -16,7 +18,7 @@ use tracing_subscriber::EnvFilter;
 #[command(
     name = "procast",
     version,
-    about = "Inspect local media for Procast (casting is coming next)"
+    about = "Cast local videos and subtitles to a Chromecast"
 )]
 struct Cli {
     /// Show debug diagnostics on stderr
@@ -28,6 +30,41 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// List Cast receivers on the local network (does not start playback)
+    Devices {
+        #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..=60))]
+        scan_seconds: u64,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Cast a compatible local MP4, with optional external SRT/WebVTT subtitles
+    Cast {
+        file: PathBuf,
+        /// Exact friendly name or stable device ID
+        #[arg(long, conflicts_with = "host")]
+        device: Option<String>,
+        /// Explicit receiver IPv4 address; bypasses discovery
+        #[arg(long, conflicts_with = "device")]
+        host: Option<Ipv4Addr>,
+        #[arg(long, default_value_t = 8009, requires = "host", value_parser = clap::value_parser!(u16).range(1..))]
+        cast_port: u16,
+        #[arg(long)]
+        subtitles: Option<PathBuf>,
+        /// Reachable local IP to advertise to the receiver
+        #[arg(long)]
+        bind_address: Option<IpAddr>,
+        /// Local serving port (0 lets the OS choose)
+        #[arg(long, default_value_t = 0)]
+        http_port: u16,
+        #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..=60))]
+        scan_seconds: u64,
+        #[arg(long, default_value = "ffprobe")]
+        ffprobe: PathBuf,
+        #[arg(long, default_value = "ffmpeg")]
+        ffmpeg: PathBuf,
+        #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..))]
+        probe_timeout: u64,
+    },
     /// Show container, duration, and video/audio/subtitle tracks
     Inspect {
         file: PathBuf,
@@ -69,7 +106,7 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    // Register before starting the probe, including in noninteractive runs.
+    // Register before starting any work, including in noninteractive runs.
     #[cfg(unix)]
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     #[cfg(unix)]
@@ -85,41 +122,160 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
             Ok::<u8, io::Error>(130)
         }
     };
-    let Commands::Inspect {
-        file,
-        json,
-        ffprobe,
-        timeout,
-    } = cli.command;
     let cancellation = CancellationToken::new();
-    let options = ProbeOptions {
-        executable: ffprobe,
-        timeout: Duration::from_secs(timeout),
-    };
-    let inspection = media::inspect(&file, &options, &cancellation);
-    tokio::pin!(inspection);
-    let result = tokio::select! {
-        result = &mut inspection => result,
+    let operation = execute(cli.command, &cancellation);
+    tokio::pin!(operation);
+    tokio::select! {
+        result = &mut operation => { result?; Ok(ExitCode::SUCCESS) },
         received = signal => {
             cancellation.cancel();
-            let cleanup = inspection.await;
-            if let Err(error) = cleanup
-                && !matches!(error, ProcastError::Cancelled) {
-                return Err(error.into());
+            if let Err(error) = operation.await
+                && !matches!(error.downcast_ref::<ProcastError>(), Some(ProcastError::Cancelled)) {
+                return Err(error);
             }
-            let code = received?;
-            eprintln!("Inspection cancelled.");
-            return Ok(ExitCode::from(code));
+            eprintln!("Cancelled; cleanup completed.");
+            Ok(ExitCode::from(received?))
         }
-    }?;
-    let mut output = io::stdout().lock();
-    if json {
-        serde_json::to_writer_pretty(&mut output, &result)?;
-        writeln!(output)?;
-    } else {
-        write_summary(&mut output, &result)?;
     }
-    Ok(ExitCode::SUCCESS)
+}
+
+async fn execute(
+    command: Commands,
+    cancel: &CancellationToken,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        Commands::Inspect {
+            file,
+            json,
+            ffprobe,
+            timeout,
+        } => {
+            let options = ProbeOptions {
+                executable: ffprobe,
+                timeout: Duration::from_secs(timeout),
+            };
+            let result = media::inspect(&file, &options, cancel).await?;
+            let mut output = io::stdout().lock();
+            if json {
+                serde_json::to_writer_pretty(&mut output, &result)?;
+                writeln!(output)?;
+            } else {
+                write_summary(&mut output, &result)?;
+            }
+        }
+        Commands::Devices { scan_seconds, json } => {
+            let devices = discovery::discover(Duration::from_secs(scan_seconds), cancel).await?;
+            let mut output = io::stdout().lock();
+            if json {
+                serde_json::to_writer_pretty(&mut output, &devices)?;
+                writeln!(output)?;
+            } else if devices.is_empty() {
+                writeln!(
+                    output,
+                    "No Cast devices found. Check the LAN, mDNS/firewall settings, or use --host IP."
+                )?;
+            } else {
+                for device in devices {
+                    let capability = match device.capabilities {
+                        Some(bits) if bits & 1 != 0 => "video",
+                        Some(_) => "audio-only",
+                        None => "capabilities unknown",
+                    };
+                    writeln!(
+                        output,
+                        "{:?} | {} | model={:?} | {:?}:{} | {}",
+                        device.name,
+                        device.id,
+                        device.model,
+                        device.addresses,
+                        device.port,
+                        capability
+                    )?;
+                }
+            }
+        }
+        Commands::Cast {
+            file,
+            device,
+            host,
+            cast_port,
+            subtitles,
+            bind_address,
+            http_port,
+            scan_seconds,
+            ffprobe,
+            ffmpeg,
+            probe_timeout,
+        } => {
+            let mut request = CastRequest::new(file);
+            request.target = if let Some(host) = host {
+                Target::Host(SocketAddr::new(host.into(), cast_port))
+            } else if let Some(device) = device {
+                Target::Device(device)
+            } else {
+                Target::Auto
+            };
+            request.subtitles = subtitles;
+            request.bind_address = bind_address;
+            request.http_port = http_port;
+            request.scan_duration = Duration::from_secs(scan_seconds);
+            request.probe = ProbeOptions {
+                executable: ffprobe,
+                timeout: Duration::from_secs(probe_timeout),
+            };
+            request.ffmpeg = ffmpeg;
+            let (progress, mut updates) =
+                tokio::sync::watch::channel(session::SessionState::default());
+            let monitor = tokio::spawn(async move {
+                let mut last = None;
+                loop {
+                    let state = updates.borrow_and_update().clone();
+                    let key = (state.phase, state.message.clone());
+                    if last.as_ref() != Some(&key)
+                        && !matches!(
+                            state.phase,
+                            Phase::Completed | Phase::Cancelled | Phase::Failed
+                        )
+                    {
+                        eprintln!(
+                            "{}{}",
+                            phase_label(state.phase),
+                            state
+                                .message
+                                .as_ref()
+                                .map(|m| format!(": {}", m.escape_debug()))
+                                .unwrap_or_default()
+                        );
+                    }
+                    last = Some(key);
+                    if updates.changed().await.is_err() {
+                        break;
+                    }
+                }
+            });
+            let result = session::run(request, progress, cancel).await;
+            monitor.await?;
+            result?;
+            writeln!(io::stdout().lock(), "Playback completed.")?;
+        }
+    }
+    Ok(())
+}
+
+fn phase_label(phase: Phase) -> &'static str {
+    match phase {
+        Phase::Preparing => "Preparing",
+        Phase::Discovering => "Discovering devices",
+        Phase::Connecting => "Connecting",
+        Phase::Loading => "Loading",
+        Phase::Playing => "Playing",
+        Phase::Paused => "Paused",
+        Phase::Buffering => "Buffering",
+        Phase::Stopping => "Stopping",
+        Phase::Completed => "Completed",
+        Phase::Cancelled => "Cancelled",
+        Phase::Failed => "Failed",
+    }
 }
 
 fn write_summary(output: &mut impl Write, info: &MediaInfo) -> io::Result<()> {
@@ -171,4 +327,29 @@ fn write_summary(output: &mut impl Write, info: &MediaInfo) -> io::Result<()> {
         writeln!(output)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cast_target_defaults_and_conflicts() {
+        for args in [
+            vec!["procast", "cast", "movie.mp4"],
+            vec!["procast", "cast", "movie.mp4", "--device", "Living Room"],
+            vec!["procast", "cast", "movie.mp4", "--host", "127.0.0.1"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_ok());
+        }
+        for extra in [
+            vec!["--device", "TV", "--host", "127.0.0.1"],
+            vec!["--cast-port", "8009"],
+            vec!["--scan-seconds", "0"],
+            vec!["--probe-timeout", "0"],
+        ] {
+            let args = ["procast", "cast", "movie.mp4"].into_iter().chain(extra);
+            assert!(Cli::try_parse_from(args).is_err());
+        }
+    }
 }

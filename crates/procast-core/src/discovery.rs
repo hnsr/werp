@@ -18,7 +18,7 @@ pub struct Device {
     pub capabilities: Option<u32>,
 }
 
-/// IPv4 only for the feasibility prototype. Unknown capabilities are reported.
+/// IPv4 discovery. Unknown capabilities are reported without guessing support.
 pub async fn discover(
     duration: Duration,
     cancel: &CancellationToken,

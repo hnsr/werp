@@ -38,7 +38,7 @@ pub(crate) async fn capture(
                 io_error(source)
             }
         })?;
-    tracing::debug!(pid = child.id(), executable = ?program, "started media probe");
+    tracing::debug!(pid = child.id(), executable = ?program, "started media process");
     let stdout = child.stdout.take().expect("stdout was configured as piped");
     let stderr = child.stderr.take().expect("stderr was configured as piped");
     let result = {
@@ -79,7 +79,7 @@ pub(crate) async fn capture(
         }
         return Err(cause);
     }
-    tracing::debug!("media probe finished");
+    tracing::debug!("media process finished");
     result
 }
 

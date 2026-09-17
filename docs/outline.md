@@ -29,6 +29,9 @@ backend should also be reusable by a GNOME/GTK frontend or other platforms.
   reliable session startup and shutdown. Add more media handling incrementally.
 - Preserve the option of platform-specific frontends without designing their
   language bindings, plugin system, or IPC protocol prematurely.
+- Use generic receiver names and sample filenames in documentation, committed
+  files, and commit messages. Keep personal device names and user-provided media
+  filenames out of Git history.
 
 Rust was preferred over Go because the Chromecast ecosystem comparison did not
 establish a decisive advantage for Go for this project's requirements. M1 later
@@ -36,14 +39,14 @@ selected oxicast 0.0.3 after testing on the user's KPN DIW7022 receiver.
 
 ## Initial CLI experience
 
-Illustrative commands, subject to detailed CLI design:
+Implemented M2 commands (real-TV acceptance still pending):
 
 ```sh
 procast devices
 procast cast movie.mp4 --device "Living Room" --subtitles movie.srt
 ```
 
-The first version should:
+The first version implements:
 
 1. Discover Cast devices on the local network and allow explicit selection.
 2. Inspect and serve a compatible local video.
@@ -55,6 +58,12 @@ The first version should:
 
 Unsupported media should produce a clear explanation until conversion support
 is implemented. Do not require users to construct FFmpeg commands.
+
+M2 uses a conservative MP4-family/H.264/AAC direct-play policy and explicit UTF-8
+SRT/WebVTT selection. The backend session owns preparation, HTTP delivery, Cast
+state, and cleanup; frontends observe a latest-state channel and cancel via a
+token. See the [plan](plan.md) and [M2 validation](m2-validation.md) for exact
+scope and remaining hardware checks.
 
 Pause, resume, seek, volume, and richer status reporting are the next control
 capabilities. Whether these use an interactive CLI, separate commands, or another
@@ -188,13 +197,11 @@ Resolve next:
 
 1. Which additional receivers and real-world media files should expand the
    existing KPN DIW7022 / prepared MP4 and WebVTT baseline?
-2. What further state-transition and ownership handling does the proven oxicast
-   adapter need for the user-facing CLI?
-3. What crate structure, runtime, discovery library, and HTTP server fit the
-   reusable backend and CLI?
-4. How should device selection, playback controls, errors, and cancellation behave?
-5. What conversion and caching strategy preserves seeking and subtitle timing?
-6. What Fedora versions, Rust toolchain, FFmpeg capabilities, and packaging should
+2. Does the M2 CLI preserve the M1 hardware results with both SRT and VTT, including
+   natural completion and repeated cancellation?
+3. How should M3 expose playback commands while preserving backend independence?
+4. What conversion and caching strategy preserves seeking and subtitle timing?
+5. What Fedora versions, Rust toolchain, FFmpeg capabilities, and packaging should
    we support, and how should firewall configuration be handled?
 
 ## References

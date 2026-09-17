@@ -6,6 +6,8 @@ mod error;
 pub mod media;
 mod process;
 pub mod serve;
+pub mod session;
+pub mod subtitles;
 
 pub use error::ProcastError;
 pub use tokio_util::sync::CancellationToken;

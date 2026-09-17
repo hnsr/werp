@@ -1,4 +1,4 @@
-//! Experimental Cast adapter for M1. Third-party types stay private.
+//! Cast adapter. Third-party types stay private; Procast owns the media session.
 use std::{future::Future, net::SocketAddr, time::Duration};
 
 use oxicast::CastClient;
@@ -154,33 +154,32 @@ impl CastSession {
     pub async fn load(
         &mut self,
         video: &str,
-        subtitles: &str,
+        subtitles: Option<&str>,
+        title: &str,
         cancel: &CancellationToken,
-    ) -> Result<PlaybackSnapshot, ProcastError> {
+    ) -> Result<Option<PlaybackSnapshot>, ProcastError> {
         let app = self
             .app
             .as_ref()
             .ok_or_else(|| ProcastError::Cast("receiver has not launched".into()))?;
         // Remember content before LOAD: cancellation may race with its reply.
         self.content_id = Some(video.into());
+        self.media_id = None;
         let response = self
             .request(
                 MEDIA,
                 &app.transport_id,
-                load_payload(&app.session_id, video, subtitles),
+                load_payload(&app.session_id, video, subtitles, title),
                 cancel,
             )
             .await?;
-        let status = snapshot(&response)?;
-        self.media_id = Some(status.media_session_id);
-        self.command("EDIT_TRACKS_INFO", json!({"activeTrackIds":[1]}), cancel)
-            .await
+        self.adopt_status(&response)
     }
 
     pub async fn status(
-        &self,
+        &mut self,
         cancel: &CancellationToken,
-    ) -> Result<PlaybackSnapshot, ProcastError> {
+    ) -> Result<Option<PlaybackSnapshot>, ProcastError> {
         let app = self
             .app
             .as_ref()
@@ -193,13 +192,42 @@ impl CastSession {
                 cancel,
             )
             .await?;
-        let status = snapshot(&value)?;
-        if Some(status.media_session_id) != self.media_id {
+        self.adopt_status(&value)
+    }
+
+    fn adopt_status(&mut self, response: &Value) -> Result<Option<PlaybackSnapshot>, ProcastError> {
+        let statuses = response
+            .get("status")
+            .and_then(Value::as_array)
+            .ok_or_else(|| ProcastError::Cast("receiver omitted the media status array".into()))?;
+        for value in statuses {
+            let id = value
+                .get("mediaSessionId")
+                .and_then(Value::as_i64)
+                .filter(|id| *id > 0);
+            if let Some(content) = &self.content_id
+                && id.is_some()
+                && owns_status(value, content, self.media_id)
+            {
+                let status: PlaybackSnapshot = serde_json::from_value(value.clone())
+                    .map_err(|e| ProcastError::Cast(e.to_string()))?;
+                self.media_id = id;
+                return Ok(Some(status));
+            }
+        }
+        if self.media_id.is_some()
+            && statuses.iter().any(|s| {
+                s.get("mediaSessionId")
+                    .and_then(Value::as_i64)
+                    .is_some_and(|id| id > 0)
+            })
+        {
             return Err(ProcastError::Cast(
                 "media session replaced by another sender".into(),
             ));
         }
-        Ok(status)
+        // Empty status and session-zero IDLE are transitional, not completion.
+        Ok(None)
     }
 
     pub async fn command(
@@ -227,7 +255,13 @@ impl CastSession {
             .request(MEDIA, &app.transport_id, payload, cancel)
             .await?;
         let status = snapshot(&response)?;
-        if status.media_session_id != id {
+        let value = &response["status"][0];
+        if status.media_session_id != id
+            || !self
+                .content_id
+                .as_ref()
+                .is_some_and(|content| owns_status(value, content, Some(id)))
+        {
             return Err(ProcastError::Cast("media session changed".into()));
         }
         Ok(status)
@@ -240,8 +274,13 @@ impl CastSession {
     /// Bounded best-effort remote STOP, followed by deterministic local shutdown.
     /// Uses our URL and session ID, never oxicast's mutable current-session ID.
     pub async fn close(self) -> Result<(), ProcastError> {
+        self.finish(true).await
+    }
+
+    /// Skip remote STOP after confirmed natural completion; still join transport.
+    pub async fn finish(self, stop_owned: bool) -> Result<(), ProcastError> {
         let stop = async {
-            if let (Some(app), Some(content)) = (&self.app, &self.content_id) {
+            if stop_owned && let (Some(app), Some(content)) = (&self.app, &self.content_id) {
                 let token = CancellationToken::new();
                 let response = self
                     .request(
@@ -256,7 +295,11 @@ impl CastSession {
                     .and_then(Value::as_array)
                     .and_then(|a| a.first())
                     && owns_status(status, content, self.media_id)
-                    && let Some(id) = status.get("mediaSessionId").and_then(Value::as_i64)
+                    && status.get("playerState").and_then(Value::as_str) != Some("IDLE")
+                    && let Some(id) = status
+                        .get("mediaSessionId")
+                        .and_then(Value::as_i64)
+                        .filter(|id| *id > 0)
                 {
                     self.request(
                         MEDIA,
@@ -302,23 +345,28 @@ fn snapshot(response: &Value) -> Result<PlaybackSnapshot, ProcastError> {
 }
 
 fn owns_status(status: &Value, content: &str, id: Option<i64>) -> bool {
-    status.pointer("/media/contentId").and_then(Value::as_str) == Some(content)
-        && id.is_none_or(|id| status.get("mediaSessionId").and_then(Value::as_i64) == Some(id))
+    let reported_content = status.pointer("/media/contentId").and_then(Value::as_str);
+    let same_id =
+        id.is_some_and(|id| status.get("mediaSessionId").and_then(Value::as_i64) == Some(id));
+    (reported_content == Some(content) && id.is_none_or(|_| same_id))
+        || (reported_content.is_none() && same_id)
 }
 
-fn load_payload(session: &str, video: &str, subtitles: &str) -> Value {
-    json!({
+fn load_payload(session: &str, video: &str, subtitles: Option<&str>, title: &str) -> Value {
+    let mut payload = json!({
         "type":"LOAD", "sessionId":session, "autoplay":true, "currentTime":0,
-        "activeTrackIds":[1],
         "media":{
             "contentId":video, "contentType":"video/mp4", "streamType":"BUFFERED",
-            "metadata":{"metadataType":0,"title":"Procast M1 test"},
-            "tracks":[{"trackId":1,"type":"TEXT","subtype":"SUBTITLES",
-                "trackContentId":subtitles,"trackContentType":"text/vtt",
-                "name":"Procast test subtitles","language":"en"}],
-            "textTrackStyle":{"fontScale":1.5,"foregroundColor":"#FFFFFFFF","backgroundColor":"#000000CC"}
+            "metadata":{"metadataType":0,"title":title}
         }
-    })
+    });
+    if let Some(subtitles) = subtitles {
+        payload["activeTrackIds"] = json!([1]);
+        payload["media"]["tracks"] = json!([{"trackId":1,"type":"TEXT","subtype":"SUBTITLES",
+                "trackContentId":subtitles,"trackContentType":"text/vtt",
+                "name":"External subtitles"}]);
+    }
+    payload
 }
 
 #[cfg(test)]
