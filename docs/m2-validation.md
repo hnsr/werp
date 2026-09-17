@@ -1,12 +1,12 @@
 # M2 validation
 
 Date: 2026-09-17. Development baseline: Fedora 44, Rust 1.96.0,
-FFmpeg/ffprobe 8.1.2. **Implementation and automated verification are complete;
-the M2 CLI's real-TV acceptance is pending.**
+FFmpeg/ffprobe 8.1.2. **Implementation and automated verification are complete.
+The user verified visible video/subtitles and Ctrl+C shutdown with both external
+WebVTT and SRT on the test receiver. Remaining hardware checks are listed below.**
 
-No real receiver was discovered, launched, or stopped during this work. The user
-was asleep. M1 already established visible MP4/WebVTT playback on the test receiver,
-but that is evidence for the prototype, not full acceptance of the new CLI.
+Initial M2 development used simulated receivers only. The user subsequently
+tested the production CLI on the KPN DIW7022 and reported the results below.
 
 ## Implemented boundary
 
@@ -83,11 +83,30 @@ abort/join. Normal responsive cancellation is expected within three seconds;
 unresponsive transport cleanup can consume both remote budgets. OS-level stalled
 filesystem operations are not covered by a strict wall-clock guarantee.
 
-## Remaining hardware acceptance
+## User-confirmed hardware checks
 
-When the user is available, use the existing ignored `samples/m1/test.mp4` with
-its matching VTT and the SRT sidecar prepared during M2. The silent 12-minute
-test pattern avoids changing volume and shows changing subtitle cues.
+Using the generated MP4 fixture in separate CLI runs, the user confirmed:
+
+- External WebVTT: video played with visible subtitles; Ctrl+C shut down correctly.
+- External SRT: video played with visible subtitles; Ctrl+C shut down correctly.
+- The WebVTT run reported loading, playing, buffering, and a return to playing.
+- Both casting runs resolved an IPv4 endpoint and reached playback.
+
+The preceding `devices` command listed the video receiver and an audio-only
+receiver, but both had empty IPv4 address lists. Each command performs a separate
+scan. The listing filters resolved addresses to IPv4, so an IPv6-only result can
+appear as `[]`; the supplied output does not establish why IPv4 resolution varied
+between scans. Track this as a discovery follow-up rather than claiming discovery
+is consistently reliable. A longer `--scan-seconds` or explicit `cast --host IP`
+is available for diagnosis; neither workaround was tested in this report.
+
+Device names, IDs, local addresses, and personal media filenames are omitted.
+
+## Reproduction and remaining hardware acceptance
+
+Use the existing ignored `samples/m1/test.mp4` with its matching VTT and SRT
+sidecars. The silent 12-minute test pattern avoids changing volume and shows
+changing subtitle cues.
 
 ```sh
 cargo run --locked -- devices
@@ -105,9 +124,11 @@ On a fresh checkout, generate the MP4/VTT with
 ffmpeg -nostdin -v error -n -i samples/m1/subtitles.vtt samples/m1/subtitles.srt
 ```
 
-For each format, confirm visible changing subtitles and playback through natural
-completion. Repeat with Ctrl+C during playback and SIGTERM in another run;
-confirm the TV stops and the serving port closes. Check interrupted loading when
-practical. Add a full real-world compatible MP4 if available; the generated clip
-does not establish broad format compatibility. Then mark M2 verified and proceed
-to M3 controls. Do not interpret the commands above as a scheduled hardware test.
+Still unverified on the M2 hardware path: playback through natural completion,
+SIGTERM shutdown, interrupted loading, and explicit checks that the serving port
+closes. These paths have automated coverage, but the user's report confirms
+Ctrl+C and visible playback only. Add a full real-world compatible MP4 if
+available; the generated clip does not establish broad format compatibility.
+Complete those checks and investigate intermittent IPv4 discovery before marking
+all M2 acceptance complete. M3 remains playback controls. The commands above are
+manual reproduction instructions, not a scheduled hardware test.

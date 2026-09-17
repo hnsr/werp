@@ -1,7 +1,8 @@
 # Procast implementation plan
 
-Status: M0 and M1 verified; M2 implemented and automated checks passed, with
-real-TV acceptance pending. M3–M6 remain planned.
+Status: M0 and M1 verified; M2 implemented with automated checks passed and
+user-confirmed SRT/WebVTT playback and Ctrl+C shutdown. Remaining hardware and
+discovery checks are recorded below. M3–M6 remain planned.
 Updated: 2026-09-17.
 Requirements: [outline.md](outline.md).
 
@@ -214,7 +215,8 @@ stack. Do not proceed on the assumption that either candidate already passes.
 
 ### M2 — First usable CLI: local video and external subtitles
 
-**Implemented; hardware acceptance pending.** The `devices` and `cast` commands,
+**Implemented; core hardware playback confirmed, remaining checks pending.**
+The `devices` and `cast` commands,
 reusable session coordinator, direct-play validation, external subtitle
 preparation, and cleanup are in place. The current direct-play policy accepts
 MP4-family H.264 up to 1080p30, level 4.1, 8-bit 4:2:0 with zero or one mono/stereo
@@ -225,9 +227,11 @@ Verification: 27 ordinary tests and both opt-in FFmpeg tests passed, together
 with formatting and Clippy. Tests cover actual HTTP delivery to simulated TLS
 receivers, SRT conversion, WebVTT without FFmpeg, transient status, natural
 completion, failure, takeover, and cancellation. The supplied MKV is rejected
-before discovery. No real receiver was contacted during M2 development while
-the user slept; M1 evidence does not replace M2 hardware acceptance. See
-[validation details and the remaining check](m2-validation.md).
+before discovery. The user subsequently confirmed visible video/subtitles and
+correct Ctrl+C shutdown in separate WebVTT and SRT CLI runs. Natural completion,
+SIGTERM, and explicit port-closure checks remain unverified on this hardware path.
+The device listing also showed empty IPv4 lists before successful casting scans;
+investigate this intermittent discovery result. See [validation details](m2-validation.md).
 
 Implemented scope:
 
@@ -369,10 +373,10 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Run the M2 CLI hardware acceptance on the test receiver with the user present: full
-playback with SRT and VTT in separate runs, visible subtitles, and interrupted
-playback cleanup. Then proceed to M3's controls. Transcoding and frontend design
-remain deferred.
+Finish M2's remaining hardware checks: natural playback completion, SIGTERM,
+interrupted loading, and explicit port closure. Investigate the empty IPv4 lists
+seen in discovery. Visible subtitles and Ctrl+C already passed with both SRT and
+WebVTT. M3 adds playback controls; transcoding and frontend design remain deferred.
 
 ## Technical references
 

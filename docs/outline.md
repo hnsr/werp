@@ -39,7 +39,7 @@ selected oxicast 0.0.3 after testing on the user's KPN DIW7022 receiver.
 
 ## Initial CLI experience
 
-Implemented M2 commands (real-TV acceptance still pending):
+Implemented M2 commands (visible SRT/WebVTT playback and Ctrl+C verified on hardware):
 
 ```sh
 procast devices
@@ -197,8 +197,9 @@ Resolve next:
 
 1. Which additional receivers and real-world media files should expand the
    existing KPN DIW7022 / prepared MP4 and WebVTT baseline?
-2. Does the M2 CLI preserve the M1 hardware results with both SRT and VTT, including
-   natural completion and repeated cancellation?
+2. Do M2 natural completion and SIGTERM pass on hardware, and why did one discovery
+   scan show empty IPv4 lists before successful casting scans? Visible subtitles
+   and Ctrl+C have passed with both SRT and VTT.
 3. How should M3 expose playback commands while preserving backend independence?
 4. What conversion and caching strategy preserves seeking and subtitle timing?
 5. What Fedora versions, Rust toolchain, FFmpeg capabilities, and packaging should
