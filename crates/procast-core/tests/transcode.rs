@@ -2,7 +2,7 @@
 use procast_core::{
     CancellationToken, ProcastError,
     media::{self, MediaInfo, ProbeOptions},
-    transcode::{self, TranscodeOptions},
+    transcode::{self, TranscodeMode, TranscodeOptions},
 };
 use std::{fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
@@ -37,12 +37,248 @@ fn options(directory: &Path) -> TranscodeOptions {
     TranscodeOptions {
         directory: Some(directory.join("cache")),
         timeout: Duration::from_secs(5),
+        ..Default::default()
     }
 }
 
 fn cache_empty(options: &TranscodeOptions) {
     let path = options.directory.as_ref().unwrap();
     assert!(!path.exists() || fs::read_dir(path).unwrap().next().is_none());
+}
+
+#[tokio::test]
+async fn audio_only_requires_compatible_video_and_audio_but_no_video_encoder() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut info, probe) = input(dir.path()).await;
+    let mut options = options(dir.path());
+    options.mode = TranscodeMode::AudioOnly;
+    let ffmpeg = dir.path().join("ffmpeg");
+    script(
+        &ffmpeg,
+        r#"
+case "$*" in *-encoders*) printf ' A..... aac encoder\n'; exit 0;; esac
+for last do :; done
+printf 'prepared media' > "$last"
+"#,
+    );
+    // The output probe reports stereo AAC, while the input is AC-3.
+    info.streams[1].codec = Some("ac3".into());
+    info.streams[1].channels = Some(6);
+    let prepared = transcode::prepare(
+        &info,
+        &ffmpeg,
+        &probe,
+        &options,
+        &CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    prepared.close().unwrap();
+    cache_empty(&options);
+
+    // Reject inputs that would need video encoding or broader container support,
+    // before starting FFmpeg (which is now deliberately missing).
+    fs::remove_file(&ffmpeg).unwrap();
+    for case in ["mkv", "hevc", "4k", "no-audio", "multiple-audio"] {
+        let (mut invalid, _) = input(dir.path()).await;
+        match case {
+            "mkv" => invalid.container = "matroska,webm".into(),
+            "hevc" => invalid.streams[0].codec = Some("hevc".into()),
+            "4k" => invalid.streams[0].width = Some(3840),
+            "no-audio" => invalid.streams.truncate(1),
+            "multiple-audio" => {
+                let (mut other, _) = input(dir.path()).await;
+                invalid.streams.push(other.streams.remove(1));
+            }
+            _ => unreachable!(),
+        }
+        let error = transcode::prepare(
+            &invalid,
+            &ffmpeg,
+            &probe,
+            &options,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(
+            !matches!(error, ProcastError::MissingExecutable(_)),
+            "{case}"
+        );
+        cache_empty(&options);
+    }
+    script(&ffmpeg, "printf ' V..... libx264 encoder\n'");
+    let error = transcode::prepare(
+        &info,
+        &ffmpeg,
+        &probe,
+        &options,
+        &CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(error.to_string().contains("lacks the aac encoder"));
+}
+
+async fn ffmpeg_output(path: &Path, args: &[&str]) -> Vec<u8> {
+    let output = tokio::process::Command::new("ffmpeg")
+        .args(["-nostdin", "-v", "error", "-i"])
+        .arg(path)
+        .args(args)
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output.stdout
+}
+
+async fn first_pts(path: &Path, stream: &str) -> f64 {
+    let output = tokio::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            stream,
+            "-show_packets",
+            "-show_entries",
+            "packet=pts_time",
+            "-of",
+            "json",
+        ])
+        .arg(path)
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    json["packets"][0]["pts_time"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires real FFmpeg with libx264, AC-3, AAC and ffprobe"]
+async fn real_audio_only_preserves_video_packets_and_audio_offset() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("surround [test].mp4");
+    // Offset audible AC-3 from video, so resetting stream timelines independently
+    // would be caught. B-frames exercise copied video with negative DTS as well.
+    let output = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=24:duration=3",
+            "-itsoffset",
+            "0.25",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=2.5",
+            "-c:v",
+            "libx264",
+            "-profile:v",
+            "high",
+            "-level:v",
+            "4.1",
+            "-threads",
+            "2",
+            "-c:a",
+            "ac3",
+            "-ac",
+            "6",
+            "-b:a",
+            "384k",
+            "-movflags",
+            "+faststart",
+        ])
+        .arg(&path)
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let original = fs::read(&path).unwrap();
+    let cancel = CancellationToken::new();
+    let probe = ProbeOptions::default();
+    let info = media::inspect(&path, &probe, &cancel).await.unwrap();
+    assert_eq!(info.streams[1].codec.as_deref(), Some("ac3"));
+    let mut options = options(dir.path());
+    options.mode = TranscodeMode::AudioOnly;
+    options.timeout = Duration::from_secs(30);
+    let prepared = transcode::prepare(
+        &info,
+        Path::new("ffmpeg"),
+        &probe,
+        &options,
+        &cancel,
+        |_| {},
+    )
+    .await
+    .unwrap();
+    media::validate_direct_play(&prepared.info).unwrap();
+    let audio = &prepared.info.streams[1];
+    assert_eq!(audio.codec.as_deref(), Some("aac"));
+    assert_eq!(audio.channels, Some(2));
+    let hash_args = [
+        "-map",
+        "0:v:0",
+        "-c:v",
+        "copy",
+        "-f",
+        "streamhash",
+        "-hash",
+        "sha256",
+        "-",
+    ];
+    assert_eq!(
+        ffmpeg_output(&path, &hash_args).await,
+        ffmpeg_output(&prepared.info.path, &hash_args).await,
+        "encoded video payload changed"
+    );
+    let input_offset = first_pts(&path, "a:0").await - first_pts(&path, "v:0").await;
+    let output_offset =
+        first_pts(&prepared.info.path, "a:0").await - first_pts(&prepared.info.path, "v:0").await;
+    assert!(
+        (input_offset - output_offset).abs() < 0.05,
+        "audio offset changed from {input_offset} to {output_offset}"
+    );
+    let pcm = ffmpeg_output(
+        &prepared.info.path,
+        &["-map", "0:a:0", "-f", "s16le", "-c:a", "pcm_s16le", "-"],
+    )
+    .await;
+    assert!(
+        pcm.chunks_exact(2)
+            .any(|s| i16::from_le_bytes([s[0], s[1]]).unsigned_abs() > 100),
+        "converted audio is silent"
+    );
+    assert_eq!(fs::read(&path).unwrap(), original);
+    let encoded = fs::read(&prepared.info.path).unwrap();
+    let atom = |name: &[u8]| encoded.windows(4).position(|w| w == name).unwrap();
+    assert!(atom(b"moov") < atom(b"mdat"));
+    prepared.close().unwrap();
+    cache_empty(&options);
 }
 
 #[tokio::test]
@@ -157,49 +393,52 @@ async fn preparation_rejects_hdr_ambiguity_missing_encoders_and_insufficient_spa
 #[tokio::test]
 async fn failed_encoding_and_output_validation_remove_partial_media() {
     for fail_encoding in [true, false] {
-        let dir = tempfile::tempdir().unwrap();
-        let (info, probe) = input(dir.path()).await;
-        let options = options(dir.path());
-        let ffmpeg = dir.path().join("ffmpeg");
-        script(
-            &ffmpeg,
-            &format!(
-                r#"
+        for mode in [TranscodeMode::AudioVideo, TranscodeMode::AudioOnly] {
+            let dir = tempfile::tempdir().unwrap();
+            let (info, probe) = input(dir.path()).await;
+            let mut options = options(dir.path());
+            options.mode = mode;
+            let ffmpeg = dir.path().join("ffmpeg");
+            script(
+                &ffmpeg,
+                &format!(
+                    r#"
 case "$*" in *-encoders*) printf ' V..... libx264 encoder\n A..... aac encoder\n'; exit 0;; esac
 for last do :; done
 printf 'partial media' > "$last"
 printf 'encoding diagnostic' >&2
 exit {}
 "#,
-                if fail_encoding { 7 } else { 0 }
-            ),
-        );
-        if !fail_encoding {
-            // Source metadata was already read; make output probing reject the output.
-            fs::write(
-                dir.path().join("probe.json"),
-                include_str!("fixtures/h264.json").replace("h264", "hevc"),
+                    if fail_encoding { 7 } else { 0 }
+                ),
+            );
+            if !fail_encoding {
+                // Source metadata was already read; make output probing reject the output.
+                fs::write(
+                    dir.path().join("probe.json"),
+                    include_str!("fixtures/h264.json").replace("h264", "hevc"),
+                )
+                .unwrap();
+            }
+            let error = transcode::prepare(
+                &info,
+                &ffmpeg,
+                &probe,
+                &options,
+                &CancellationToken::new(),
+                |_| {},
             )
+            .await
+            .err()
             .unwrap();
+            if fail_encoding {
+                assert!(error.to_string().contains("encoding diagnostic"));
+            } else {
+                assert!(matches!(error, ProcastError::UnsupportedMedia(_)));
+            }
+            cache_empty(&options);
+            assert_eq!(fs::read(&info.path).unwrap(), b"original input");
         }
-        let error = transcode::prepare(
-            &info,
-            &ffmpeg,
-            &probe,
-            &options,
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .await
-        .err()
-        .unwrap();
-        if fail_encoding {
-            assert!(error.to_string().contains("encoding diagnostic"));
-        } else {
-            assert!(matches!(error, ProcastError::UnsupportedMedia(_)));
-        }
-        cache_empty(&options);
-        assert_eq!(fs::read(&info.path).unwrap(), b"original input");
     }
 }
 
@@ -207,14 +446,16 @@ exit {}
 #[tokio::test]
 async fn cancellation_and_timeout_reap_encoder_and_remove_output() {
     for interrupt in [true, false] {
-        let dir = tempfile::tempdir().unwrap();
-        let (info, probe) = input(dir.path()).await;
-        let mut options = options(dir.path());
-        options.timeout = Duration::from_millis(500);
-        let ffmpeg = dir.path().join("ffmpeg");
-        script(
-            &ffmpeg,
-            r#"
+        for mode in [TranscodeMode::AudioVideo, TranscodeMode::AudioOnly] {
+            let dir = tempfile::tempdir().unwrap();
+            let (info, probe) = input(dir.path()).await;
+            let mut options = options(dir.path());
+            options.timeout = Duration::from_millis(500);
+            options.mode = mode;
+            let ffmpeg = dir.path().join("ffmpeg");
+            script(
+                &ffmpeg,
+                r#"
 case "$*" in *-encoders*) printf ' V..... libx264 encoder\n A..... aac encoder\n'; exit 0;; esac
 for last do :; done
 printf 'partial media' > "$last"
@@ -222,42 +463,43 @@ echo $$ > "$0.pid"
 printf 'out_time_us=1000000\nprogress=continue\n'
 exec sleep 60
 "#,
-        );
-        let token = CancellationToken::new();
-        let pid_path = dir.path().join("ffmpeg.pid");
-        let control = async {
-            let pid = tokio::time::timeout(Duration::from_secs(3), async {
-                loop {
-                    if let Ok(s) = tokio::fs::read_to_string(&pid_path).await
-                        && let Ok(pid) = s.trim().parse::<u32>()
-                    {
-                        break pid;
+            );
+            let token = CancellationToken::new();
+            let pid_path = dir.path().join("ffmpeg.pid");
+            let control = async {
+                let pid = tokio::time::timeout(Duration::from_secs(3), async {
+                    loop {
+                        if let Ok(s) = tokio::fs::read_to_string(&pid_path).await
+                            && let Ok(pid) = s.trim().parse::<u32>()
+                        {
+                            break pid;
+                        }
+                        tokio::time::sleep(Duration::from_millis(5)).await;
                     }
-                    tokio::time::sleep(Duration::from_millis(5)).await;
+                })
+                .await
+                .unwrap();
+                if interrupt {
+                    token.cancel();
                 }
-            })
-            .await
-            .unwrap();
+                pid
+            };
+            let mut progress = Vec::new();
+            let (result, pid) = tokio::join!(
+                transcode::prepare(&info, &ffmpeg, &probe, &options, &token, |p| progress
+                    .push(p.fraction)),
+                control
+            );
+            let error = result.err().unwrap();
             if interrupt {
-                token.cancel();
+                assert!(matches!(error, ProcastError::Cancelled), "{error}");
+            } else {
+                assert!(matches!(error, ProcastError::TimedOut(_)), "{error}");
             }
-            pid
-        };
-        let mut progress = Vec::new();
-        let (result, pid) = tokio::join!(
-            transcode::prepare(&info, &ffmpeg, &probe, &options, &token, |p| progress
-                .push(p.fraction)),
-            control
-        );
-        let error = result.err().unwrap();
-        if interrupt {
-            assert!(matches!(error, ProcastError::Cancelled), "{error}");
-        } else {
-            assert!(matches!(error, ProcastError::TimedOut(_)), "{error}");
+            assert!(!Path::new(&format!("/proc/{pid}")).exists());
+            assert!(progress.contains(&0.0));
+            cache_empty(&options);
         }
-        assert!(!Path::new(&format!("/proc/{pid}")).exists());
-        assert!(progress.contains(&0.0));
-        cache_empty(&options);
     }
 }
 

@@ -50,14 +50,25 @@ enum Commands {
         cast_port: u16,
         #[arg(long)]
         subtitles: Option<PathBuf>,
-        /// Try MP4 H.264 with 3–6 channel AAC-LC; receiver audio support is unverified
+        /// Try MP4 HEVC, multichannel AAC-LC, or H.264/AC-3; receiver support varies
         #[arg(long)]
         experimental_direct_play: bool,
         /// Re-encode SDR video/audio to H.264/stereo AAC MP4 before playback
-        #[arg(long, conflicts_with = "experimental_direct_play")]
+        #[arg(
+            long,
+            group = "conversion",
+            conflicts_with = "experimental_direct_play"
+        )]
         force_transcode: bool,
+        /// Copy compatible H.264 MP4 video and convert only audio to stereo AAC
+        #[arg(
+            long,
+            group = "conversion",
+            conflicts_with = "experimental_direct_play"
+        )]
+        transcode_audio: bool,
         /// Temporary media parent directory (default: user cache/procast)
-        #[arg(long, requires = "force_transcode")]
+        #[arg(long, requires = "conversion")]
         transcode_dir: Option<PathBuf>,
         /// Reachable local IP to advertise to the receiver
         #[arg(long)]
@@ -211,6 +222,7 @@ async fn execute(
             subtitles,
             experimental_direct_play,
             force_transcode,
+            transcode_audio,
             transcode_dir,
             bind_address,
             http_port,
@@ -228,7 +240,12 @@ async fn execute(
                 Target::Auto
             };
             request.subtitles = subtitles;
-            request.force_transcode = force_transcode;
+            request.force_transcode = force_transcode || transcode_audio;
+            request.transcode.mode = if transcode_audio {
+                procast_core::transcode::TranscodeMode::AudioOnly
+            } else {
+                procast_core::transcode::TranscodeMode::AudioVideo
+            };
             request.transcode.directory = transcode_dir;
             request.direct_play_policy = if experimental_direct_play {
                 DirectPlayPolicy::Experimental
@@ -369,6 +386,22 @@ mod tests {
             vec!["procast", "cast", "movie.mp4", "--device", "Living Room"],
             vec!["procast", "cast", "movie.mp4", "--host", "127.0.0.1"],
             vec!["procast", "cast", "movie.mp4", "--experimental-direct-play"],
+            vec![
+                "procast",
+                "cast",
+                "movie.mp4",
+                "--transcode-audio",
+                "--transcode-dir",
+                "/tmp",
+            ],
+            vec![
+                "procast",
+                "cast",
+                "movie.mp4",
+                "--force-transcode",
+                "--transcode-dir",
+                "/tmp",
+            ],
         ] {
             assert!(Cli::try_parse_from(args).is_ok());
         }
@@ -378,6 +411,8 @@ mod tests {
             vec!["--scan-seconds", "0"],
             vec!["--probe-timeout", "0"],
             vec!["--force-transcode", "--experimental-direct-play"],
+            vec!["--transcode-audio", "--experimental-direct-play"],
+            vec!["--force-transcode", "--transcode-audio"],
             vec!["--transcode-dir", "/tmp"],
         ] {
             let args = ["procast", "cast", "movie.mp4"].into_iter().chain(extra);

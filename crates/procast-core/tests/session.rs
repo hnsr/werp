@@ -67,6 +67,9 @@ enum Mode {
     BroadcastCancelled,
     MediaErrorAppGone,
     MediaErrorAppRunning,
+    BufferingAppGone,
+    EmptyAppGone,
+    BufferingAppRunning,
 }
 
 #[derive(Default, Debug)]
@@ -185,9 +188,12 @@ async fn receiver(
                 "GET_STATUS" => {
                     if message.namespace == "urn:x-cast:com.google.cast.receiver" {
                         log.receiver_polls += 1;
-                        let applications = if matches!(
+                        let applications = if !matches!(
                             mode,
-                            Mode::CloseAppStillRunning | Mode::MediaErrorAppRunning
+                            Mode::CloseAppDuringPoll
+                                | Mode::MediaErrorAppGone
+                                | Mode::BufferingAppGone
+                                | Mode::EmptyAppGone
                         ) {
                             json!([{"appId":"CC1AD845","sessionId":"app-session","transportId":"app-transport"}])
                         } else {
@@ -200,6 +206,12 @@ async fn receiver(
                             && log.polls == 1
                         {
                             json!({"type":"INVALID_REQUEST","reason":"media channel unavailable"})
+                        } else if mode == Mode::BufferingAppGone
+                            || (mode == Mode::BufferingAppRunning && log.polls == 1)
+                        {
+                            json!({"type":"MEDIA_STATUS","status":[status(&log.url,"BUFFERING",tracks)]})
+                        } else if mode == Mode::EmptyAppGone {
+                            json!({"type":"MEDIA_STATUS","status":[]})
                         } else if mode == Mode::Takeover {
                             let mut foreign = status("another-sender", "PLAYING", false);
                             foreign["mediaSessionId"] = json!(99);
@@ -221,6 +233,7 @@ async fn receiver(
                                     | Mode::ForeignFinished
                                     | Mode::ZeroFinished
                                     | Mode::ForeignClose
+                                    | Mode::BufferingAppRunning
                             ) || (mode == Mode::Transient && log.polls >= 4)
                             {
                                 "IDLE"
@@ -340,6 +353,9 @@ async fn receiver_stop_finishes_without_stopping_other_apps_or_hiding_errors() {
         Mode::BroadcastCancelled,
         Mode::MediaErrorAppGone,
         Mode::MediaErrorAppRunning,
+        Mode::BufferingAppGone,
+        Mode::EmptyAppGone,
+        Mode::BufferingAppRunning,
     ] {
         let directory = tempfile::tempdir().unwrap();
         let video = directory.path().join("movie.mp4");
@@ -376,7 +392,7 @@ async fn receiver_stop_finishes_without_stopping_other_apps_or_hiding_errors() {
             assert!(result.is_ok(), "{mode:?}: {result:?}");
             assert_eq!(
                 updates.borrow().phase,
-                if mode == Mode::ForeignClose {
+                if matches!(mode, Mode::ForeignClose | Mode::BufferingAppRunning) {
                     Phase::Completed
                 } else {
                     Phase::Stopped
@@ -485,54 +501,60 @@ fn fake_probe(directory: &Path, metadata: &str) -> PathBuf {
 }
 
 #[tokio::test]
-async fn experimental_surround_requires_opt_in_and_serves_original_bytes() {
-    let directory = tempfile::tempdir().unwrap();
-    let video = directory.path().join("surround.mp4");
-    let bytes = b"original surround video bytes";
-    fs::write(&video, bytes).unwrap();
-    let mut metadata: Value = serde_json::from_str(include_str!("fixtures/h264.json")).unwrap();
-    metadata["streams"][1]["channels"] = json!(6);
-    let probe = fake_probe(directory.path(), &metadata.to_string());
-    let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
-    let mut request = CastRequest::new(video.clone());
-    request.target = Target::Host(address);
-    request.probe.executable = probe;
-    request.ffmpeg = directory.path().join("missing-ffmpeg");
-    let (progress, updates) = watch::channel(SessionState::default());
-    let error = session::run(request.clone(), progress, &CancellationToken::new())
-        .await
-        .unwrap_err();
-    assert!(matches!(error, ProcastError::UnsupportedMedia(_)));
-    assert_eq!(updates.borrow().phase, Phase::Failed);
-    // The receiver is still waiting for its first connection after preflight rejection.
-    request.direct_play_policy = DirectPlayPolicy::Experimental;
-    let (progress, updates) = watch::channel(SessionState::default());
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        session::run(request, progress, &CancellationToken::new()),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    assert_eq!(updates.borrow().phase, Phase::Completed);
-    let log = tokio::time::timeout(Duration::from_secs(1), receiver)
+async fn experimental_formats_require_opt_in_and_serve_original_bytes() {
+    for fixture in [
+        include_str!("fixtures/h264.json"),
+        include_str!("fixtures/hevc.json"),
+        include_str!("fixtures/h264-ac3.json"),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let video = directory.path().join("surround.mp4");
+        let bytes = b"original surround video bytes";
+        fs::write(&video, bytes).unwrap();
+        let mut metadata: Value = serde_json::from_str(fixture).unwrap();
+        metadata["streams"][1]["channels"] = json!(6);
+        let probe = fake_probe(directory.path(), &metadata.to_string());
+        let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
+        let mut request = CastRequest::new(video.clone());
+        request.target = Target::Host(address);
+        request.probe.executable = probe;
+        request.ffmpeg = directory.path().join("missing-ffmpeg");
+        let (progress, updates) = watch::channel(SessionState::default());
+        let error = session::run(request.clone(), progress, &CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ProcastError::UnsupportedMedia(_)));
+        assert_eq!(updates.borrow().phase, Phase::Failed);
+        // The receiver is still waiting for its first connection after preflight rejection.
+        request.direct_play_policy = DirectPlayPolicy::Experimental;
+        let (progress, updates) = watch::channel(SessionState::default());
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            session::run(request, progress, &CancellationToken::new()),
+        )
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(log.loads, 1);
-    assert_eq!(log.video, bytes);
-    assert_eq!(fs::read(&video).unwrap(), bytes);
-    let host = log
-        .url
-        .strip_prefix("http://")
-        .unwrap()
-        .split('/')
-        .next()
-        .unwrap();
-    assert!(
-        TcpStream::connect(host).await.is_err(),
-        "server survived completion"
-    );
+        assert_eq!(updates.borrow().phase, Phase::Completed);
+        let log = tokio::time::timeout(Duration::from_secs(1), receiver)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(log.loads, 1);
+        assert_eq!(log.video, bytes);
+        assert_eq!(fs::read(&video).unwrap(), bytes);
+        let host = log
+            .url
+            .strip_prefix("http://")
+            .unwrap()
+            .split('/')
+            .next()
+            .unwrap();
+        assert!(
+            TcpStream::connect(host).await.is_err(),
+            "server survived completion"
+        );
+    }
 }
 
 #[tokio::test]
@@ -725,24 +747,34 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    for (force_transcode, extension, content) in [
+    for (mode, extension, content) in [
         (
-            false,
+            None,
             "srt",
             "1\n00:00:00,000 --> 00:00:01,500\nHello Procast!\n",
         ),
         (
-            false,
+            None,
             "vtt",
             "WEBVTT\n\n00:00.000 --> 00:01.500\nHello Procast!\n",
         ),
         (
-            true,
+            Some(procast_core::transcode::TranscodeMode::AudioVideo),
             "srt",
             "1\n00:00:00,000 --> 00:00:01,500\nHello Procast!\n",
         ),
         (
-            true,
+            Some(procast_core::transcode::TranscodeMode::AudioVideo),
+            "vtt",
+            "WEBVTT\n\n00:00.000 --> 00:01.500\nHello Procast!\n",
+        ),
+        (
+            Some(procast_core::transcode::TranscodeMode::AudioOnly),
+            "srt",
+            "1\n00:00:00,000 --> 00:00:01,500\nHello Procast!\n",
+        ),
+        (
+            Some(procast_core::transcode::TranscodeMode::AudioOnly),
             "vtt",
             "WEBVTT\n\n00:00.000 --> 00:01.500\nHello Procast!\n",
         ),
@@ -753,7 +785,9 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         let mut request = CastRequest::new(video.clone());
         request.target = Target::Host(address);
         request.subtitles = Some(subs);
+        let force_transcode = mode.is_some();
         request.force_transcode = force_transcode;
+        request.transcode.mode = mode.unwrap_or_default();
         request.transcode.directory = Some(dir.path().join("cache"));
         let (progress, _) = watch::channel(SessionState::default());
         tokio::time::timeout(

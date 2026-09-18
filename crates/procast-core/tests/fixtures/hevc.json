@@ -1,0 +1,7 @@
+{
+  "format": {"format_name":"mov,mp4,m4a,3gp,3g2,mj2", "duration":"2.000000"},
+  "streams":[
+    {"index":0,"codec_type":"video","codec_name":"hevc","profile":"Main 10","level":120,"pix_fmt":"yuv420p10le","width":1920,"height":1080,"r_frame_rate":"24000/1001","avg_frame_rate":"24000/1001"},
+    {"index":1,"codec_type":"audio","codec_name":"aac","profile":"LC","sample_rate":"48000","channels":6}
+  ]
+}

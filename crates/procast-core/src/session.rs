@@ -17,7 +17,7 @@ use crate::{
     media::{self, DirectPlayAssessment, DirectPlayPolicy, ProbeOptions},
     serve::{MediaServer, address_toward},
     subtitles,
-    transcode::{self, TranscodeOptions},
+    transcode::{self, TranscodeMode, TranscodeOptions},
 };
 
 #[derive(Debug, Clone)]
@@ -38,7 +38,7 @@ pub struct CastRequest {
     pub probe: ProbeOptions,
     pub ffmpeg: PathBuf,
     pub direct_play_policy: DirectPlayPolicy,
-    /// Prepare H.264/AAC MP4 even when the source is directly playable.
+    /// Prepare MP4 using `transcode.mode` even when the source is directly playable.
     pub force_transcode: bool,
     pub transcode: TranscodeOptions,
 }
@@ -140,6 +140,18 @@ pub async fn run(
                 "Experimental direct play: AAC-LC surround support is unverified on this receiver. Serving the original file without conversion; check audible audio and correct downmix or surround output."
             );
         }
+        if let Some(DirectPlayAssessment::ExperimentalHevc { audio_channels }) = assessment {
+            tracing::warn!(
+                ?audio_channels,
+                "Experimental direct play: HEVC support depends on the receiver. Serving the original MP4 without conversion; check picture, colours, audible audio and synchronization."
+            );
+        }
+        if let Some(DirectPlayAssessment::ExperimentalAc3 { channels }) = assessment {
+            tracing::warn!(
+                channels,
+                "Experimental direct play: AC-3 audio output depends on the receiver and connected equipment. Serving the original MP4 without conversion; check audible dialogue, channel balance and synchronization."
+            );
+        }
         if let Some(path) = &request.subtitles {
             report(
                 &progress,
@@ -150,14 +162,18 @@ pub async fn run(
             prepared = Some(subtitles::prepare(path, &request.ffmpeg, cancel).await?);
         }
         if request.force_transcode {
-            report(&progress, Phase::Preparing, None, Some("Preparing H.264/stereo AAC MP4 before playback".into()));
+            let message = match request.transcode.mode {
+                TranscodeMode::AudioVideo => "Preparing H.264/stereo AAC MP4 before playback",
+                TranscodeMode::AudioOnly => "Copying video and converting audio to stereo AAC before playback",
+            };
+            report(&progress, Phase::Preparing, None, Some(message.into()));
             let mut last_percent = None;
             prepared_media = Some(transcode::prepare(
                 &info, &request.ffmpeg, &request.probe, &request.transcode, cancel,
                 |update| {
                     let percent = (update.fraction * 100.0).floor() as u32;
                     if last_percent != Some(percent) {
-                        report(&progress, Phase::Preparing, None, Some(format!("Transcoding: {percent}%")));
+                        report(&progress, Phase::Preparing, None, Some(format!("{}: {percent}%", if request.transcode.mode == TranscodeMode::AudioOnly { "Audio conversion" } else { "Transcoding" })));
                         last_percent = Some(percent);
                     }
                 },
@@ -236,6 +252,7 @@ pub async fn run(
             .await
             .map_err(|e| delivery_error(e, serving))?;
         let mut last_active = Instant::now();
+        let mut reached_playable = false;
         let loaded_at = Instant::now();
         let mut tracks_enabled = false;
         let mut subtitle_confirmed = serving.subtitle_url.is_none();
@@ -283,10 +300,12 @@ pub async fn run(
                     }
                     ("IDLE", None) => {}
                     ("PLAYING", _) => {
+                        reached_playable = true;
                         phase = Phase::Playing;
                         last_active = Instant::now();
                     }
                     ("PAUSED", _) => {
+                        reached_playable = true;
                         phase = Phase::Paused;
                         last_active = Instant::now();
                     }
@@ -307,9 +326,13 @@ pub async fn run(
             }
             if last_active.elapsed() > Duration::from_secs(30) {
                 return Err(delivery_error(
-                    ProcastError::Cast(
-                        "receiver did not reach a playable state within 30 seconds".into(),
-                    ),
+                    ProcastError::Cast(if reached_playable {
+                        format!("receiver stopped reporting playable media for 30 seconds (last state: {}, position: {:.3}s); retry with --verbose for receiver and HTTP diagnostics",
+                            current.as_ref().map_or("unavailable", |s| s.player_state.as_str()),
+                            current.as_ref().map_or(0.0, |s| s.current_time))
+                    } else {
+                        "receiver did not reach a playable state within 30 seconds".into()
+                    }),
                     serving,
                 ));
             }

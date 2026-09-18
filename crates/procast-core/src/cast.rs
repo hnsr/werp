@@ -212,7 +212,21 @@ impl CastSession {
             } => value,
         };
         match value {
-            Ok(value) => self.adopt_status(&value),
+            Ok(value) => {
+                let status = self.adopt_status(&value)?;
+                // A receiver can keep returning stale BUFFERING or empty media
+                // status after its app exits, without a CLOSE event. Confirm app
+                // ownership outside the select so a media reply cannot cancel
+                // this check after we have consumed the triggering event.
+                let inactive = status.as_ref().is_none_or(|s| {
+                    s.player_state == "BUFFERING"
+                        || (s.player_state == "IDLE" && s.idle_reason.is_none())
+                });
+                if inactive && self.media_id.is_some() && self.receiver_app_ended(cancel).await? {
+                    return Ok(Some(self.receiver_stopped_snapshot()));
+                }
+                Ok(status)
+            }
             Err(error) => {
                 // An app can disappear without a usable media terminal broadcast.
                 // Ask the receiver itself; never turn a network timeout alone into success.
@@ -246,7 +260,9 @@ impl CastSession {
             .ok_or_else(|| ProcastError::Cast("receiver omitted its status object".into()))?;
         // Receivers may omit applications entirely when none are running.
         let Some(applications) = status.get("applications") else {
-            return Ok(status.contains_key("volume"));
+            let ended = status.contains_key("volume");
+            tracing::debug!(ended, "receiver status has no application list");
+            return Ok(ended);
         };
         let applications = applications.as_array().ok_or_else(|| {
             ProcastError::Cast("receiver applications field is not an array".into())
@@ -258,9 +274,14 @@ impl CastSession {
                 && candidate.session_id == app.session_id
                 && candidate.transport_id == app.transport_id
             {
+                tracing::debug!("owned receiver application is still running");
                 return Ok(false);
             }
         }
+        tracing::debug!(
+            applications = applications.len(),
+            "owned receiver application is no longer running"
+        );
         Ok(true)
     }
 
@@ -281,6 +302,9 @@ impl CastSession {
         loop {
             match self.client.next_event().await {
                 Some(CastEvent::MediaStatusChanged(status)) => {
+                    tracing::debug!(state = ?status.player_state, reason = ?status.idle_reason,
+                        position = status.current_time, session = status.media_session_id,
+                        "received media status event");
                     if let Some(content) = &self.content_id
                         && let Some(terminal) = owned_terminal(&status, content, self.media_id)
                     {
@@ -340,6 +364,9 @@ impl CastSession {
             {
                 let status: PlaybackSnapshot = serde_json::from_value(value.clone())
                     .map_err(|e| ProcastError::Cast(e.to_string()))?;
+                tracing::debug!(state = %status.player_state, reason = ?status.idle_reason,
+                    position = status.current_time, session = status.media_session_id,
+                    "received owned media status response");
                 self.media_id = id;
                 return Ok(Some(status));
             }
@@ -356,6 +383,10 @@ impl CastSession {
             ));
         }
         // Empty status and session-zero IDLE are transitional, not completion.
+        tracing::debug!(
+            entries = statuses.len(),
+            "no owned media status in response"
+        );
         Ok(None)
     }
 

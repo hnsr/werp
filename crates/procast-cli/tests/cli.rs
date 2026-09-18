@@ -18,7 +18,9 @@ fn experimental_flag_reaches_preflight_and_preserves_other_checks() {
     for (experimental, codec, expected) in [
         (false, "aac", "--experimental-direct-play"),
         (true, "aac", "missing.vtt"),
-        (true, "ac3", "outside the available direct-play profiles"),
+        (false, "ac3", "AC-3 requires --experimental-direct-play"),
+        (true, "ac3", "missing.vtt"),
+        (true, "eac3", "outside the available direct-play profiles"),
     ] {
         metadata["streams"][1]["codec_name"] = serde_json::json!(codec);
         fs::write(dir.path().join("probe.json"), metadata.to_string()).unwrap();
@@ -37,7 +39,7 @@ fn experimental_flag_reaches_preflight_and_preserves_other_checks() {
         assert!(!output.status.success());
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains(expected), "{stderr}");
-        if experimental && codec == "aac" {
+        if experimental && matches!(codec, "aac" | "ac3") {
             assert!(stderr.contains("Experimental direct play"), "{stderr}");
         }
     }
@@ -128,7 +130,12 @@ async fn signals_wait_for_probe_cleanup_and_return_distinct_exit_codes() {
 #[tokio::test]
 async fn force_transcode_signals_reap_encoder_and_remove_partial_output() {
     use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Stdio, time::Duration};
-    for (signal, exit_code) in [("-INT", 130), ("-TERM", 143)] {
+    for (flag, signal, exit_code) in [
+        ("--force-transcode", "-INT", 130),
+        ("--force-transcode", "-TERM", 143),
+        ("--transcode-audio", "-INT", 130),
+        ("--transcode-audio", "-TERM", 143),
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("compatible.mp4");
         fs::write(&file, "unchanged input").unwrap();
@@ -158,7 +165,7 @@ exec sleep 60
         let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_procast"))
             .arg("cast")
             .arg(&file)
-            .arg("--force-transcode")
+            .arg(flag)
             .arg("--transcode-dir")
             .arg(&cache)
             .arg("--ffprobe")

@@ -109,9 +109,14 @@ mono/stereo AAC-LC and conservative video limits. Only **6** library files fit
 that apparent format envelope; three now have user-confirmed picture and sound.
 Inventory
 membership does not bypass that guard. The new `--experimental-direct-play`
-option additionally admits one 3–6 channel AAC-LC track with the same H.264/MP4
-limits. It serves the original bytes and reports uncertain audio support; it
-does not enable the HEVC, AC-3, MKV, or HDR cases in this inventory.
+option additionally admits one 3–6 channel AAC-LC track and HEVC Main/Main 10
+MP4 up to level 4.0 at 1080p30, with 8/10-bit 4:2:0 pixels and no known HDR
+signalling. It serves original bytes and reports receiver-dependent support.
+H.264/AC-3 MP4 trials are also enabled for one 1–6 channel audio track at 32,
+44.1, or 48 kHz; `sample-041` produced video but no audible sound on the test setup.
+HEVC/AC-3, E-AC-3, MKV,
+and HDR cases remain outside the experimental policy. The user has reported successful
+experimental HEVC playback of `sample-005` on the test receiver.
 
 ## User playback results
 
@@ -131,11 +136,61 @@ Subtitles, full-duration playback, explicit A/V synchronization checks, natural
 completion, and shutdown were not reported for these runs. Earlier generated
 fixture results remain separate evidence.
 
+On 2026-09-18, the user reported that `sample-004` also works with
+`--experimental-direct-play` on the existing KPN DIW7022 receiver. This serves
+the original MP4 containing H.264 High, 1920×1040 at approximately 23.976 fps,
+and six-channel AAC-LC, without remuxing or transcoding. The requested check
+covered picture, audible dialogue, and A/V synchronization; the user reported
+general success without separate measurements. This does not establish discrete
+surround output, long-duration synchronization, or compatibility with all files
+in the group or other receivers. No external subtitle was selected for this run.
+
+The user also reported success on 2026-09-18 for original-file playback of
+`sample-005` with `--experimental-direct-play` on the KPN DIW7022: MP4 with
+HEVC Main 10, 10-bit 4:2:0, 1920×1080 at approximately 23.976 fps, and six-channel
+AAC-LC. The suggested checks covered picture/colours, dialogue, synchronization,
+and phone-controlled seeking/pause/resume. The user reported general success
+without separate measurements or per-check details. No subtitles were selected.
+This is evidence for this file/receiver combination, not universal HEVC support
+or confirmation of discrete surround output or full-duration playback.
+
+On 2026-09-18, the user tested original-file playback of `sample-041` with
+`--experimental-direct-play` on the same KPN DIW7022 setup: H.264 High,
+1920×804 at 24 fps, with six-channel AC-3 at 48 kHz in MP4. Video played, but
+there was no audible sound. This is a failed audio-output trial, not successful
+direct playback. It does not isolate the cause between receiver decoding,
+passthrough/output configuration, or the particular file. Other receivers and
+the remaining AC-3 files have not been tested. Keep the original scan's candidate
+classification as a hypothesis; do not promote AC-3 into the default policy.
+The subsequent `--transcode-audio` trial produced audible sound for roughly
+one or two seconds, then returned to the Google TV home screen. Picture was not
+observed. The CLI reported Playing, then Buffering, and eventually a 30-second
+playable-state timeout. This is not a successful playback result; the cause of
+the receiver exit remains unknown. A locally recreated output preserves the full
+encoded video payload, has matching duration and stereo AAC, and decodes its first
+minute without FFmpeg errors.
+
+The user subsequently reported no issues casting the saved H.264/stereo AAC
+output directly with verbose logging. The inspected log shows successful HTTP
+206 responses, PLAYING positions through approximately 298.6 seconds, and
+pause/resume transitions without warnings or errors. At inspection the session
+was paused; natural completion and cleanup were not established by this log.
+This supports playback of the video-copy/audio-converted output on this setup;
+it is not a repeat of the integrated preparation step. The user reports prior
+intermittent startup cutouts on this device. That is a plausible explanation
+for the earlier failure, but its cause remains unresolved and the diagnostic
+changes are not proven to have fixed it.
+
 ## Suggested M5 test order
 
 1. MP4 H.264/AAC-stereo picture and sound now pass for three real files above.
    External subtitles and lifecycle checks on these files remain to be exercised.
-2. Try original MP4 H.264/AAC-surround, then MP4 HEVC Main 10/AAC and H.264/AC-3.
+2. Original MP4 H.264/AAC-surround now has a successful trial with `sample-004`.
+   MP4 HEVC Main 10/AAC also has a successful trial with `sample-005`.
+   H.264/AC-3 `sample-041` played video but had no audible sound. A saved output
+   with copied video and stereo AAC now has a successful playback retry after
+   an unexplained initial startup failure. Integrated conversion/playback
+   completion and cleanup still need hardware confirmation.
    Confirm picture, colour, audible audio, timing, completion, and cancellation.
 3. Exercise MKV H.264/AAC, HEVC Main/Main 10 with AAC/HE-AAC, and H.264/HEVC
    with Dolby audio. Treat original MKV delivery as experimental; add MP4

@@ -75,6 +75,62 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace -- --include-ignored
 ```
 
+## Audio-only preparation
+
+Added on 2026-09-18: `--transcode-audio` preserves conservative-profile H.264
+video from MP4 and converts its single audio track to stereo AAC at 48 kHz,
+192 kbps. It requires AAC encoding but no video encoder. Initial input limits
+exclude HEVC, MKV, known HDR, missing audio, and multiple audio tracks. This is
+an explicit option; direct play does not automatically retry with conversion.
+
+Preparation uses the existing subprocess, progress, cancellation, private-cache,
+output-validation, and cleanup flow. Copied video has no encoder bitrate cap, so
+space estimation uses the source file size plus new AAC audio and muxing overhead.
+The complete prepared MP4 has faststart metadata and is served only after probing.
+
+Validation includes a generated H.264/AC-3 MP4 with an audible tone, B-frames,
+and audio starting later than video. The check compares SHA-256 hashes of the
+copied encoded video payload, decodes AAC to verify non-silent output, and compares
+relative audio/video start timestamps within 50 ms. It also checks source
+preservation and faststart metadata. This does not establish perceptual sync on
+hardware or long-duration drift.
+
+Tests also cover policy rejection, AAC-only encoder availability, failure and
+invalid-output cleanup, timeouts, SIGINT/SIGTERM, and full loopback sessions with
+external SRT and WebVTT. The hardware retry for `sample-041` briefly produced
+sound, then returned to the Google TV home screen; picture was not observed.
+The CLI waited in Buffering and timed out. A subsequent direct cast of the saved
+converted output was reported to have no issues. Its verbose log shows HTTP 206
+responses, PLAYING positions through about 298.6 seconds, and pause/resume, without
+warnings or errors. The inspected log ends in PAUSED; it does not verify natural
+completion or cleanup. The integrated conversion/playback path was not rerun.
+The user reports similar intermittent startup problems on this device; the
+original failure's cause remains unresolved.
+
+A diagnostic recreation using the same FFmpeg arguments is saved locally under
+ignored `samples/audio-debug/sample-041-aac.mp4` (about 1.28 GB). SHA-256 stream
+hashes confirm that the entire encoded video payload matches the original.
+The output has stereo AAC-LC at 48 kHz, matching duration, and decodes the first
+60 seconds without errors. This is not proof of Cast compatibility. It is a
+reusable diagnostic input, retained outside the normal session cache and not
+automatically removed after casting. No source file was changed.
+
+A lifecycle gap was identified during investigation: stale BUFFERING or empty
+media replies did not trigger an application-presence check. These replies now
+query the receiver's application list before continuing to wait. A confirmed
+application exit is reported as receiver-stopped; it does not distinguish a
+user stop from a crash. Failure to query receiver status remains an error.
+Regression cases verify BUFFERING/empty replies after app exit and transient
+BUFFERING while the owned app remains running. Verbose logs include media
+state/position and HTTP Range, Content-Range, and Content-Length. A stall after
+playback now has a distinct timeout message. These changes improve diagnostics;
+the original media failure was not reproduced in the successful retry, and
+these changes are not proven to have resolved its cause.
+
+The complete workspace run on 2026-09-18 passed all 47 tests, including all four
+normally opt-in FFmpeg tests; none were skipped. Formatting and Clippy with
+warnings denied also passed. No real receiver was contacted by these checks.
+
 ## Hardware feedback and remaining checks
 
 The user reported that the suggested forced-transcoding test with the short

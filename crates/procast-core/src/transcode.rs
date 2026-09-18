@@ -19,8 +19,17 @@ use crate::{
 const RESERVE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_PROGRESS_LINE: usize = 8192;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TranscodeMode {
+    #[default]
+    AudioVideo,
+    /// Preserve conservative-profile H.264 MP4 video and encode only audio.
+    AudioOnly,
+}
+
 #[derive(Debug, Clone)]
 pub struct TranscodeOptions {
+    pub mode: TranscodeMode,
     /// Parent for private session directories. Defaults to the user's cache.
     pub directory: Option<PathBuf>,
     /// Encoding deadline, separate from the short ffprobe timeout.
@@ -30,6 +39,7 @@ pub struct TranscodeOptions {
 impl Default for TranscodeOptions {
     fn default() -> Self {
         Self {
+            mode: TranscodeMode::default(),
             directory: None,
             timeout: Duration::from_secs(24 * 60 * 60),
         }
@@ -154,15 +164,19 @@ fn plan(info: &MediaInfo) -> Result<InputPlan, ProcastError> {
 async fn check_encoders(
     ffmpeg: &Path,
     audio: bool,
+    mode: TranscodeMode,
     cancel: &CancellationToken,
 ) -> Result<(), ProcastError> {
     let mut command = Command::new(ffmpeg);
     command.args(["-hide_banner", "-encoders"]);
     let output = process::capture(&mut command, cancel, Duration::from_secs(10)).await?;
     let text = String::from_utf8_lossy(&output);
-    for required in [Some("libx264"), audio.then_some("aac")]
-        .into_iter()
-        .flatten()
+    for required in [
+        (mode == TranscodeMode::AudioVideo).then_some("libx264"),
+        audio.then_some("aac"),
+    ]
+    .into_iter()
+    .flatten()
     {
         if !text
             .lines()
@@ -234,7 +248,10 @@ pub async fn prepare(
         return Err(ProcastError::Cancelled);
     }
     let input = plan(info)?;
-    check_encoders(ffmpeg, input.audio.is_some(), cancel).await?;
+    if options.mode == TranscodeMode::AudioOnly {
+        media::validate_audio_transcode_input(info)?;
+    }
+    check_encoders(ffmpeg, input.audio.is_some(), options.mode, cancel).await?;
     let parent = match &options.directory {
         Some(path) => path.clone(),
         None => cache_directory()?,
@@ -243,7 +260,18 @@ pub async fn prepare(
         .await
         .map_err(|e| error(format!("cannot create preparation directory: {e}")))?;
     // Upper-rate estimate plus muxing overhead and headroom; not a reservation.
-    let estimate = (input.duration * 8_192_000.0 / 8.0 * 1.1).ceil() as u64;
+    let estimate = match options.mode {
+        TranscodeMode::AudioVideo => (input.duration * 8_192_000.0 / 8.0 * 1.1).ceil() as u64,
+        TranscodeMode::AudioOnly => {
+            // Copied video has no encoder rate cap. Use the entire source size
+            // plus the new AAC stream and muxing overhead as a conservative estimate.
+            let size = tokio::fs::metadata(&info.path)
+                .await
+                .map_err(|e| error(format!("cannot check source size: {e}")))?
+                .len();
+            ((size as f64 + input.duration * 192_000.0 / 8.0) * 1.1).ceil() as u64
+        }
+    };
     require_space(
         available_space(&parent)?,
         estimate.saturating_add(RESERVE_BYTES),
@@ -258,10 +286,15 @@ pub async fn prepare(
         command.args(["-nostdin", "-hide_banner", "-v", "error", "-nostats", "-progress", "pipe:1", "-stats_period", "1", "-n", "-copyts", "-start_at_zero", "-i"])
             .arg(&info.path).args(["-map", &format!("0:{}", input.video)]);
         if let Some(index) = input.audio { command.args(["-map", &format!("0:{index}")]); }
-        let filter = format!("scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,fps={:.8},format=yuv420p", input.fps);
-        command.args(["-map_metadata", "-1", "-map_chapters", "-1", "-sn", "-dn", "-vf", &filter,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-level:v", "4.1",
-            "-maxrate", "8M", "-bufsize", "16M", "-pix_fmt", "yuv420p"]);
+        command.args(["-map_metadata", "-1", "-map_chapters", "-1", "-sn", "-dn"]);
+        match options.mode {
+            TranscodeMode::AudioOnly => { command.args(["-c:v", "copy"]); }
+            TranscodeMode::AudioVideo => {
+                let filter = format!("scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,fps={:.8},format=yuv420p", input.fps);
+                command.args(["-vf", &filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-level:v", "4.1",
+                    "-maxrate", "8M", "-bufsize", "16M", "-pix_fmt", "yuv420p"]);
+            }
+        }
         if input.audio.is_some() { command.args(["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"]); }
         command.args(["-movflags", "+faststart", "-f", "mp4"]).arg(&path);
         update(TranscodeProgress { encoded_seconds: 0.0, fraction: 0.0 });
@@ -272,6 +305,11 @@ pub async fn prepare(
         })).await?;
         let output = media::inspect(&path, probe, cancel).await?;
         media::validate_direct_play(&output)?;
+        if input.audio.is_some() && !output.streams.iter().any(|s|
+            s.kind == "audio" && s.codec.as_deref() == Some("aac")
+                && s.channels == Some(2) && s.sample_rate_hz == Some(48000)) {
+            return Err(error("prepared stereo AAC audio is missing or invalid"));
+        }
         let output_duration = output.duration_seconds.unwrap();
         if (output_duration - input.duration).abs() > (input.duration * 0.001).max(2.0) {
             return Err(error("prepared duration differs from the source; refusing potentially truncated output"));

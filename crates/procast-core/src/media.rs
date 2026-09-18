@@ -205,7 +205,7 @@ fn parse_rate(rate: &str) -> Option<f64> {
 pub enum DirectPlayPolicy {
     #[default]
     Conservative,
-    /// Additionally allow AAC-LC with 3–6 channels; retain all video/container checks.
+    /// Additionally allow multichannel AAC-LC, bounded HEVC, and H.264/AC-3 trials.
     Experimental,
 }
 
@@ -214,6 +214,8 @@ pub enum DirectPlayPolicy {
 pub enum DirectPlayAssessment {
     ConservativeProfile,
     ExperimentalAacSurround { channels: u32 },
+    ExperimentalHevc { audio_channels: Option<u32> },
+    ExperimentalAc3 { channels: u32 },
 }
 
 /// Conservative M2 policy, not receiver capability negotiation or a full decode.
@@ -227,9 +229,22 @@ pub fn assess_direct_play(
     info: &MediaInfo,
     policy: DirectPlayPolicy,
 ) -> Result<DirectPlayAssessment, ProcastError> {
+    assess_mp4(info, policy, false)
+}
+
+/// Audio conversion can preserve only video already within the conservative MP4 profile.
+pub(crate) fn validate_audio_transcode_input(info: &MediaInfo) -> Result<(), ProcastError> {
+    assess_mp4(info, DirectPlayPolicy::Conservative, true).map(|_| ())
+}
+
+fn assess_mp4(
+    info: &MediaInfo,
+    policy: DirectPlayPolicy,
+    convert_audio: bool,
+) -> Result<DirectPlayAssessment, ProcastError> {
     let unsupported = |reason: &str| {
         ProcastError::UnsupportedMedia(format!(
-            "{reason}. Direct play requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC; experimental mode additionally permits 3–6 channel AAC-LC. For SDR input, --force-transcode can prepare a compatible MP4; automatic conversion is not implemented"
+            "{reason}. Default direct play requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without known HDR signalling. For SDR input, --force-transcode can prepare a compatible MP4; automatic conversion is not implemented"
         ))
     };
     if !info.container.split(',').any(|format| format == "mp4") {
@@ -255,13 +270,21 @@ pub fn assess_direct_play(
         return Err(unsupported("exactly one video stream is required"));
     }
     let video = videos[0];
-    if video.codec.as_deref() != Some("h264")
-        || !matches!(
+    let h264 = video.codec.as_deref() == Some("h264")
+        && matches!(
             video.profile.as_deref(),
             Some("Constrained Baseline" | "Baseline" | "Main" | "High")
         )
-        || !video.level.is_some_and(|level| (9..=41).contains(&level))
-        || video.pixel_format.as_deref() != Some("yuv420p")
+        && video.level.is_some_and(|level| (9..=41).contains(&level))
+        && video.pixel_format.as_deref() == Some("yuv420p");
+    // ffprobe reports HEVC levels in units of 30 (120 means level 4.0).
+    let hevc = video.codec.as_deref() == Some("hevc")
+        && matches!(
+            (video.profile.as_deref(), video.pixel_format.as_deref()),
+            (Some("Main"), Some("yuv420p")) | (Some("Main 10"), Some("yuv420p" | "yuv420p10le"))
+        )
+        && matches!(video.level, Some(30 | 60 | 63 | 90 | 93 | 120));
+    if !(h264 || hevc)
         || !video.width.is_some_and(|width| (1..=1920).contains(&width))
         || !video
             .height
@@ -280,28 +303,60 @@ pub fn assess_direct_play(
             video.index
         )));
     }
+    if hevc && policy == DirectPlayPolicy::Conservative {
+        return Err(unsupported(
+            "HEVC requires --experimental-direct-play for a receiver-specific trial",
+        ));
+    }
     let audio: Vec<_> = info.streams.iter().filter(|s| s.kind == "audio").collect();
     if audio.len() > 1 {
         return Err(unsupported(
             "multiple audio tracks need explicit selection/remuxing",
         ));
     }
-    if let Some(audio) = audio.first()
-        && (audio.codec.as_deref() != Some("aac")
-            || audio.profile.as_deref() != Some("LC")
+    if convert_audio {
+        if audio.is_empty() {
+            return Err(unsupported(
+                "audio-only conversion requires one audio track",
+            ));
+        }
+        return Ok(DirectPlayAssessment::ConservativeProfile);
+    }
+    if let Some(audio) = audio.first() {
+        let aac = audio.codec.as_deref() == Some("aac")
+            && audio.profile.as_deref() == Some("LC")
+            && audio
+                .sample_rate_hz
+                .is_some_and(|rate| (8000..=48000).contains(&rate));
+        let ac3 = h264
+            && audio.codec.as_deref() == Some("ac3")
+            && matches!(audio.sample_rate_hz, Some(32000 | 44100 | 48000));
+        if !(aac || ac3)
             || !audio
                 .channels
                 .is_some_and(|channels| (1..=6).contains(&channels))
-            || !audio
-                .sample_rate_hz
-                .is_some_and(|rate| (8000..=48000).contains(&rate)))
-    {
-        return Err(unsupported(&format!(
-            "audio stream #{} is outside the available direct-play profiles (or lacks required metadata)",
-            audio.index
-        )));
+        {
+            return Err(unsupported(&format!(
+                "audio stream #{} is outside the available direct-play profiles (or lacks required metadata)",
+                audio.index
+            )));
+        }
+        if ac3 {
+            return match policy {
+                DirectPlayPolicy::Conservative => Err(unsupported(
+                    "AC-3 requires --experimental-direct-play; audio output depends on the receiver and connected equipment",
+                )),
+                DirectPlayPolicy::Experimental => Ok(DirectPlayAssessment::ExperimentalAc3 {
+                    channels: audio.channels.unwrap(),
+                }),
+            };
+        }
     }
-    if let Some(channels) = audio.first().and_then(|audio| audio.channels)
+    let audio_channels = audio.first().and_then(|audio| audio.channels);
+    if hevc {
+        return Ok(DirectPlayAssessment::ExperimentalHevc { audio_channels });
+    }
+    if let Some(channels) = audio_channels
         && channels > 2
     {
         return match policy {
@@ -321,7 +376,130 @@ mod tests {
     use super::*;
 
     #[test]
-    fn experimental_policy_only_relaxes_aac_lc_channel_count() {
+    fn ac3_trials_require_opt_in_and_keep_codec_and_track_limits() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/h264-ac3.json")).unwrap();
+        let check = |value: &serde_json::Value, policy| {
+            let info = parse(&serde_json::to_vec(value).unwrap(), "movie.mp4".into()).unwrap();
+            assess_direct_play(&info, policy)
+        };
+        assert!(
+            check(&fixture, DirectPlayPolicy::Conservative)
+                .unwrap_err()
+                .to_string()
+                .contains("AC-3 requires --experimental-direct-play")
+        );
+        for channels in [1, 2, 6] {
+            for rate in ["32000", "44100", "48000"] {
+                let mut valid = fixture.clone();
+                valid["streams"][1]["channels"] = serde_json::json!(channels);
+                valid["streams"][1]["sample_rate"] = serde_json::json!(rate);
+                assert_eq!(
+                    check(&valid, DirectPlayPolicy::Experimental).unwrap(),
+                    DirectPlayAssessment::ExperimentalAc3 { channels }
+                );
+            }
+        }
+        for (pointer, value) in [
+            ("/format/format_name", serde_json::json!("matroska,webm")),
+            ("/streams/0/width", serde_json::json!(3840)),
+            ("/streams/1/codec_name", serde_json::json!("eac3")),
+            ("/streams/1/codec_name", serde_json::json!("dts")),
+            ("/streams/1/channels", serde_json::json!(0)),
+            ("/streams/1/channels", serde_json::json!(8)),
+            ("/streams/1/channels", serde_json::Value::Null),
+            ("/streams/1/sample_rate", serde_json::json!("96000")),
+            ("/streams/1/sample_rate", serde_json::Value::Null),
+        ] {
+            let mut invalid = fixture.clone();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(
+                check(&invalid, DirectPlayPolicy::Experimental).is_err(),
+                "{pointer}"
+            );
+        }
+        let mut hdr = fixture.clone();
+        hdr["streams"][0]["color_transfer"] = serde_json::json!("smpte2084");
+        assert!(check(&hdr, DirectPlayPolicy::Experimental).is_err());
+        let mut multiple = fixture.clone();
+        multiple["streams"]
+            .as_array_mut()
+            .unwrap()
+            .push(fixture["streams"][1].clone());
+        assert!(check(&multiple, DirectPlayPolicy::Experimental).is_err());
+    }
+
+    #[test]
+    fn hevc_trials_require_opt_in_and_reject_unsupported_combinations() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/hevc.json")).unwrap();
+        let check = |value: &serde_json::Value, policy| {
+            let info = parse(&serde_json::to_vec(value).unwrap(), "movie.mp4".into()).unwrap();
+            assess_direct_play(&info, policy)
+        };
+        assert!(
+            check(&fixture, DirectPlayPolicy::Conservative)
+                .unwrap_err()
+                .to_string()
+                .contains("--experimental-direct-play")
+        );
+        assert_eq!(
+            check(&fixture, DirectPlayPolicy::Experimental).unwrap(),
+            DirectPlayAssessment::ExperimentalHevc {
+                audio_channels: Some(6)
+            }
+        );
+        let mut main = fixture.clone();
+        main["streams"][0]["profile"] = serde_json::json!("Main");
+        main["streams"][0]["pix_fmt"] = serde_json::json!("yuv420p");
+        main["streams"][1]["channels"] = serde_json::json!(2);
+        assert_eq!(
+            check(&main, DirectPlayPolicy::Experimental).unwrap(),
+            DirectPlayAssessment::ExperimentalHevc {
+                audio_channels: Some(2)
+            }
+        );
+        main["streams"].as_array_mut().unwrap().truncate(1);
+        assert_eq!(
+            check(&main, DirectPlayPolicy::Experimental).unwrap(),
+            DirectPlayAssessment::ExperimentalHevc {
+                audio_channels: None
+            }
+        );
+        for (pointer, value) in [
+            ("/format/format_name", serde_json::json!("matroska,webm")),
+            ("/streams/0/codec_name", serde_json::json!("av1")),
+            ("/streams/0/profile", serde_json::json!("Main")), // Main cannot carry 10-bit pixels.
+            ("/streams/0/profile", serde_json::json!("Rext")),
+            ("/streams/0/pix_fmt", serde_json::json!("yuv422p10le")),
+            ("/streams/0/level", serde_json::json!(123)),
+            ("/streams/0/level", serde_json::Value::Null),
+            ("/streams/0/width", serde_json::json!(3840)),
+            ("/streams/0/r_frame_rate", serde_json::json!("60/1")),
+            ("/streams/1/codec_name", serde_json::json!("ac3")),
+            ("/streams/1/profile", serde_json::json!("HE-AAC")),
+            ("/streams/1/channels", serde_json::json!(8)),
+        ] {
+            let mut invalid = fixture.clone();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(
+                check(&invalid, DirectPlayPolicy::Experimental).is_err(),
+                "{pointer}"
+            );
+        }
+        for transfer in ["smpte2084", "arib-std-b67"] {
+            let mut hdr = fixture.clone();
+            hdr["streams"][0]["color_transfer"] = serde_json::json!(transfer);
+            assert!(check(&hdr, DirectPlayPolicy::Experimental).is_err());
+        }
+        let mut dolby = fixture.clone();
+        dolby["streams"][0]["side_data_list"] =
+            serde_json::json!([{"side_data_type":"DOVI configuration record"}]);
+        assert!(check(&dolby, DirectPlayPolicy::Experimental).is_err());
+    }
+
+    #[test]
+    fn experimental_h264_policy_preserves_video_and_audio_bounds() {
         let mut fixture: serde_json::Value =
             serde_json::from_str(include_str!("../tests/fixtures/h264.json")).unwrap();
         let check = |value: &serde_json::Value, policy| {
@@ -349,7 +527,7 @@ mod tests {
             ("/streams/0/pix_fmt", serde_json::json!("yuv420p10le")),
             ("/streams/0/width", serde_json::json!(3840)),
             ("/streams/0/r_frame_rate", serde_json::json!("60/1")),
-            ("/streams/1/codec_name", serde_json::json!("ac3")),
+            ("/streams/1/codec_name", serde_json::json!("eac3")),
             ("/streams/1/profile", serde_json::json!("HE-AAC")),
             ("/streams/1/channels", serde_json::json!(8)),
             ("/streams/1/channels", serde_json::json!(0)),

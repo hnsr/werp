@@ -69,26 +69,45 @@ impl MediaServer {
             );
         }
         let router = router
-            .layer(CorsLayer::new().allow_origin(Any).allow_methods([Method::GET, Method::HEAD, Method::OPTIONS]).allow_headers(Any))
-            .layer(middleware::from_fn(move |request: axum::extract::Request, next: middleware::Next| {
-                let counter = counter.clone();
-                let video_counter = video_counter.clone();
-                let subtitle_counter = subtitle_counter.clone();
-                let expected_video = expected_video.clone();
-                let expected_subtitles = expected_subtitles.clone();
-                async move {
-                    let method = request.method().clone();
-                    let path = request.uri().path().to_owned();
-                    let response = next.run(request).await;
-                    counter.fetch_add(1, Ordering::Relaxed);
-                    if method == Method::GET && response.status().is_success() {
-                        if path == expected_video { video_counter.fetch_add(1, Ordering::Relaxed); }
-                        if path == expected_subtitles { subtitle_counter.fetch_add(1, Ordering::Relaxed); }
+            .layer(
+                CorsLayer::new()
+                    .allow_origin(Any)
+                    .allow_methods([Method::GET, Method::HEAD, Method::OPTIONS])
+                    .allow_headers(Any),
+            )
+            .layer(middleware::from_fn(
+                move |request: axum::extract::Request, next: middleware::Next| {
+                    let counter = counter.clone();
+                    let video_counter = video_counter.clone();
+                    let subtitle_counter = subtitle_counter.clone();
+                    let expected_video = expected_video.clone();
+                    let expected_subtitles = expected_subtitles.clone();
+                    async move {
+                        let method = request.method().clone();
+                        let path = request.uri().path().to_owned();
+                        let range = request
+                            .headers()
+                            .get("range")
+                            .and_then(|v| v.to_str().ok())
+                            .map(str::to_owned);
+                        let response = next.run(request).await;
+                        counter.fetch_add(1, Ordering::Relaxed);
+                        if method == Method::GET && response.status().is_success() {
+                            if path == expected_video {
+                                video_counter.fetch_add(1, Ordering::Relaxed);
+                            }
+                            if path == expected_subtitles {
+                                subtitle_counter.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                        tracing::info!(%method, %path, ?range, status = %response.status(),
+                        content_range = ?response.headers().get("content-range"),
+                        content_length = ?response.headers().get("content-length"),
+                        "media HTTP request");
+                        response
                     }
-                    tracing::info!(%method, %path, status = %response.status(), "media HTTP request");
-                    response
-                }
-            }));
+                },
+            ));
         let listener = TcpListener::bind(address)
             .await
             .map_err(|e| ProcastError::Serve(e.to_string()))?;

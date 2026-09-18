@@ -59,7 +59,8 @@ M2 validates a conservative direct-play profile before contacting a receiver:
 
 The profile is a preflight policy, not a guarantee that every receiver can decode
 every accepted file. Receiver rejection remains a runtime error. For an explicit
-trial of **3–6 channel AAC-LC** with the same H.264/MP4 limits, use:
+trial of **3–6 channel AAC-LC**, **HEVC Main/Main 10**, or **H.264 with AC-3**
+in MP4, use:
 
 ```sh
 cargo run --locked -- cast /path/to/surround.mp4 \
@@ -67,12 +68,19 @@ cargo run --locked -- cast /path/to/surround.mp4 \
 ```
 
 The experimental flag serves the original file without audio/video conversion
-and reports uncertain receiver audio support. Check audible dialogue and correct
-downmix or surround output on your actual setup. It does not enable HEVC, AC-3,
-E-AC-3, MKV, HDR, unknown required metadata, or multiple audio tracks. Omitting
+and reports receiver-dependent support. HEVC trials are limited to level 4.0,
+8/10-bit 4:2:0, and 1080p30, with zero or one AAC-LC track of up to six channels.
+Check picture, colours, audible dialogue, synchronization, and correct downmix or
+surround output on your actual setup. H.264/AC-3 trials permit one 1–6 channel
+track at 32, 44.1, or 48 kHz; HEVC/AC-3 is not enabled. Dolby audio output depends
+on the receiver and connected equipment. It does not enable E-AC-3, MKV, known
+HDR signalling, unknown required metadata, or multiple audio tracks. Omitting
 the flag keeps the conservative policy. The reusable backend exposes the policy
 and assessment independently of the CLI. See the [media inventory and hardware
 results](docs/media-inventory.md) for current evidence.
+
+The tested H.264/AC-3 sample played video but produced no audible sound on the
+KPN DIW7022 setup. AC-3 remains an experimental trial, with no automatic fallback.
 
 Embedded subtitle extraction, stream-copy remuxing, and automatic conversion
 fallback are not implemented yet.
@@ -126,6 +134,30 @@ from a phone, plus short-fixture SRT/WebVTT captions and natural completion.
 Temporary-file/server cleanup also passed after natural completion and phone stop.
 Improved phone-stop reporting also passed its hardware retest with exit code 0.
 Detailed real-file synchronization remains to be checked.
+
+### Convert only the audio
+
+For H.264 MP4 whose picture works but audio does not, preserve the encoded video
+and convert the single audio track to stereo AAC:
+
+```sh
+cargo run --locked -- cast /path/to/movie.mp4 --device "Living Room" \
+  --transcode-audio --http-port 8010
+```
+
+This prepares a complete MP4 with copied video and 192 kbps, 48 kHz stereo AAC.
+It avoids video encoding and its quality loss, but still reads and writes the
+whole file before playback. Video must already meet the conservative H.264
+profile above; HEVC, MKV, known HDR, missing audio, and multiple audio tracks
+are rejected in this initial version. FFmpeg needs an input audio decoder and
+the AAC encoder; this mode does not need a video encoder.
+
+External `--subtitles`, progress, cancellation, `--transcode-dir`, output
+validation, and session cleanup use the same preparation path described above.
+The disk estimate includes the source size plus new audio and muxing overhead.
+`--transcode-audio`, `--force-transcode`, and `--experimental-direct-play` are
+mutually exclusive. Without these flags the conservative direct-play policy
+remains unchanged; there is no automatic conversion fallback.
 
 ### Network and session behaviour
 

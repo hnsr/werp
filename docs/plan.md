@@ -334,11 +334,25 @@ Baseline progress: the user confirmed good picture and sound for `sample-009`,
 See [playback evidence and its limits](media-inventory.md#user-playback-results).
 The first compatibility decision step and `--experimental-direct-play` are now
 implemented: the default remains conservative, while opt-in trials admit MP4
-H.264 with one 3–6 channel AAC-LC track. All existing video/container checks
-remain, and the backend reports the experimental assessment. Automated checks
+H.264 with one 3–6 channel AAC-LC track. The experimental policy now also admits
+HEVC Main/Main 10 in MP4, up to level 4.0 and 1080p30 with 8/10-bit 4:2:0 pixels.
+Known HDR remains rejected; AAC-LC and track-count limits remain in place. The
+backend reports the experimental assessment. Automated checks
 cover policy boundaries, CLI propagation, original-byte serving without FFmpeg,
-and completion cleanup against a simulated receiver. Hardware surround playback
-is pending; HEVC, AC-3, and broader container decisions remain future steps.
+and completion cleanup against a simulated receiver. On 2026-09-18, the user
+reported successful original-file playback of `sample-004` (six-channel AAC-LC)
+on the test receiver. The user subsequently reported successful experimental
+original-file playback of HEVC Main 10/AAC `sample-005` on the same receiver.
+Discrete surround output and universal HEVC compatibility are not established.
+The next experimental extension admits H.264/AC-3 MP4 with one 1–6 channel
+audio track at 32/44.1/48 kHz. Local policy/CLI and original-byte serving tests
+cover it; the user reported video playing but no audible sound for `sample-041`
+on the test setup. AC-3 remains experimental, with no automatic fallback.
+`--transcode-audio` now implements video-copy/audio-only preparation for
+conservative-profile H.264 MP4 with one audio track. The first hardware trial
+briefly produced sound, then exited. A direct retry of the saved converted output
+succeeded; the earlier failure's cause is unresolved. HEVC/AC-3, E-AC-3, and broader
+container decisions remain future steps.
 
 - Expand the pure media-decision step to distinguish verified support, plausible
   receiver-specific trials, container-only preparation, and unsupported codecs.
@@ -389,8 +403,10 @@ cleanup; the app-termination fix now also passed a hardware retest with
 Detailed real-file A/V synchronization remains unverified. See
 [implementation validation](transcode-validation.md).
 
-Add audio-only encoding first when video can be preserved, then video encoding
-for confirmed incompatible cases. Check available encoders/decoders/filters
+`--transcode-audio` now copies conservative-profile H.264 MP4 video and encodes
+its single audio track to stereo AAC. It shares progress, cancellation, output
+validation, and cleanup with forced conversion; HEVC/MKV input remains outside
+this initial audio-only mode. Automatic selection of this path is deferred. Check available encoders/decoders/filters
 against the actual FFmpeg build before starting work. The inventory's unusual
 HDR cases need inspection, not automatic tone mapping or metadata removal.
 
@@ -464,10 +480,18 @@ exists; this workspace now has a local Git repository.
 Forced transcoding now has real-file picture/audio and phone-control confirmation.
 Short-fixture SRT/WebVTT, natural completion, and explicit cleanup checks passed.
 The normal phone-stop outcome also passed its hardware retest. Detailed real-file
-synchronization remains useful to verify. Use the
-[inventory](media-inventory.md) to test MP4 H.264/surround AAC through
-`--experimental-direct-play`, then expand M5a decisions to the other MP4
-combinations once outcomes are recorded. Proceed to stream-copy
+synchronization remains useful to verify. Experimental direct playback of
+`sample-004` and HEVC `sample-005` also passed. H.264/AC-3 `sample-041` produced
+video but no audible sound; the result is recorded in the
+[inventory](media-inventory.md). The `--transcode-audio` retry briefly
+produced sound, then returned to the home screen and timed out in the CLI.
+The saved converted output subsequently played without reported issues, with
+pause/resume and no logged errors. The initial startup failure remains unexplained;
+the user reports similar intermittent device behavior. Application-presence checks
+now cover stale BUFFERING/empty responses. Confirm integrated audio-only preparation,
+playback completion, and cleanup when convenient; the successful retry used the
+already prepared file.
+Proceed to stream-copy
 remuxing for container compatibility before automatic encoding fallback. M3 controls
 and frontend design are parked.
 
