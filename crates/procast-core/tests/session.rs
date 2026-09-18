@@ -15,7 +15,7 @@ use std::{
 
 use procast_core::{
     CancellationToken, ProcastError,
-    media::DirectPlayPolicy,
+    playback::{Mode as PlaybackMode, Profile},
     session::{self, CastRequest, Phase, SessionState, Target},
 };
 use prost::Message;
@@ -516,6 +516,7 @@ async fn experimental_formats_require_opt_in_and_serve_original_bytes() {
         let probe = fake_probe(directory.path(), &metadata.to_string());
         let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video.clone());
+        request.mode = PlaybackMode::Direct;
         request.target = Target::Host(address);
         request.probe.executable = probe;
         request.ffmpeg = directory.path().join("missing-ffmpeg");
@@ -526,7 +527,7 @@ async fn experimental_formats_require_opt_in_and_serve_original_bytes() {
         assert!(matches!(error, ProcastError::UnsupportedMedia(_)));
         assert_eq!(updates.borrow().phase, Phase::Failed);
         // The receiver is still waiting for its first connection after preflight rejection.
-        request.direct_play_policy = DirectPlayPolicy::Experimental;
+        request.profile = Profile::Experimental;
         let (progress, updates) = watch::channel(SessionState::default());
         tokio::time::timeout(
             Duration::from_secs(5),
@@ -682,6 +683,7 @@ async fn invalid_media_and_subtitles_fail_before_contacting_receiver() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     for malformed_media in [true, false] {
         let mut request = CastRequest::new(file.clone());
+        request.mode = PlaybackMode::Direct;
         request.target = Target::Host(listener.local_addr().unwrap());
         let data = if malformed_media {
             include_str!("fixtures/h264.json").replace("h264", "hevc")
@@ -816,9 +818,14 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         request.target = Target::Host(address);
         request.subtitles = Some(subs);
         let force_transcode = mode.is_some();
-        request.force_transcode = force_transcode;
-        request.transcode.mode = mode.unwrap_or_default();
-        request.transcode.directory = Some(dir.path().join("cache"));
+        request.mode = match mode {
+            Some(procast_core::transcode::TranscodeMode::Remux) => PlaybackMode::Remux,
+            Some(procast_core::transcode::TranscodeMode::AudioOnly) => PlaybackMode::Audio,
+            Some(procast_core::transcode::TranscodeMode::AudioVideo) => PlaybackMode::Transcode,
+            None => PlaybackMode::Direct,
+        };
+        request.cache.enabled = false;
+        request.cache.directory = Some(dir.path().join("cache"));
         let (progress, _) = watch::channel(SessionState::default());
         tokio::time::timeout(
             Duration::from_secs(10),

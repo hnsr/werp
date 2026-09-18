@@ -1,7 +1,7 @@
 # Procast outline
 
 Status: agreed direction and input for detailed planning.
-Last updated: 2026-09-17.
+Last updated: 2026-09-18.
 
 ## Purpose
 
@@ -29,9 +29,12 @@ backend should also be reusable by a GNOME/GTK frontend or other platforms.
   reliable session startup and shutdown. Add more media handling incrementally.
 - With the basic CLI working, park M3 playback controls and prioritize M5 media
   compatibility: original-file playback first, stream-copy remuxing next, and
-  automatic encoding only after those options have been evaluated. An explicit
-  `--force-transcode` escape hatch now prepares SDR H.264/stereo AAC MP4 before
-  playback, even for compatible inputs. See the
+  automatic encoding only after those options have been evaluated. The current
+  default now selects direct play, remux, audio-only conversion, or full conversion.
+  `--mode` and `--profile` influence that decision. Retain validated prepared files
+  beside the canonical source for reuse; fall back to the user cache when the source
+  folder is not writable. Automated checks run during implementation; batch TV
+  validation at the end of this compatibility increment. See the
   [local format inventory](media-inventory.md) for representative test cases.
 - Preserve the option of platform-specific frontends without designing their
   language bindings, plugin system, or IPC protocol prematurely.
@@ -62,8 +65,9 @@ The first version implements:
 5. Stop playback and clean up the session, child processes, and temporary
    resources when interrupted with Ctrl+C.
 
-Unsupported media should produce a clear explanation until conversion support
-is implemented. Do not require users to construct FFmpeg commands.
+Choose the least necessary conversion automatically. Unsupported HDR, ambiguous
+track selection, or missing codecs should produce clear explanations. Do not
+require users to construct FFmpeg commands.
 
 M2 uses a conservative MP4-family/H.264/AAC direct-play policy and explicit UTF-8
 SRT/WebVTT selection. The backend session owns preparation, HTTP delivery, Cast
@@ -161,8 +165,8 @@ Expand media handling in this order:
 3. Transcoding only incompatible streams where practical.
 
 Compatibility depends on the receiver model, codecs, profiles, resolution, and
-frame rate, not merely the file extension. On-the-fly conversion versus
-preprocessing/caching remains open. Seeking, buffering, temporary storage, and
+frame rate, not merely the file extension. Prepare a complete MP4 before playback and reuse validated adjacent outputs.
+On-the-fly conversion remains deferred. Seeking, buffering, temporary storage, and
 hardware performance must inform that decision. Hardware acceleration is later
 scope.
 
@@ -210,7 +214,8 @@ Resolve next:
    Visible subtitles and Ctrl+C have passed with both SRT and VTT. The IPv6-first discovery issue has
    been fixed with explicit hostname resolution and verified on the test LAN.
 3. When M3 resumes, how should playback commands preserve backend independence?
-4. What conversion and caching strategy preserves seeking and subtitle timing?
+4. Validate the automatic preparation and persistent reuse strategy in one
+   consolidated hardware session; seeking and long-duration timing need separate checks.
 5. What Fedora versions, Rust toolchain, FFmpeg capabilities, and packaging should
    we support, and how should firewall configuration be handled?
 

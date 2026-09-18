@@ -4,10 +4,11 @@ Status: M0 and M1 verified; M2 implemented with automated checks passed and
 user-confirmed SRT/WebVTT playback, Ctrl+C shutdown, and SIGTERM cleanup with exit
 code 143. The IPv4 discovery issue
 is fixed and verified; remaining hardware checks are recorded below. M3 is parked;
-M5 is in progress: the media inventory, experimental surround-AAC direct play,
-and explicit forced-transcoding path are implemented. Broader direct-play support
-and automatic conversion decisions remain planned. Explicit H.264/AAC stream-copy
-remuxing is implemented with initial hardware playback confirmed for `sample-006`.
+M5 now implements automatic preparation selection, extended HEVC/AAC remuxing,
+MKV audio-only conversion, and persistent adjacent-file reuse with user-cache
+fallback. All 58 automated tests and 12 representative local preparation/reuse
+checks passed; consolidated TV validation is pending. Earlier explicit-mode
+hardware evidence remains recorded separately.
 Updated: 2026-09-18.
 Requirements: [outline.md](outline.md).
 
@@ -23,9 +24,8 @@ and cancellation behaviour, not its advertised feature list.
 
 The first usable release is **M2** below. **M3 is parked in favour of M5**, first
 expanding original-file playback and then stream-copy remuxing. Audio/video
-encoding stays deferred for automatic decisions until these paths have been
-evaluated. An explicit `--force-transcode` preparation path is now implemented
-ahead of further compatibility trials. Milestone numbers
+encoding is now selected automatically when the profile requires it. Explicit
+`--mode` and `--profile` options influence selection. Milestone numbers
 retain their original meaning, but no longer prescribe execution order. Each
 small change should leave working behaviour behind.
 
@@ -227,10 +227,10 @@ stack. Do not proceed on the assumption that either candidate already passes.
 **Implemented; core hardware playback confirmed, remaining checks pending.**
 The `devices` and `cast` commands,
 reusable session coordinator, direct-play validation, external subtitle
-preparation, and cleanup are in place. The current direct-play policy accepts
+preparation, and cleanup are in place. The original M2 direct-play policy accepted
 MP4-family H.264 up to 1080p30, level 4.1, 8-bit 4:2:0 with zero or one mono/stereo
-AAC-LC track. Unknown required metadata fails conservatively. Broader profiles,
-remuxing, and audio conversion remain M5 work.
+AAC-LC track. Unknown required metadata failed conservatively. M5 below adds
+broader profiles, remuxing, audio conversion, and automatic selection.
 
 Verification: 27 ordinary tests and both opt-in FFmpeg tests passed, together
 with formatting and Clippy. Tests cover actual HTTP delivery to simulated TLS
@@ -320,127 +320,64 @@ Acceptance: selected embedded text tracks and external subtitles display correct
 and remain synchronized after seeking. Tests cover ambiguous matches, missing
 tracks, Unicode paths, and explicit overrides.
 
-### M5 — Broader playback, remuxing, and eventual transcoding
+### M5 — Automatic playback, broader preparation, and reuse
 
-**Current priority: avoid re-encoding wherever practical.** The
-[local media inventory](media-inventory.md) covers 75 videos and 14 format
-combinations, with neutral local symlinks and a per-file CSV. It separates 73
-original-file/remux candidates from 2 HDR-signalling review cases. These are
-provisional classifications, not playback results or a universal support list.
+**Implemented; consolidated hardware validation pending.** See
+[automatic playback and reuse](automatic-playback.md) for design, tests, and the
+single guided TV-validation command. The earlier [media inventory](media-inventory.md),
+[transcoding results](transcode-validation.md), and [remux results](remux-validation.md)
+retain the historical evidence from explicit modes.
 
-#### M5a — Original-file compatibility
+#### Selection and CLI
 
-Baseline progress: the user confirmed good picture and sound for `sample-009`,
-`sample-014`, and `sample-017` through the existing MP4 H.264/AAC-stereo path.
-See [playback evidence and its limits](media-inventory.md#user-playback-results).
-The first compatibility decision step and `--experimental-direct-play` are now
-implemented: the default remains conservative, while opt-in trials admit MP4
-H.264 with one 3–6 channel AAC-LC track. The experimental policy now also admits
-HEVC Main/Main 10 in MP4, up to level 4.0 and 1080p30 with 8/10-bit 4:2:0 pixels.
-Known HDR remains rejected; AAC-LC and track-count limits remain in place. The
-backend reports the experimental assessment. Automated checks
-cover policy boundaries, CLI propagation, original-byte serving without FFmpeg,
-and completion cleanup against a simulated receiver. On 2026-09-18, the user
-reported successful original-file playback of `sample-004` (six-channel AAC-LC)
-on the test receiver. The user subsequently reported successful experimental
-original-file playback of HEVC Main 10/AAC `sample-005` on the same receiver.
-Discrete surround output and universal HEVC compatibility are not established.
-The next experimental extension admits H.264/AC-3 MP4 with one 1–6 channel
-audio track at 32/44.1/48 kHz. Local policy/CLI and original-byte serving tests
-cover it; the user reported video playing but no audible sound for `sample-041`
-on the test setup. AC-3 remains experimental, with no automatic fallback.
-`--transcode-audio` now implements video-copy/audio-only preparation for
-conservative-profile H.264 MP4 with one audio track. The first hardware trial
-briefly produced sound, then exited. A direct retry of the saved converted output
-succeeded; the earlier failure's cause is unresolved. HEVC/AC-3, E-AC-3, and broader
-container decisions remain future steps.
+- `cast FILE` chooses original MP4, stream-copy MP4 preparation, copied video with
+  stereo AAC conversion, or full SDR H.264/stereo AAC conversion, in that order.
+- A pure backend decision module owns selection; the CLI only maps `--mode` and
+  `--profile`. Mode overrides require their requested path or return a clear error.
+- Automatic receiver profiles use observed Extended support for KPN DIW7022 and
+  Baseline for unknown receivers/explicit hosts. Extended permits bounded HEVC and
+  multichannel AAC-LC; Dolby and HE-AAC audio convert. The experimental AC-3 trial
+  remains explicitly selectable and is not promoted into normal profiles.
+- No blind runtime retry after receiver or network failure. Silent audio cannot
+  be inferred from successful protocol status.
+- Retain legacy playback flags as migration aliases. Explain the chosen mode,
+  reason, reuse, and fallback storage reliably even when progress updates coalesce.
 
-- Expand the pure media-decision step to distinguish verified support, plausible
-  receiver-specific trials, container-only preparation, and unsupported codecs.
-  Explain uncertainty instead of equating the M2 guard with hardware capability.
-- Prioritize MP4 H.264 with multichannel AAC, MP4 HEVC Main 10 with AAC, and
-  MP4 H.264 with AC-3. Then evaluate original MKV delivery experimentally and
-  AV1 separately. Use representatives from the inventory rather than launching
-  every video; hardware tests remain explicit.
-- Carry actual container/MIME information through serving and Cast LOAD instead
-  of assuming every resource is MP4. Do not merely remove the existing guard.
-- Record receiver model and whether the original file actually produced correct
-  picture, colour, audio, subtitle timing, completion, and clean cancellation.
-  Distinguish metadata predictions from observed results. Receiver hardware
-  specifications alone do not prove Cast application support.
-- Keep audio/video encoding disabled during this phase. Diagnose rejection
-  before choosing a fallback; a server/network problem does not justify encoding.
+#### Broader preparation
 
-Acceptance: representative original files for newly supported combinations play
-on the test receiver, with clear handling of unsupported and uncertain cases.
-Keep the existing external subtitle and lifecycle behaviour working.
+- Remux H.264 or bounded HEVC from MKV/MP4 with compatible AAC-LC tracks under the
+  selected profile. Preserve encoded payloads and relative stream timing.
+- Convert unsupported MKV/MP4 audio to stereo AAC while preserving supported
+  video. Full conversion remains the fallback for unsupported SDR video.
+- Preserve external subtitle handling, cancellation, subprocess reaping, progress,
+  free-space checks, and output validation. Do not blindly copy embedded subtitles,
+  attachments, titles, or chapters into the prepared MP4.
+- Known HDR, multiple tracks requiring selection, and incomplete necessary
+  metadata remain unsupported. HDR, hardware acceleration, and live encoding are deferred.
 
-#### M5b — Stream-copy remuxing
+#### Persistent reuse
 
-**Implemented for conservative-profile H.264 with optional mono/stereo AAC-LC;
-initial hardware playback confirmed.** `--remux` prepares MKV or MP4 into MP4 using
-stream copy for both selected streams. It shares session storage, progress,
-cancellation, output validation, and cleanup with the encoding paths, but requires
-no encoders. It conflicts with the other explicit playback/preparation modes.
-HEVC, surround/Dolby audio, and known HDR remain outside this first remux profile.
-Default direct-play decisions are unchanged. See [validation](remux-validation.md).
+- Default to prepared MP4 plus completion metadata beside the real source,
+  following symlinks. Fall back to the user cache for an unwritable source folder.
+- `--cache-dir` overrides storage; `--no-cache` requests temporary-only behavior.
+- Fingerprint source contents, canonical identity, output recipe/profile, and
+  completed output. Re-probe reusable files; reject incomplete/corrupt metadata.
+- Publish complete validated files without replacing originals or unrelated files.
+  Concurrent preparation may produce separate valid generations. Keep completed
+  outputs after session termination; clean partial session work on handled errors.
+- No automatic eviction or crash garbage collection yet. Document retained files
+  separately from temporary cleanup and expose their paths.
 
-For files that need a different container, preserve selected encoded video and
-audio streams. Text
-subtitle extraction can be shared with M4 when needed; embedded subtitle and
-attachment streams must not be blindly copied into MP4. Remuxing is preparation
-without re-encoding, not original-file playback.
+#### Acceptance and batch validation
 
-Acceptance: representative MKVs play after stream-copy remuxing, with unchanged
-video/audio codecs, correct timing, bounded cancellation, and source preservation.
-
-#### M5c — Forced encoding implemented; automatic fallback deferred
-
-`--force-transcode` now prepares a complete SDR H.264/stereo AAC MP4, even for
-already compatible input. It checks encoders and available space, reports
-progress, supports cancellation, validates the result, and keeps the output
-owned by the session through HTTP shutdown. Cache storage can be overridden
-with `--transcode-dir`. HDR tone mapping and multiple audio-track selection
-remain unsupported. The short generated fixture works on the TV. On 2026-09-18,
-the user also confirmed picture, audible audio, and phone-controlled seeking,
-pause/resume, and stop for forced-transcoded `sample-004`. Separate short-fixture
-SRT and WebVTT checks also passed, including caption timing, natural completion,
-and exit code 0. Explicit temporary-file/server cleanup passed after natural
-completion and phone stop. The latter exposed a timeout despite successful local
-cleanup; the app-termination fix now also passed a hardware retest with
-`Playback stopped on receiver.`, exit code 0, and no timeout/cleanup warnings.
-Detailed real-file A/V synchronization remains unverified. See
-[implementation validation](transcode-validation.md).
-
-`--transcode-audio` now copies conservative-profile H.264 MP4 video and encodes
-its single audio track to stereo AAC. It shares progress, cancellation, output
-validation, and cleanup with forced conversion; HEVC/MKV input remains outside
-this initial audio-only mode. Automatic selection of this path is deferred. Check available encoders/decoders/filters
-against the actual FFmpeg build before starting work. The inventory's unusual
-HDR cases need inspection, not automatic tone mapping or metadata removal.
-
-#### Shared preparation strategy
-
-Implemented forced-conversion strategy: **prepare a complete temporary MP4 before
-casting**. It reuses the tested seekable-file server and keeps seeking predictable.
-For future automatic decisions, prefer stream-copy remuxing, then audio conversion,
-then video conversion. Preserve compatible streams, timestamps, selected tracks, and subtitle
-alignment; make output suitable for HTTP playback.
-
-Show progress and cancellation while preparing. Store potentially large outputs
-in an appropriate user cache location with free-space checks rather than assuming
-`/tmp` is disk-backed. Never overwrite input files. Session-cache reuse and
-cross-session eviction policies can follow later.
-
-Acceptance: a compatible MKV remuxes without video re-encoding; an unsupported
-audio track converts while preserving compatible video; an incompatible video
-converts to a tested receiver profile. Verify duration, A/V sync, seeking, subtitle
-timing, cancellation, insufficient-space handling, and missing encoder errors.
-
-Record startup delay, preparation speed, CPU use, and temporary disk use on the
-target machine. Use those measurements to decide whether immediate playback via
-on-the-fly conversion is worth the added buffering and seek/restart complexity.
-Keep HDR conversion, hardware acceleration, and bitmap burn-in outside this step.
+Automatic tests cover routing, overrides, fingerprint invalidation, corrupt output,
+symlink destinations, read-only fallback, cancellation, concurrency, codec payloads,
+relative timing, subtitles, and loopback sessions. Tests must not contact TVs.
+At the end, run `scripts/validate-m5.sh` for short representative clips covering
+all preparation paths, cache reuse, subtitles, natural completion, and cancellation.
+Record visual/audio observations separately; longer playback and seeking remain
+follow-ups. The one unexplained early audio-only startup failure remains historical
+rather than being treated as a proven codec defect or proven fix.
 
 ### M6 — Fedora release readiness
 
@@ -486,35 +423,9 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Forced transcoding now has real-file picture/audio and phone-control confirmation.
-Short-fixture SRT/WebVTT, natural completion, and explicit cleanup checks passed.
-The normal phone-stop outcome also passed its hardware retest. Detailed real-file
-synchronization remains useful to verify. Experimental direct playback of
-`sample-004` and HEVC `sample-005` also passed. H.264/AC-3 `sample-041` produced
-video but no audible sound; the result is recorded in the
-[inventory](media-inventory.md). The `--transcode-audio` retry briefly
-produced sound, then returned to the home screen and timed out in the CLI.
-The saved converted output subsequently played without reported issues, with
-pause/resume and no logged errors. The initial startup failure remains unexplained;
-the user reports similar intermittent device behavior. Application-presence checks
-now cover stale BUFFERING/empty responses. A subsequent integrated audio-only
-conversion/playback run also passed, with good sound, Ctrl+C cleanup, exit code
-130, an empty preparation directory, and a closed HTTP port. Natural completion
-and receiver-initiated stop remain optional follow-up hardware checks for this
-mode; phone controls are currently unavailable.
-The user reported no problems with `sample-006` using `--remux`; the requested
-check covered picture, sound, synchronization, and Ctrl+C, without a detailed
-cleanup transcript. Local sample preparation/failure cleanup and generated
-stream-copy/full-session regressions also passed. Natural completion, external
-subtitles, and explicit hardware cleanup checks remain follow-ups.
-Broader remux profiles and automatic encoding fallback follow separately.
-M3 controls and frontend design are parked.
-
-M2's remaining hardware checks stay tracked: natural completion with SRT,
-interrupted loading, and explicit port closure after signals. Include relevant
-checks when exercising the expanded playback paths. WebVTT natural completion
-and port closure, SIGTERM cleanup with exit 143, and visible subtitles/Ctrl+C
-with both SRT and WebVTT have already passed; IPv4 discovery is fixed.
+Run the consolidated hardware batch described
+in [automatic-playback.md](automatic-playback.md). Keep M3 controls and frontend
+design parked. Do not request TV checks between the implementation units.
 
 ## Technical references
 

@@ -1,5 +1,9 @@
 # Stream-copy remux validation
 
+These notes describe the earlier explicit-mode implementation. Current default
+selection, broader profiles, and persistent storage supersede its temporary-only
+behavior; see [automatic playback and reuse](automatic-playback.md).
+
 Implemented on 2026-09-18 with the existing Rust and FFmpeg/ffprobe toolchain.
 No additional packages or dependencies were needed. The first hardware playback
 trial succeeded; detailed evidence and limits are recorded below.

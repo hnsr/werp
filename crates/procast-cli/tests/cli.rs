@@ -16,9 +16,13 @@ fn experimental_flag_reaches_preflight_and_preserves_other_checks() {
     // A missing subtitle gives a deterministic failure after media preflight,
     // before any discovery, serving, or receiver connection.
     for (experimental, codec, expected) in [
-        (false, "aac", "--experimental-direct-play"),
+        (false, "aac", "--profile extended"),
         (true, "aac", "missing.vtt"),
-        (false, "ac3", "AC-3 requires --experimental-direct-play"),
+        (
+            false,
+            "ac3",
+            "AC-3 passthrough requires --profile experimental",
+        ),
         (true, "ac3", "missing.vtt"),
         (true, "eac3", "outside the available direct-play profiles"),
     ] {
@@ -30,10 +34,13 @@ fn experimental_flag_reaches_preflight_and_preserves_other_checks() {
             .arg(&file)
             .arg("--ffprobe")
             .arg(&probe)
+            .args(["--host", "127.0.0.1"])
             .arg("--subtitles")
             .arg(dir.path().join("missing.vtt"));
         if experimental {
             command.arg("--experimental-direct-play");
+        } else {
+            command.args(["--mode", "direct", "--profile", "baseline"]);
         }
         let output = command.output().unwrap();
         assert!(!output.status.success());
@@ -62,6 +69,73 @@ fn help_and_argument_errors_are_available_without_ffprobe() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn auto_remux_reuses_saved_output_and_readonly_source_falls_back_to_user_cache() {
+    use std::{fs, net::TcpListener, os::unix::fs::PermissionsExt};
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("source");
+    fs::create_dir(&parent).unwrap();
+    let source = parent.join("input.mkv");
+    fs::write(&source, "original").unwrap();
+    let probe = dir.path().join("probe");
+    fs::write(&probe, "#!/bin/sh\nfor last do :; done\ncase \"$last\" in *input.mkv) cat \"$0.input.json\";; *) cat \"$0.output.json\";; esac\n").unwrap();
+    let fixture = include_str!("../../procast-core/tests/fixtures/h264.json");
+    fs::write(dir.path().join("probe.output.json"), fixture).unwrap();
+    fs::write(
+        dir.path().join("probe.input.json"),
+        fixture.replace("mov,mp4,m4a,3gp,3g2,mj2", "matroska,webm"),
+    )
+    .unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+    let ffmpeg = dir.path().join("ffmpeg");
+    fs::write(
+        &ffmpeg,
+        "#!/bin/sh\nfor last do :; done\nprintf prepared > \"$last\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&ffmpeg, fs::Permissions::from_mode(0o700)).unwrap();
+    // Reserve a loopback address without listening for Cast TLS: after closing
+    // it, refusal lets us verify preparation without a real receiver.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let run = || {
+        let output = Command::new(env!("CARGO_BIN_EXE_procast"))
+            .arg("cast")
+            .arg(&source)
+            .args(["--host", "127.0.0.1", "--cast-port", &port.to_string()])
+            .arg("--ffprobe")
+            .arg(&probe)
+            .arg("--ffmpeg")
+            .arg(&ffmpeg)
+            .env("XDG_CACHE_HOME", dir.path().join("user-cache"))
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("Selected Remux"), "{stderr}");
+        assert!(stderr.contains("Connection refused"), "{stderr}");
+        stderr
+    };
+    let first = run();
+    assert!(first.contains("Saved prepared file"), "{first}");
+    fs::rename(&ffmpeg, dir.path().join("saved-ffmpeg")).unwrap();
+    let second = run();
+    assert!(second.contains("Reusing prepared file"), "{second}");
+    fs::rename(dir.path().join("saved-ffmpeg"), &ffmpeg).unwrap();
+    // Change source content so the adjacent entry is ineligible; no metadata-only hit.
+    fs::write(&source, "modified").unwrap();
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o555)).unwrap();
+    let third = run();
+    fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(
+        third.contains("Source folder is not writable; using cache"),
+        "{third}"
+    );
+    assert!(third.contains("user-cache"), "{third}");
+    assert_eq!(fs::read(&source).unwrap(), b"modified");
 }
 
 #[cfg(target_os = "linux")]
@@ -168,6 +242,7 @@ exec sleep 60
             .arg("cast")
             .arg(&file)
             .arg(flag)
+            .args(["--host", "127.0.0.1", "--no-cache"])
             .arg("--transcode-dir")
             .arg(&cache)
             .arg("--ffprobe")

@@ -1,2 +1,7 @@
 /target/
 /samples/
+
+# Prepared media and completion records (never source files).
+*.procast-*.mp4
+*.procast-*.mp4.json
+.procast-write-check-*/

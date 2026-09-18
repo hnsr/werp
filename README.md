@@ -1,10 +1,9 @@
 # Procast
 
-A Rust CLI and reusable backend for casting local videos and subtitles to
-Chromecast. **The CLI supports discovery, direct-play casting, optional forced
-transcoding, and external SRT/WebVTT subtitles.** The M2 CLI has passed automated tests, and the user has
-verified visible subtitles and Ctrl+C shutdown with both formats on a KPN DIW7022.
-Further hardware checks are tracked in the validation notes.
+A Rust CLI and reusable backend for casting local videos and external subtitles
+to Chromecast. `cast FILE` selects direct play, remuxing, audio conversion, or full
+conversion and reuses validated prepared files automatically. The latest changes
+have automated coverage; the consolidated TV validation is still pending.
 
 ## Development setup
 
@@ -12,7 +11,7 @@ Further hardware checks are tracked in the validation notes.
   rustup installs the pinned toolchain when needed.
 - A working native linker/C compiler (such as Fedora's GCC).
 - `ffprobe` on PATH for inspection and casting. `ffmpeg` is required for SRT
-  conversion, forced transcoding, and optional test-fixture generation. Direct
+  conversion, remuxing/transcoding on a cache miss, and test-fixture generation. Direct
   playback with existing WebVTT needs no FFmpeg. Forced transcoding requires
   `libx264` and AAC encoders plus a decoder for the input codecs.
 - Network access for the initial Cargo dependency download.
@@ -44,145 +43,101 @@ use `--cast-port` only with `--host`. Discovery and casting currently use IPv4.
 `cast` stays in the foreground until natural completion or interruption. It
 replaces playback on the selected receiver. Ctrl+C or SIGTERM stops Procast's
 owned media, closes its server and transport, reaps subprocesses, and removes
-temporary media and subtitles. If another sender takes over, Procast exits without stopping
+temporary media and subtitles. Completed reusable outputs are retained. If another sender takes over, Procast exits without stopping
 their session. Interactive playback controls are planned for M3.
 
-### Current media support
-
-M2 validates a conservative direct-play profile before contacting a receiver:
-
-- MP4-family container reported by ffprobe, with one H.264 video stream.
-- Baseline, Constrained Baseline, Main, or High profile; level up to 4.1,
-  8-bit `yuv420p`, at most 1920×1080 and 30 fps; no HDR transfer function.
-- No audio, or one mono/stereo AAC-LC track at up to 48 kHz.
-- Optional external UTF-8 `.srt` or `.vtt`, up to 4 MiB, with valid timed cues.
-
-The profile is a preflight policy, not a guarantee that every receiver can decode
-every accepted file. Receiver rejection remains a runtime error. For an explicit
-trial of **3–6 channel AAC-LC**, **HEVC Main/Main 10**, or **H.264 with AC-3**
-in MP4, use:
+### Automatic playback and overrides
 
 ```sh
-cargo run --locked -- cast /path/to/surround.mp4 \
-  --device "Living Room" --experimental-direct-play --http-port 8010
+procast cast /path/to/movie.mkv --device "Living Room"
+procast cast /path/to/movie.mkv --device "Living Room" --subtitles /path/to/movie.srt
 ```
 
-The experimental flag serves the original file without audio/video conversion
-and reports receiver-dependent support. HEVC trials are limited to level 4.0,
-8/10-bit 4:2:0, and 1080p30, with zero or one AAC-LC track of up to six channels.
-Check picture, colours, audible dialogue, synchronization, and correct downmix or
-surround output on your actual setup. H.264/AC-3 trials permit one 1–6 channel
-track at 32, 44.1, or 48 kHz; HEVC/AC-3 is not enabled. Dolby audio output depends
-on the receiver and connected equipment. It does not enable E-AC-3, MKV, known
-HDR signalling, unknown required metadata, or multiple audio tracks. Omitting
-the flag keeps the conservative policy. The reusable backend exposes the policy
-and assessment independently of the CLI. See the [media inventory and hardware
-results](docs/media-inventory.md) for current evidence.
+Procast inspects the source, discovers/selects the receiver, and explains its
+choice before preparing anything or launching the Cast application:
 
-The tested H.264/AC-3 sample played video but produced no audible sound on the
-KPN DIW7022 setup. AC-3 remains an experimental trial, with no automatic fallback.
+1. Serve the original MP4 if its streams fit the receiver profile.
+2. Copy supported video/audio from MKV or MP4 into MP4 when only a remux is needed.
+3. Copy supported video and encode incompatible audio to stereo AAC in MP4.
+4. Encode unsupported SDR video to H.264 and audio to stereo AAC.
 
-Embedded subtitle extraction and automatic conversion fallback are not implemented
-yet. Explicit stream-copy preparation is available with `--remux`.
-Subtitles are used only when explicitly selected; source
-files are never modified. SRT conversion has a 30-second limit, and temporary
-files are session-owned. WebVTT cue timing is validated; styling semantics are
-left to the receiver. Track activation and HTTP requests do not prove visual
-rendering, which requires the hardware check.
+All preparation finishes before playback; seeking uses the existing HTTP range
+server. Selection is based on metadata and a receiver profile. Procast does not
+blindly retry a failing cast or network connection with more encoding, and cannot
+automatically detect silent audio or incorrect colours on the TV.
 
-Override executables with `cast --ffprobe PATH --ffmpeg PATH`; use
-`--probe-timeout SECONDS` to change the probe limit.
+| Option | Meaning |
+| --- | --- |
+| `--mode auto` | Default: choose the least preparation needed |
+| `--mode direct` | Require original-file playback; fail if the profile rejects it |
+| `--mode remux` | Require stream-copy MP4 preparation; no encoding |
+| `--mode audio` | Require copied video and stereo AAC audio conversion |
+| `--mode transcode` | Require full SDR H.264/stereo AAC preparation |
+| `--profile auto` | Default: Extended for the observed KPN DIW7022 model; Baseline for unknown models or `--host` |
+| `--profile baseline` | MP4 H.264 up to 1080p30/level 4.1, 8-bit 4:2:0, optional mono/stereo AAC-LC |
+| `--profile extended` | Also allow HEVC Main/Main 10 up to level 4.0/1080p30 and AAC-LC through six channels |
+| `--profile experimental` | Additionally allow H.264/AC-3 trials; audible output is not guaranteed |
+| `--no-cache` | Prepare afresh and delete the session output afterward |
+| `--cache-dir PATH` | Store prepared files in this directory instead of beside the source |
 
-### Force transcoding
+Extended support is based on observations on the development receiver, not full
+capability negotiation or a guarantee for every file/device. Baseline can be
+selected explicitly on a receiver whose audio or video support differs. Dolby
+and HE-AAC audio convert to AAC-LC under the normal profiles. Full encoding uses
+libx264 veryfast/CRF 20, up to 1080p30, and stereo AAC 192 kbps/48 kHz.
+
+The old `--force-transcode`, `--transcode-audio`, `--remux`, and
+`--experimental-direct-play` flags remain hidden compatibility aliases with a
+migration notice. They conflict with an explicit `--mode`. `--transcode-dir` is
+an alias for `--cache-dir`; it no longer implies temporary-only storage.
+
+Known PQ/HLG/Dolby Vision, ambiguous multiple audio/video tracks, and missing
+required duration/frame-rate information produce clear errors. HDR tone mapping,
+hardware acceleration, on-the-fly conversion, and track selection remain deferred.
+An unsupported audio decoder or required encoder produces an FFmpeg error; a
+valid cache hit does not require FFmpeg for media preparation.
+
+### Persistent prepared files
+
+Prepared files are stored beside the **canonical original file**, following
+symlinks. Names look like `movie.mkv.procast-<key>-<generation>.mp4`, with a small
+`.mp4.json` completion record. Only registered media/subtitles are served; the
+sidecar is not exposed. If the source directory is not writable, Procast announces
+a fallback to `$XDG_CACHE_HOME/procast` or `$HOME/.cache/procast`.
+
+Reuse verifies a full SHA-256 fingerprint of the source, its canonical path,
+the preparation mode/profile/recipe version, the output digest, and output media
+metadata. This reads files from disk but avoids encoding. Changed or damaged files
+are regenerated under new names without overwriting existing files. Subtitles
+are prepared separately, so changing an external subtitle does not invalidate video.
+
+Incomplete session work is deleted on handled failures/cancellation. Validated
+outputs survive playback completion, cancellation, or a receiver connection error.
+Publication never replaces an existing file; concurrent first-time requests may
+produce duplicate valid generations. There is no automatic eviction yet: obsolete
+results, duplicates, or crash leftovers can be removed manually when not in use.
+Delete a prepared MP4 together with its `.mp4.json` sidecar. Source files are never
+modified. With `--no-cache`, the previous temporary-output cleanup behavior applies.
+
+### Subtitles and batch validation
+
+External UTF-8 SRT/WebVTT is supported via `--subtitles`; SRT conversion needs
+FFmpeg. Embedded subtitles, attachments, titles, and chapters are omitted during
+preparation. Embedded subtitle extraction and automatic subtitle discovery remain
+separate work.
+
+Run the consolidated hardware checks when ready:
 
 ```sh
-cargo run --locked -- cast /path/to/movie.mkv --device "Living Room" \
-  --force-transcode --subtitles /path/to/movie.srt --http-port 8010
+bash scripts/validate-m5.sh "Living Room"
 ```
 
-`--force-transcode` re-encodes the video and any audio even if the original file
-could play directly. It prepares a complete MP4 before connecting to the receiver:
-H.264 High/level 4.1, 8-bit 4:2:0, at most 1920×1080 and 30 fps, and stereo AAC
-at 48 kHz. Smaller inputs are not deliberately enlarged; scaling preserves aspect
-ratio. Audio-free inputs remain silent. Encoding uses the CPU (`libx264`,
-`veryfast`, CRF 20, maximum video rate 8 Mbps; AAC 192 kbps).
-
-Preparation shows percentage progress and remains cancellable with Ctrl+C or
-SIGTERM. The source is never overwritten. Output is probed and checked before
-serving, with metadata at the front of the MP4 for HTTP playback. Playback cannot
-start until preparation finishes; quality loss and extra disk space are expected.
-
-Private session directories default to `$XDG_CACHE_HOME/procast`, falling back to
-`$HOME/.cache/procast`. Use `--transcode-dir /path/to/disk/cache` to choose another
-parent. Space is estimated before encoding and checked during progress updates;
-this is not a disk reservation. Avoid RAM-backed `/tmp` for long videos. Outputs
-are deleted on normal completion, errors, or handled cancellation; a machine
-crash or SIGKILL can leave a `session-*` directory to remove after Procast stops.
-Outputs are not reused across sessions. The encoding deadline is 24 hours,
-independent of the short probe timeout.
-
-Initial limits: one video and at most one audio track, known duration/frame rate,
-and SDR input. Known PQ/HLG and Dolby Vision signalling is rejected because tone
-mapping is not implemented; missing HDR metadata cannot be detected reliably.
-External SRT/WebVTT keeps the existing path; embedded subtitles are not selected
-or burned in. `--force-transcode` and `--experimental-direct-play` are mutually
-exclusive. Hardware acceleration and on-the-fly transcoding are deferred.
-
-See [forced-transcoding validation](docs/transcode-validation.md). The user has
-confirmed real-file picture/audio playback and seeking, pause/resume, and stop
-from a phone, plus short-fixture SRT/WebVTT captions and natural completion.
-Temporary-file/server cleanup also passed after natural completion and phone stop.
-Improved phone-stop reporting also passed its hardware retest with exit code 0.
-Detailed real-file synchronization remains to be checked.
-
-### Convert only the audio
-
-For H.264 MP4 whose picture works but audio does not, preserve the encoded video
-and convert the single audio track to stereo AAC:
-
-```sh
-cargo run --locked -- cast /path/to/movie.mp4 --device "Living Room" \
-  --transcode-audio --http-port 8010
-```
-
-This prepares a complete MP4 with copied video and 192 kbps, 48 kHz stereo AAC.
-It avoids video encoding and its quality loss, but still reads and writes the
-whole file before playback. Video must already meet the conservative H.264
-profile above; HEVC, MKV, known HDR, missing audio, and multiple audio tracks
-are rejected in this initial version. FFmpeg needs an input audio decoder and
-the AAC encoder; this mode does not need a video encoder.
-
-External `--subtitles`, progress, cancellation, `--transcode-dir`, output
-validation, and session cleanup use the same preparation path described above.
-The disk estimate includes the source size plus new audio and muxing overhead.
-`--remux`, `--transcode-audio`, `--force-transcode`, and
-`--experimental-direct-play` are mutually exclusive. Without these flags the conservative direct-play policy
-remains unchanged; there is no automatic conversion fallback.
-
-### Remux MKV to MP4 without encoding
-
-```sh
-cargo run --locked -- cast /path/to/movie.mkv --device "Living Room" \
-  --remux --http-port 8010
-```
-
-`--remux` copies the selected encoded video and audio into a complete, seekable
-MP4 before connecting. There is no audio/video re-encoding or associated quality
-loss. The initial profile accepts Matroska/MKV or MP4 with one H.264 video stream
-within the conservative limits above, and zero or one mono/stereo AAC-LC track.
-HEVC, surround AAC, Dolby audio, known HDR, and multiple audio tracks are rejected
-for this mode. An incompatible codec needs a different path; changing containers
-alone cannot fix it. FFmpeg is required but no audio/video encoders are needed.
-
-Embedded subtitles, attachments, chapters, and source metadata are omitted.
-External SRT/WebVTT still works with `--subtitles`; embedded subtitle extraction
-remains deferred. Preparation reads and writes the entire file, reports progress,
-and shares the existing cancellation and cleanup behavior. `--transcode-dir`
-chooses the preparation directory for remuxing too. Disk checks estimate source
-size plus overhead and headroom. Default direct play remains unchanged.
-
-The first hardware trial with `sample-006` succeeded; see
-[remux validation and remaining checks](docs/remux-validation.md).
+This creates short neutral clips under ignored `samples/`, then casts them in
+sequence. It checks selected modes, natural completion, cache reuse without
+FFmpeg, and cancellation/HTTP cleanup; it asks for picture, sound, timing, and
+caption confirmation. It targets the development receiver's Extended profile.
+Allow roughly 15–20 minutes. No hardware test runs during `cargo test`.
+See [automatic playback and reuse validation](docs/automatic-playback.md).
 
 ### Network and session behaviour
 

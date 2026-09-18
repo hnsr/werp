@@ -1,5 +1,9 @@
 # Forced-transcoding validation
 
+These notes describe the earlier explicit-mode implementation. Current default
+selection, broader profiles, and persistent storage supersede its temporary-only
+behavior; see [automatic playback and reuse](automatic-playback.md).
+
 Implemented on 2026-09-17 with Rust 1.96.0 and FFmpeg/ffprobe 8.1.2 on Fedora 44.
 No additional system packages were needed. This is an explicit escape hatch;
 automatic conversion decisions remain future work. Explicit stream-copy remuxing

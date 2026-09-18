@@ -12,9 +12,11 @@ use tokio::{sync::watch, time::Instant};
 
 use crate::{
     CancellationToken, ProcastError,
+    cache::{self, CacheOptions},
     cast::CastSession,
     discovery,
-    media::{self, DirectPlayAssessment, DirectPlayPolicy, ProbeOptions},
+    media::{self, ProbeOptions},
+    playback::{self, Mode, Profile},
     serve::{MediaServer, address_toward},
     subtitles,
     transcode::{self, TranscodeMode, TranscodeOptions},
@@ -37,9 +39,9 @@ pub struct CastRequest {
     pub scan_duration: Duration,
     pub probe: ProbeOptions,
     pub ffmpeg: PathBuf,
-    pub direct_play_policy: DirectPlayPolicy,
-    /// Prepare MP4 using `transcode.mode` even when the source is directly playable.
-    pub force_transcode: bool,
+    pub mode: Mode,
+    pub profile: Profile,
+    pub cache: CacheOptions,
     pub transcode: TranscodeOptions,
 }
 
@@ -54,8 +56,9 @@ impl CastRequest {
             scan_duration: Duration::from_secs(5),
             probe: ProbeOptions::default(),
             ffmpeg: "ffmpeg".into(),
-            direct_play_policy: DirectPlayPolicy::default(),
-            force_transcode: false,
+            mode: Mode::Auto,
+            profile: Profile::Auto,
+            cache: CacheOptions::default(),
             transcode: TranscodeOptions::default(),
         }
     }
@@ -83,6 +86,8 @@ pub struct SessionState {
     pub phase: Phase,
     pub position_seconds: Option<f64>,
     pub message: Option<String>,
+    /// Durable preparation decisions, retained even when progress updates coalesce.
+    pub notices: Vec<String>,
 }
 
 impl Default for SessionState {
@@ -91,6 +96,7 @@ impl Default for SessionState {
             phase: Phase::Preparing,
             position_seconds: None,
             message: None,
+            notices: Vec::new(),
         }
     }
 }
@@ -101,11 +107,15 @@ fn report(
     position_seconds: Option<f64>,
     message: Option<String>,
 ) {
-    progress.send_replace(SessionState {
-        phase,
-        position_seconds,
-        message,
+    progress.send_modify(|state| {
+        state.phase = phase;
+        state.position_seconds = position_seconds;
+        state.message = message;
     });
+}
+
+fn notice(progress: &watch::Sender<SessionState>, message: String) {
+    progress.send_modify(|state| state.notices.push(message));
 }
 
 /// Cancel via the token and await completion. Progress uses a latest-state
@@ -128,78 +138,61 @@ pub async fn run(
             Some("Inspecting media".into()),
         );
         let info = media::inspect(&request.file, &request.probe, cancel).await?;
-        if request.force_transcode && request.direct_play_policy != DirectPlayPolicy::Conservative {
-            return Err(ProcastError::Transcode("media preparation and experimental direct play are mutually exclusive".into()));
-        }
-        let assessment = if request.force_transcode { None } else {
-            Some(media::assess_direct_play(&info, request.direct_play_policy)?)
-        };
-        if let Some(DirectPlayAssessment::ExperimentalAacSurround { channels }) = assessment {
-            tracing::warn!(
-                channels,
-                "Experimental direct play: AAC-LC surround support is unverified on this receiver. Serving the original file without conversion; check audible audio and correct downmix or surround output."
-            );
-        }
-        if let Some(DirectPlayAssessment::ExperimentalHevc { audio_channels }) = assessment {
-            tracing::warn!(
-                ?audio_channels,
-                "Experimental direct play: HEVC support depends on the receiver. Serving the original MP4 without conversion; check picture, colours, audible audio and synchronization."
-            );
-        }
-        if let Some(DirectPlayAssessment::ExperimentalAc3 { channels }) = assessment {
-            tracing::warn!(
-                channels,
-                "Experimental direct play: AC-3 audio output depends on the receiver and connected equipment. Serving the original MP4 without conversion; check audible dialogue, channel balance and synchronization."
-            );
-        }
-        if let Some(path) = &request.subtitles {
-            report(
-                &progress,
-                Phase::Preparing,
-                None,
-                Some("Preparing subtitles".into()),
-            );
-            prepared = Some(subtitles::prepare(path, &request.ffmpeg, cancel).await?);
-        }
-        if request.force_transcode {
-            let message = match request.transcode.mode {
-                TranscodeMode::AudioVideo => "Preparing H.264/stereo AAC MP4 before playback",
-                TranscodeMode::AudioOnly => "Copying video and converting audio to stereo AAC before playback",
-                TranscodeMode::Remux => "Copying video and audio into MP4 before playback",
-            };
-            report(&progress, Phase::Preparing, None, Some(message.into()));
-            let mut last_percent = None;
-            prepared_media = Some(transcode::prepare(
-                &info, &request.ffmpeg, &request.probe, &request.transcode, cancel,
-                |update| {
-                    let percent = (update.fraction * 100.0).floor() as u32;
-                    if last_percent != Some(percent) {
-                        report(&progress, Phase::Preparing, None, Some(format!("{}: {percent}%", match request.transcode.mode {
-                            TranscodeMode::AudioOnly => "Audio conversion",
-                            TranscodeMode::AudioVideo => "Transcoding",
-                            TranscodeMode::Remux => "Remuxing",
-                        })));
-                        last_percent = Some(percent);
-                    }
-                },
-            ).await?);
-        }
-        let media_path = prepared_media.as_ref().map_or(&info.path, |prepared| &prepared.info.path);
-        let address = match &request.target {
-            Target::Host(address) => *address,
+        transcode::validate_input(&info)?;
+        let (address, model) = match &request.target {
+            Target::Host(address) => (*address, None),
             target => {
                 report(&progress, Phase::Discovering, None, None);
                 let devices = discovery::discover(request.scan_duration, cancel).await?;
                 let selected = select_target(&devices, target)?;
-                SocketAddr::new(
+                (SocketAddr::new(
                     (*selected.addresses.first().ok_or_else(|| {
                         ProcastError::Discovery("selected device has no IPv4 address".into())
-                    })?)
-                    .into(),
-                    selected.port,
-                )
+                    })?).into(), selected.port,
+                ), Some(selected.model.clone()))
             }
         };
+        let policy = request.profile.resolve(model.as_deref());
+        let plan = playback::select(&info, request.mode, policy)?;
+        notice(&progress, format!("Selected {:?} ({policy:?} profile): {}", plan.mode, plan.reason));
+        if request.profile == Profile::Experimental {
+            tracing::warn!("Experimental direct play/profile: receiver audio/video support is not guaranteed; check audible output and picture");
+        }
+        if let Some(path) = &request.subtitles {
+            report(&progress, Phase::Preparing, None, Some("Preparing subtitles".into()));
+            prepared = Some(subtitles::prepare(path, &request.ffmpeg, cancel).await?);
+        }
+        if let Some(mode) = plan.preparation() {
+            let mut options = request.transcode.clone();
+            options.mode = mode;
+            options.playback_policy = plan.policy;
+            let label = match mode {
+                TranscodeMode::AudioVideo => "Transcoding",
+                TranscodeMode::AudioOnly => "Audio conversion",
+                TranscodeMode::Remux => "Remuxing",
+            };
+            let mut last_percent = None;
+            prepared_media = Some(cache::prepare(
+                &info, &request.ffmpeg, &request.probe, &options, &request.cache, cancel,
+                |event| {
+                    let message = match event {
+                        cache::Event::Checking => Some("Checking prepared-file cache".into()),
+                        cache::Event::Reused(path) => { notice(&progress, format!("Reusing prepared file: {}", path.display())); None },
+                        cache::Event::Stored(path) => { notice(&progress, format!("Saved prepared file: {}", path.display())); None },
+                        cache::Event::Fallback(path) => { notice(&progress, format!("Source folder is not writable; using cache: {}", path.display())); None },
+                        cache::Event::Progress(update) => {
+                            let percent = (update.fraction * 100.0).floor() as u32;
+                            if last_percent == Some(percent) { None } else {
+                                last_percent = Some(percent);
+                                Some(format!("{label}: {percent}%"))
+                            }
+                        }
+                    };
+                    if let Some(message) = message { report(&progress, Phase::Preparing, None, Some(message)); }
+                },
+            ).await?);
+        }
+        let media_path = prepared_media.as_ref().map_or(&info.path, |prepared| &prepared.info.path);
         let bind = match request.bind_address {
             Some(ip) => ip,
             None => address_toward(address).await?,

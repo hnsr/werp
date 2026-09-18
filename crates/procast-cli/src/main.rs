@@ -9,7 +9,7 @@ use std::{
 use clap::{Parser, Subcommand};
 use procast_core::{
     CancellationToken, ProcastError, discovery,
-    media::{self, DirectPlayPolicy, MediaInfo, ProbeOptions},
+    media::{self, MediaInfo, ProbeOptions},
     session::{self, CastRequest, Phase, Target},
 };
 use tracing_subscriber::EnvFilter;
@@ -26,6 +26,44 @@ struct Cli {
     verbose: bool,
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum ModeArg {
+    Auto,
+    Direct,
+    Remux,
+    Audio,
+    Transcode,
+}
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum ProfileArg {
+    Auto,
+    Baseline,
+    Extended,
+    Experimental,
+}
+
+impl From<ModeArg> for procast_core::playback::Mode {
+    fn from(mode: ModeArg) -> Self {
+        match mode {
+            ModeArg::Auto => Self::Auto,
+            ModeArg::Direct => Self::Direct,
+            ModeArg::Remux => Self::Remux,
+            ModeArg::Audio => Self::Audio,
+            ModeArg::Transcode => Self::Transcode,
+        }
+    }
+}
+impl From<ProfileArg> for procast_core::playback::Profile {
+    fn from(profile: ProfileArg) -> Self {
+        match profile {
+            ProfileArg::Auto => Self::Auto,
+            ProfileArg::Baseline => Self::Baseline,
+            ProfileArg::Extended => Self::Extended,
+            ProfileArg::Experimental => Self::Experimental,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -50,33 +88,27 @@ enum Commands {
         cast_port: u16,
         #[arg(long)]
         subtitles: Option<PathBuf>,
-        /// Try MP4 HEVC, multichannel AAC-LC, or H.264/AC-3; receiver support varies
+        /// Select automatically, or require one preparation path
+        #[arg(long, value_enum, default_value_t = ModeArg::Auto,
+            conflicts_with_all = ["force_transcode", "transcode_audio", "remux", "experimental_direct_play"])]
+        mode: ModeArg,
+        /// Receiver compatibility profile (auto uses discovered model; unknown/--host uses baseline)
+        #[arg(long, value_enum, default_value_t = ProfileArg::Auto, conflicts_with = "experimental_direct_play")]
+        profile: ProfileArg,
+        /// Do not reuse or retain prepared files; remove them after this session
         #[arg(long)]
+        no_cache: bool,
+        /// Store prepared files here instead of beside the source; alias: --transcode-dir
+        #[arg(long, alias = "transcode-dir")]
+        cache_dir: Option<PathBuf>,
+        #[arg(long, hide = true, group = "legacy_mode")]
         experimental_direct_play: bool,
-        /// Re-encode SDR video/audio to H.264/stereo AAC MP4 before playback
-        #[arg(
-            long,
-            group = "conversion",
-            conflicts_with = "experimental_direct_play"
-        )]
+        #[arg(long, hide = true, group = "legacy_mode")]
         force_transcode: bool,
-        /// Copy compatible H.264 MP4 video and convert only audio to stereo AAC
-        #[arg(
-            long,
-            group = "conversion",
-            conflicts_with = "experimental_direct_play"
-        )]
+        #[arg(long, hide = true, group = "legacy_mode")]
         transcode_audio: bool,
-        /// Copy compatible H.264/AAC streams from MKV or MP4 into MP4 without encoding
-        #[arg(
-            long,
-            group = "conversion",
-            conflicts_with = "experimental_direct_play"
-        )]
+        #[arg(long, hide = true, group = "legacy_mode")]
         remux: bool,
-        /// Temporary media parent directory (default: user cache/procast)
-        #[arg(long, requires = "conversion")]
-        transcode_dir: Option<PathBuf>,
         /// Reachable local IP to advertise to the receiver
         #[arg(long)]
         bind_address: Option<IpAddr>,
@@ -231,7 +263,10 @@ async fn execute(
             force_transcode,
             transcode_audio,
             remux,
-            transcode_dir,
+            mode,
+            profile,
+            no_cache,
+            cache_dir,
             bind_address,
             http_port,
             scan_seconds,
@@ -248,20 +283,29 @@ async fn execute(
                 Target::Auto
             };
             request.subtitles = subtitles;
-            request.force_transcode = force_transcode || transcode_audio || remux;
-            request.transcode.mode = if remux {
-                procast_core::transcode::TranscodeMode::Remux
+            request.mode = if force_transcode {
+                procast_core::playback::Mode::Transcode
             } else if transcode_audio {
-                procast_core::transcode::TranscodeMode::AudioOnly
+                procast_core::playback::Mode::Audio
+            } else if remux {
+                procast_core::playback::Mode::Remux
+            } else if experimental_direct_play {
+                procast_core::playback::Mode::Direct
             } else {
-                procast_core::transcode::TranscodeMode::AudioVideo
+                mode.into()
             };
-            request.transcode.directory = transcode_dir;
-            request.direct_play_policy = if experimental_direct_play {
-                DirectPlayPolicy::Experimental
+            request.profile = if experimental_direct_play {
+                procast_core::playback::Profile::Experimental
             } else {
-                DirectPlayPolicy::Conservative
+                profile.into()
             };
+            if force_transcode || transcode_audio || remux || experimental_direct_play {
+                eprintln!(
+                    "Note: legacy playback flag; prefer --mode and --profile. Prepared files are now retained unless --no-cache is set."
+                );
+            }
+            request.cache.enabled = !no_cache;
+            request.cache.directory = cache_dir;
             request.bind_address = bind_address;
             request.http_port = http_port;
             request.scan_duration = Duration::from_secs(scan_seconds);
@@ -274,8 +318,13 @@ async fn execute(
                 tokio::sync::watch::channel(session::SessionState::default());
             let monitor = tokio::spawn(async move {
                 let mut last = None;
+                let mut notices_printed = 0;
                 loop {
                     let state = updates.borrow_and_update().clone();
+                    for message in state.notices.iter().skip(notices_printed) {
+                        eprintln!("{}", message.escape_debug());
+                    }
+                    notices_printed = state.notices.len();
                     let key = (state.phase, state.message.clone());
                     if last.as_ref() != Some(&key)
                         && !matches!(
@@ -434,7 +483,7 @@ mod tests {
             vec!["--remux", "--force-transcode"],
             vec!["--remux", "--transcode-audio"],
             vec!["--remux", "--experimental-direct-play"],
-            vec!["--transcode-dir", "/tmp"],
+            vec!["--mode", "auto", "--remux"],
         ] {
             let args = ["procast", "cast", "movie.mp4"].into_iter().chain(extra);
             assert!(Cli::try_parse_from(args).is_err());

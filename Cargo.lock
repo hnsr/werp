@@ -868,6 +868,7 @@ dependencies = [
  "oxicast",
  "prost",
  "rcgen",
+ "ring",
  "rustix",
  "rustls",
  "serde",

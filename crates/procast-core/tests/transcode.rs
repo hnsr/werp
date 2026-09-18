@@ -261,7 +261,7 @@ printf 'prepared media' > "$last"
     // Reject inputs that would need video encoding or broader container support,
     // before starting FFmpeg (which is now deliberately missing).
     fs::remove_file(&ffmpeg).unwrap();
-    for case in ["mkv", "hevc", "4k", "no-audio", "multiple-audio"] {
+    for case in ["hevc", "4k", "no-audio", "multiple-audio"] {
         let (mut invalid, _) = input(dir.path()).await;
         match case {
             "mkv" => invalid.container = "matroska,webm".into(),
@@ -348,6 +348,130 @@ async fn first_pts(path: &Path, stream: &str) -> f64 {
         .unwrap()
         .parse()
         .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires FFmpeg with libx264/libx265, AAC, AC-3/E-AC-3 and ffprobe"]
+async fn extended_mkv_preparation_preserves_video_and_converts_only_unsupported_audio() {
+    use procast_core::{
+        media::DirectPlayPolicy,
+        playback::{self, Mode},
+    };
+    for (video_codec, audio_codec, expected) in [
+        ("libx264", "ac3", Mode::Audio),
+        ("libx265", "aac", Mode::Remux),
+        ("libx265", "eac3", Mode::Audio),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.mkv");
+        let mut command = tokio::process::Command::new("ffmpeg");
+        command.args([
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=24:duration=2",
+            "-itsoffset",
+            "0.25",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1.5",
+            "-c:v",
+            video_codec,
+            "-threads",
+            "2",
+        ]);
+        if video_codec == "libx265" {
+            command.args([
+                "-pix_fmt",
+                "yuv420p10le",
+                "-preset",
+                "ultrafast",
+                "-x265-params",
+                "pools=1:frame-threads=1:log-level=error",
+            ]);
+        } else {
+            command.args(["-profile:v", "high", "-level:v", "4.1"]);
+        }
+        command.args(["-c:a", audio_codec, "-ac", "6", "-b:a", "192k"]);
+        let generated = command
+            .arg(&source)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .unwrap();
+        assert!(
+            generated.status.success(),
+            "{}",
+            String::from_utf8_lossy(&generated.stderr)
+        );
+        let cancel = CancellationToken::new();
+        let probe = ProbeOptions::default();
+        let info = media::inspect(&source, &probe, &cancel).await.unwrap();
+        let plan = playback::select(&info, Mode::Auto, DirectPlayPolicy::Extended).unwrap();
+        assert_eq!(plan.mode, expected, "{video_codec}/{audio_codec}");
+        let mut options = options(dir.path());
+        options.timeout = Duration::from_secs(30);
+        options.mode = plan.preparation().unwrap();
+        options.playback_policy = plan.policy;
+        let output = transcode::prepare(
+            &info,
+            Path::new("ffmpeg"),
+            &probe,
+            &options,
+            &cancel,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        let args = [
+            "-map",
+            "0:v:0",
+            "-c",
+            "copy",
+            "-f",
+            "streamhash",
+            "-hash",
+            "sha256",
+            "-",
+        ];
+        assert_eq!(
+            ffmpeg_output(&source, &args).await,
+            ffmpeg_output(&output.info.path, &args).await
+        );
+        assert_eq!(output.info.streams[1].codec.as_deref(), Some("aac"));
+        assert_eq!(output.info.streams[1].profile.as_deref(), Some("LC"));
+        assert_eq!(
+            output.info.streams[1].channels,
+            Some(if expected == Mode::Remux { 6 } else { 2 })
+        );
+        let source_offset = first_pts(&source, "a:0").await - first_pts(&source, "v:0").await;
+        let output_offset =
+            first_pts(&output.info.path, "a:0").await - first_pts(&output.info.path, "v:0").await;
+        assert!((source_offset - output_offset).abs() < 0.05);
+        if expected == Mode::Remux {
+            let args = [
+                "-map",
+                "0:a:0",
+                "-c",
+                "copy",
+                "-f",
+                "streamhash",
+                "-hash",
+                "sha256",
+                "-",
+            ];
+            assert_eq!(
+                ffmpeg_output(&source, &args).await,
+                ffmpeg_output(&output.info.path, &args).await
+            );
+        }
+        output.close().unwrap();
+        cache_empty(&options);
+    }
 }
 
 #[tokio::test]

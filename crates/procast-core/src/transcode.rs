@@ -12,7 +12,7 @@ use tokio::{
 
 use crate::{
     CancellationToken, ProcastError,
-    media::{self, MediaInfo, ProbeOptions},
+    media::{self, DirectPlayPolicy, MediaInfo, ProbeOptions},
     process,
 };
 
@@ -32,6 +32,7 @@ pub enum TranscodeMode {
 #[derive(Debug, Clone)]
 pub struct TranscodeOptions {
     pub mode: TranscodeMode,
+    pub playback_policy: DirectPlayPolicy,
     /// Parent for private session directories. Defaults to the user's cache.
     pub directory: Option<PathBuf>,
     /// Encoding deadline, separate from the short ffprobe timeout.
@@ -42,6 +43,7 @@ impl Default for TranscodeOptions {
     fn default() -> Self {
         Self {
             mode: TranscodeMode::default(),
+            playback_policy: DirectPlayPolicy::Conservative,
             directory: None,
             timeout: Duration::from_secs(24 * 60 * 60),
         }
@@ -56,14 +58,23 @@ pub struct TranscodeProgress {
 
 pub struct PreparedMedia {
     pub info: MediaInfo,
-    directory: TempDir,
+    directory: Option<TempDir>,
 }
 
 impl PreparedMedia {
+    pub(crate) fn retained(info: MediaInfo) -> Self {
+        Self {
+            info,
+            directory: None,
+        }
+    }
+
     pub fn close(self) -> Result<(), ProcastError> {
-        self.directory
-            .close()
-            .map_err(|e| error(format!("cannot remove prepared media: {e}")))
+        self.directory.map_or(Ok(()), |directory| {
+            directory
+                .close()
+                .map_err(|e| error(format!("cannot remove prepared media: {e}")))
+        })
     }
 }
 
@@ -71,7 +82,7 @@ fn error(message: impl Into<String>) -> ProcastError {
     ProcastError::Transcode(message.into())
 }
 
-fn cache_directory() -> Result<PathBuf, ProcastError> {
+pub(crate) fn cache_directory() -> Result<PathBuf, ProcastError> {
     if let Some(path) = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from)
         && path.is_absolute()
     {
@@ -159,6 +170,10 @@ fn plan(info: &MediaInfo) -> Result<InputPlan, ProcastError> {
         duration,
         fps,
     })
+}
+
+pub(crate) fn validate_input(info: &MediaInfo) -> Result<(), ProcastError> {
+    plan(info).map(|_| ())
 }
 
 async fn check_encoders(
@@ -252,8 +267,10 @@ pub async fn prepare(
     }
     let input = plan(info)?;
     match options.mode {
-        TranscodeMode::AudioOnly => media::validate_audio_transcode_input(info)?,
-        TranscodeMode::Remux => media::validate_remux_input(info)?,
+        TranscodeMode::AudioOnly => {
+            media::validate_audio_transcode_input(info, options.playback_policy)?
+        }
+        TranscodeMode::Remux => media::validate_remux_input(info, options.playback_policy)?,
         TranscodeMode::AudioVideo => {}
     }
     check_encoders(ffmpeg, input.audio.is_some(), options.mode, cancel).await?;
@@ -317,7 +334,7 @@ pub async fn prepare(
             Ok(())
         })).await?;
         let output = media::inspect(&path, probe, cancel).await?;
-        media::validate_direct_play(&output)?;
+        media::assess_direct_play(&output, options.playback_policy)?;
         if options.mode == TranscodeMode::Remux {
             let source_audio = info.streams.iter().find(|s| s.kind == "audio");
             let output_audio = output.streams.iter().find(|s| s.kind == "audio");
@@ -338,7 +355,10 @@ pub async fn prepare(
         Ok(output)
     }.await;
     match result {
-        Ok(info) => Ok(PreparedMedia { info, directory }),
+        Ok(info) => Ok(PreparedMedia {
+            info,
+            directory: Some(directory),
+        }),
         Err(cause) => {
             if let Err(cleanup) = directory.close() {
                 return Err(error(format!(
