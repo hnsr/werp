@@ -67,6 +67,13 @@ enum Commands {
             conflicts_with = "experimental_direct_play"
         )]
         transcode_audio: bool,
+        /// Copy compatible H.264/AAC streams from MKV or MP4 into MP4 without encoding
+        #[arg(
+            long,
+            group = "conversion",
+            conflicts_with = "experimental_direct_play"
+        )]
+        remux: bool,
         /// Temporary media parent directory (default: user cache/procast)
         #[arg(long, requires = "conversion")]
         transcode_dir: Option<PathBuf>,
@@ -223,6 +230,7 @@ async fn execute(
             experimental_direct_play,
             force_transcode,
             transcode_audio,
+            remux,
             transcode_dir,
             bind_address,
             http_port,
@@ -240,8 +248,10 @@ async fn execute(
                 Target::Auto
             };
             request.subtitles = subtitles;
-            request.force_transcode = force_transcode || transcode_audio;
-            request.transcode.mode = if transcode_audio {
+            request.force_transcode = force_transcode || transcode_audio || remux;
+            request.transcode.mode = if remux {
+                procast_core::transcode::TranscodeMode::Remux
+            } else if transcode_audio {
                 procast_core::transcode::TranscodeMode::AudioOnly
             } else {
                 procast_core::transcode::TranscodeMode::AudioVideo
@@ -389,6 +399,14 @@ mod tests {
             vec![
                 "procast",
                 "cast",
+                "movie.mkv",
+                "--remux",
+                "--transcode-dir",
+                "/tmp",
+            ],
+            vec![
+                "procast",
+                "cast",
                 "movie.mp4",
                 "--transcode-audio",
                 "--transcode-dir",
@@ -413,6 +431,9 @@ mod tests {
             vec!["--force-transcode", "--experimental-direct-play"],
             vec!["--transcode-audio", "--experimental-direct-play"],
             vec!["--force-transcode", "--transcode-audio"],
+            vec!["--remux", "--force-transcode"],
+            vec!["--remux", "--transcode-audio"],
+            vec!["--remux", "--experimental-direct-play"],
             vec!["--transcode-dir", "/tmp"],
         ] {
             let args = ["procast", "cast", "movie.mp4"].into_iter().chain(extra);

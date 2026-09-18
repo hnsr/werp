@@ -229,25 +229,41 @@ pub fn assess_direct_play(
     info: &MediaInfo,
     policy: DirectPlayPolicy,
 ) -> Result<DirectPlayAssessment, ProcastError> {
-    assess_mp4(info, policy, false)
+    assess_input(info, policy, InputMode::Original)
 }
 
 /// Audio conversion can preserve only video already within the conservative MP4 profile.
 pub(crate) fn validate_audio_transcode_input(info: &MediaInfo) -> Result<(), ProcastError> {
-    assess_mp4(info, DirectPlayPolicy::Conservative, true).map(|_| ())
+    assess_input(info, DirectPlayPolicy::Conservative, InputMode::AudioOnly).map(|_| ())
 }
 
-fn assess_mp4(
+/// Admit compatible streams for copying into MP4, without weakening direct play.
+pub(crate) fn validate_remux_input(info: &MediaInfo) -> Result<(), ProcastError> {
+    assess_input(info, DirectPlayPolicy::Conservative, InputMode::Remux).map(|_| ())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputMode {
+    Original,
+    AudioOnly,
+    Remux,
+}
+
+fn assess_input(
     info: &MediaInfo,
     policy: DirectPlayPolicy,
-    convert_audio: bool,
+    mode: InputMode,
 ) -> Result<DirectPlayAssessment, ProcastError> {
     let unsupported = |reason: &str| {
         ProcastError::UnsupportedMedia(format!(
             "{reason}. Default direct play requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without known HDR signalling. For SDR input, --force-transcode can prepare a compatible MP4; automatic conversion is not implemented"
         ))
     };
-    if !info.container.split(',').any(|format| format == "mp4") {
+    if !info
+        .container
+        .split(',')
+        .any(|format| format == "mp4" || (mode == InputMode::Remux && format == "matroska"))
+    {
         return Err(unsupported(&format!(
             "container {} needs a supported container",
             info.container
@@ -314,7 +330,7 @@ fn assess_mp4(
             "multiple audio tracks need explicit selection/remuxing",
         ));
     }
-    if convert_audio {
+    if mode == InputMode::AudioOnly {
         if audio.is_empty() {
             return Err(unsupported(
                 "audio-only conversion requires one audio track",
@@ -374,6 +390,45 @@ fn assess_mp4(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remux_admits_matroska_without_weakening_stream_or_direct_play_policy() {
+        let mut fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/h264.json")).unwrap();
+        fixture["format"]["format_name"] = serde_json::json!("matroska,webm");
+        let read = |value: &serde_json::Value| {
+            parse(&serde_json::to_vec(value).unwrap(), "movie.mkv".into()).unwrap()
+        };
+        let info = read(&fixture);
+        assert!(validate_remux_input(&info).is_ok());
+        assert!(validate_direct_play(&info).is_err());
+        assert!(assess_direct_play(&info, DirectPlayPolicy::Experimental).is_err());
+        assert!(validate_audio_transcode_input(&info).is_err());
+        let mut silent = fixture.clone();
+        silent["streams"].as_array_mut().unwrap().truncate(1);
+        assert!(validate_remux_input(&read(&silent)).is_ok());
+        let mut mono = fixture.clone();
+        mono["streams"][1]["channels"] = serde_json::json!(1);
+        assert!(validate_remux_input(&read(&mono)).is_ok());
+        for (pointer, value) in [
+            ("/format/format_name", serde_json::json!("mpegts")),
+            ("/format/duration", serde_json::json!("N/A")),
+            ("/streams/0/codec_name", serde_json::json!("hevc")),
+            ("/streams/0/width", serde_json::json!(3840)),
+            ("/streams/0/level", serde_json::json!(42)),
+            ("/streams/0/pix_fmt", serde_json::Value::Null),
+            ("/streams/1/codec_name", serde_json::json!("ac3")),
+            ("/streams/1/profile", serde_json::json!("HE-AAC")),
+            ("/streams/1/channels", serde_json::json!(6)),
+            ("/streams/1/channels", serde_json::Value::Null),
+        ] {
+            let mut invalid = fixture.clone();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(validate_remux_input(&read(&invalid)).is_err(), "{pointer}");
+        }
+        fixture["streams"][0]["color_transfer"] = serde_json::json!("smpte2084");
+        assert!(validate_remux_input(&read(&fixture)).is_err());
+    }
 
     #[test]
     fn ac3_trials_require_opt_in_and_keep_codec_and_track_limits() {

@@ -135,6 +135,8 @@ async fn force_transcode_signals_reap_encoder_and_remove_partial_output() {
         ("--force-transcode", "-TERM", 143),
         ("--transcode-audio", "-INT", 130),
         ("--transcode-audio", "-TERM", 143),
+        ("--remux", "-INT", 130),
+        ("--remux", "-TERM", 143),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("compatible.mp4");

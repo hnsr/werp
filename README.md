@@ -82,8 +82,8 @@ results](docs/media-inventory.md) for current evidence.
 The tested H.264/AC-3 sample played video but produced no audible sound on the
 KPN DIW7022 setup. AC-3 remains an experimental trial, with no automatic fallback.
 
-Embedded subtitle extraction, stream-copy remuxing, and automatic conversion
-fallback are not implemented yet.
+Embedded subtitle extraction and automatic conversion fallback are not implemented
+yet. Explicit stream-copy preparation is available with `--remux`.
 Subtitles are used only when explicitly selected; source
 files are never modified. SRT conversion has a 30-second limit, and temporary
 files are session-owned. WebVTT cue timing is validated; styling semantics are
@@ -155,9 +155,34 @@ the AAC encoder; this mode does not need a video encoder.
 External `--subtitles`, progress, cancellation, `--transcode-dir`, output
 validation, and session cleanup use the same preparation path described above.
 The disk estimate includes the source size plus new audio and muxing overhead.
-`--transcode-audio`, `--force-transcode`, and `--experimental-direct-play` are
-mutually exclusive. Without these flags the conservative direct-play policy
+`--remux`, `--transcode-audio`, `--force-transcode`, and
+`--experimental-direct-play` are mutually exclusive. Without these flags the conservative direct-play policy
 remains unchanged; there is no automatic conversion fallback.
+
+### Remux MKV to MP4 without encoding
+
+```sh
+cargo run --locked -- cast /path/to/movie.mkv --device "Living Room" \
+  --remux --http-port 8010
+```
+
+`--remux` copies the selected encoded video and audio into a complete, seekable
+MP4 before connecting. There is no audio/video re-encoding or associated quality
+loss. The initial profile accepts Matroska/MKV or MP4 with one H.264 video stream
+within the conservative limits above, and zero or one mono/stereo AAC-LC track.
+HEVC, surround AAC, Dolby audio, known HDR, and multiple audio tracks are rejected
+for this mode. An incompatible codec needs a different path; changing containers
+alone cannot fix it. FFmpeg is required but no audio/video encoders are needed.
+
+Embedded subtitles, attachments, chapters, and source metadata are omitted.
+External SRT/WebVTT still works with `--subtitles`; embedded subtitle extraction
+remains deferred. Preparation reads and writes the entire file, reports progress,
+and shares the existing cancellation and cleanup behavior. `--transcode-dir`
+chooses the preparation directory for remuxing too. Disk checks estimate source
+size plus overhead and headroom. Default direct play remains unchanged.
+
+The first hardware trial with `sample-006` succeeded; see
+[remux validation and remaining checks](docs/remux-validation.md).
 
 ### Network and session behaviour
 

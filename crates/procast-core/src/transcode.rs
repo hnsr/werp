@@ -25,6 +25,8 @@ pub enum TranscodeMode {
     AudioVideo,
     /// Preserve conservative-profile H.264 MP4 video and encode only audio.
     AudioOnly,
+    /// Copy conservative-profile H.264/AAC streams from Matroska or MP4 into MP4.
+    Remux,
 }
 
 #[derive(Debug, Clone)]
@@ -121,16 +123,14 @@ fn plan(info: &MediaInfo) -> Result<InputPlan, ProcastError> {
     let duration = info
         .duration_seconds
         .filter(|d| d.is_finite() && *d > 0.0)
-        .ok_or_else(|| error("forced transcoding requires a known positive duration"))?;
+        .ok_or_else(|| error("media preparation requires a known positive duration"))?;
     let videos: Vec<_> = info
         .streams
         .iter()
         .filter(|s| s.kind == "video" && !s.attached_picture)
         .collect();
     if videos.len() != 1 {
-        return Err(error(
-            "forced transcoding requires exactly one video stream",
-        ));
+        return Err(error("media preparation requires exactly one video stream"));
     }
     let video = videos[0];
     if matches!(
@@ -139,7 +139,7 @@ fn plan(info: &MediaInfo) -> Result<InputPlan, ProcastError> {
     ) || video.dolby_vision
     {
         return Err(error(
-            "HDR/Dolby Vision tone mapping is not implemented; forced transcoding currently supports SDR input only",
+            "HDR/Dolby Vision tone mapping is not implemented; media preparation currently supports SDR input only",
         ));
     }
     let fps = video
@@ -167,6 +167,9 @@ async fn check_encoders(
     mode: TranscodeMode,
     cancel: &CancellationToken,
 ) -> Result<(), ProcastError> {
+    if mode == TranscodeMode::Remux {
+        return Ok(()); // Stream copy needs a demuxer/muxer, not encoders.
+    }
     let mut command = Command::new(ffmpeg);
     command.args(["-hide_banner", "-encoders"]);
     let output = process::capture(&mut command, cancel, Duration::from_secs(10)).await?;
@@ -248,8 +251,10 @@ pub async fn prepare(
         return Err(ProcastError::Cancelled);
     }
     let input = plan(info)?;
-    if options.mode == TranscodeMode::AudioOnly {
-        media::validate_audio_transcode_input(info)?;
+    match options.mode {
+        TranscodeMode::AudioOnly => media::validate_audio_transcode_input(info)?,
+        TranscodeMode::Remux => media::validate_remux_input(info)?,
+        TranscodeMode::AudioVideo => {}
     }
     check_encoders(ffmpeg, input.audio.is_some(), options.mode, cancel).await?;
     let parent = match &options.directory {
@@ -262,14 +267,19 @@ pub async fn prepare(
     // Upper-rate estimate plus muxing overhead and headroom; not a reservation.
     let estimate = match options.mode {
         TranscodeMode::AudioVideo => (input.duration * 8_192_000.0 / 8.0 * 1.1).ceil() as u64,
-        TranscodeMode::AudioOnly => {
+        TranscodeMode::AudioOnly | TranscodeMode::Remux => {
             // Copied video has no encoder rate cap. Use the entire source size
             // plus the new AAC stream and muxing overhead as a conservative estimate.
             let size = tokio::fs::metadata(&info.path)
                 .await
                 .map_err(|e| error(format!("cannot check source size: {e}")))?
                 .len();
-            ((size as f64 + input.duration * 192_000.0 / 8.0) * 1.1).ceil() as u64
+            let new_audio = if options.mode == TranscodeMode::AudioOnly {
+                input.duration * 192_000.0 / 8.0
+            } else {
+                0.0
+            };
+            ((size as f64 + new_audio) * 1.1).ceil() as u64
         }
     };
     require_space(
@@ -288,14 +298,17 @@ pub async fn prepare(
         if let Some(index) = input.audio { command.args(["-map", &format!("0:{index}")]); }
         command.args(["-map_metadata", "-1", "-map_chapters", "-1", "-sn", "-dn"]);
         match options.mode {
-            TranscodeMode::AudioOnly => { command.args(["-c:v", "copy"]); }
+            TranscodeMode::AudioOnly | TranscodeMode::Remux => { command.args(["-c:v", "copy"]); }
             TranscodeMode::AudioVideo => {
                 let filter = format!("scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,fps={:.8},format=yuv420p", input.fps);
                 command.args(["-vf", &filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-level:v", "4.1",
                     "-maxrate", "8M", "-bufsize", "16M", "-pix_fmt", "yuv420p"]);
             }
         }
-        if input.audio.is_some() { command.args(["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"]); }
+        if input.audio.is_some() {
+            if options.mode == TranscodeMode::Remux { command.args(["-c:a", "copy"]); }
+            else { command.args(["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"]); }
+        }
         command.args(["-movflags", "+faststart", "-f", "mp4"]).arg(&path);
         update(TranscodeProgress { encoded_seconds: 0.0, fraction: 0.0 });
         process::run(&mut command, cancel, options.timeout, |stdout| read_progress(stdout, input.duration, |progress| {
@@ -305,7 +318,14 @@ pub async fn prepare(
         })).await?;
         let output = media::inspect(&path, probe, cancel).await?;
         media::validate_direct_play(&output)?;
-        if input.audio.is_some() && !output.streams.iter().any(|s|
+        if options.mode == TranscodeMode::Remux {
+            let source_audio = info.streams.iter().find(|s| s.kind == "audio");
+            let output_audio = output.streams.iter().find(|s| s.kind == "audio");
+            if source_audio.map(|s| (&s.codec, &s.profile, s.channels, s.sample_rate_hz))
+                != output_audio.map(|s| (&s.codec, &s.profile, s.channels, s.sample_rate_hz)) {
+                return Err(error("remuxed audio is missing or differs from the source"));
+            }
+        } else if input.audio.is_some() && !output.streams.iter().any(|s|
             s.kind == "audio" && s.codec.as_deref() == Some("aac")
                 && s.channels == Some(2) && s.sample_rate_hz == Some(48000)) {
             return Err(error("prepared stereo AAC audio is missing or invalid"));

@@ -2,7 +2,8 @@
 
 Implemented on 2026-09-17 with Rust 1.96.0 and FFmpeg/ffprobe 8.1.2 on Fedora 44.
 No additional system packages were needed. This is an explicit escape hatch;
-automatic conversion decisions and stream-copy remuxing remain future work.
+automatic conversion decisions remain future work. Explicit stream-copy remuxing
+was added later; see [remux validation](remux-validation.md).
 
 ## Behaviour
 
@@ -103,9 +104,19 @@ The CLI waited in Buffering and timed out. A subsequent direct cast of the saved
 converted output was reported to have no issues. Its verbose log shows HTTP 206
 responses, PLAYING positions through about 298.6 seconds, and pause/resume, without
 warnings or errors. The inspected log ends in PAUSED; it does not verify natural
-completion or cleanup. The integrated conversion/playback path was not rerun.
+completion or cleanup. That retry did not rerun the integrated preparation step.
 The user reports similar intermittent startup problems on this device; the
 original failure's cause remains unresolved.
+
+The user subsequently reran the complete `--transcode-audio` workflow for
+`sample-041` with a dedicated preparation directory and interrupted playback
+with Ctrl+C. Sound was good and no issues were reported. The CLI reached Playing,
+then printed `Cancelled; cleanup completed.` and returned exit code 130.
+`ls -A` showed no remaining files in the preparation directory, and `ss` showed
+no listener on the chosen HTTP port. This confirms integrated preparation,
+playback, and local cleanup after SIGINT for audio-only conversion. Natural
+completion and receiver-initiated stopping for this mode remain unverified on
+hardware; phone controls were unavailable, so that stop check was deferred.
 
 A diagnostic recreation using the same FFmpeg arguments is saved locally under
 ignored `samples/audio-debug/sample-041-aac.mp4` (about 1.28 GB). SHA-256 stream

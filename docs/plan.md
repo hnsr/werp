@@ -5,9 +5,10 @@ user-confirmed SRT/WebVTT playback, Ctrl+C shutdown, and SIGTERM cleanup with ex
 code 143. The IPv4 discovery issue
 is fixed and verified; remaining hardware checks are recorded below. M3 is parked;
 M5 is in progress: the media inventory, experimental surround-AAC direct play,
-and explicit forced-transcoding path are implemented. Broader direct-play support,
-remuxing, and automatic conversion decisions remain planned.
-Updated: 2026-09-17.
+and explicit forced-transcoding path are implemented. Broader direct-play support
+and automatic conversion decisions remain planned. Explicit H.264/AAC stream-copy
+remuxing is implemented with initial hardware playback confirmed for `sample-006`.
+Updated: 2026-09-18.
 Requirements: [outline.md](outline.md).
 
 ## Approach
@@ -376,8 +377,16 @@ Keep the existing external subtitle and lifecycle behaviour working.
 
 #### M5b — Stream-copy remuxing
 
+**Implemented for conservative-profile H.264 with optional mono/stereo AAC-LC;
+initial hardware playback confirmed.** `--remux` prepares MKV or MP4 into MP4 using
+stream copy for both selected streams. It shares session storage, progress,
+cancellation, output validation, and cleanup with the encoding paths, but requires
+no encoders. It conflicts with the other explicit playback/preparation modes.
+HEVC, surround/Dolby audio, and known HDR remain outside this first remux profile.
+Default direct-play decisions are unchanged. See [validation](remux-validation.md).
+
 For files that need a different container, preserve selected encoded video and
-audio streams. Start with MKV to MP4 where the codecs are compatible. Text
+audio streams. Text
 subtitle extraction can be shared with M4 when needed; embedded subtitle and
 attachment streams must not be blindly copied into MP4. Remuxing is preparation
 without re-encoding, not original-file playback.
@@ -488,12 +497,18 @@ produced sound, then returned to the home screen and timed out in the CLI.
 The saved converted output subsequently played without reported issues, with
 pause/resume and no logged errors. The initial startup failure remains unexplained;
 the user reports similar intermittent device behavior. Application-presence checks
-now cover stale BUFFERING/empty responses. Confirm integrated audio-only preparation,
-playback completion, and cleanup when convenient; the successful retry used the
-already prepared file.
-Proceed to stream-copy
-remuxing for container compatibility before automatic encoding fallback. M3 controls
-and frontend design are parked.
+now cover stale BUFFERING/empty responses. A subsequent integrated audio-only
+conversion/playback run also passed, with good sound, Ctrl+C cleanup, exit code
+130, an empty preparation directory, and a closed HTTP port. Natural completion
+and receiver-initiated stop remain optional follow-up hardware checks for this
+mode; phone controls are currently unavailable.
+The user reported no problems with `sample-006` using `--remux`; the requested
+check covered picture, sound, synchronization, and Ctrl+C, without a detailed
+cleanup transcript. Local sample preparation/failure cleanup and generated
+stream-copy/full-session regressions also passed. Natural completion, external
+subtitles, and explicit hardware cleanup checks remain follow-ups.
+Broader remux profiles and automatic encoding fallback follow separately.
+M3 controls and frontend design are parked.
 
 M2's remaining hardware checks stay tracked: natural completion with SRT,
 interrupted loading, and explicit port closure after signals. Include relevant

@@ -47,6 +47,187 @@ fn cache_empty(options: &TranscodeOptions) {
 }
 
 #[tokio::test]
+async fn remux_needs_no_encoders_and_rejects_lost_audio() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut info, probe) = input(dir.path()).await;
+    info.container = "matroska,webm".into();
+    let mut options = options(dir.path());
+    options.mode = TranscodeMode::Remux;
+    let ffmpeg = dir.path().join("ffmpeg");
+    script(
+        &ffmpeg,
+        r#"
+case "$*" in *-encoders*|*libx264*|*-b:a*|*-vf*) exit 9;; esac
+for last do :; done
+printf 'prepared media' > "$last"
+"#,
+    );
+    let prepared = transcode::prepare(
+        &info,
+        &ffmpeg,
+        &probe,
+        &options,
+        &CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    prepared.close().unwrap();
+    cache_empty(&options);
+    let mut silent: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/h264.json")).unwrap();
+    silent["streams"].as_array_mut().unwrap().truncate(1);
+    fs::write(dir.path().join("probe.json"), silent.to_string()).unwrap();
+    let error = transcode::prepare(
+        &info,
+        &ffmpeg,
+        &probe,
+        &options,
+        &CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(error.to_string().contains("remuxed audio is missing"));
+    cache_empty(&options);
+    info.streams.truncate(1);
+    let prepared = transcode::prepare(
+        &info,
+        &ffmpeg,
+        &probe,
+        &options,
+        &CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    prepared.close().unwrap();
+    cache_empty(&options);
+}
+
+#[tokio::test]
+#[ignore = "requires real FFmpeg with libx264, AAC, Matroska/MP4 and ffprobe"]
+async fn real_remux_preserves_stream_payloads_timing_and_drops_extra_streams() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source [test].mkv");
+    let subs = dir.path().join("captions.srt");
+    let attachment = dir.path().join("note.txt");
+    fs::write(&subs, "1\n00:00:00,000 --> 00:00:02,000\nTest caption\n").unwrap();
+    fs::write(&attachment, "Test attachment").unwrap();
+    let output = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=24:duration=3",
+            "-itsoffset",
+            "0.25",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=2.5",
+            "-i",
+        ])
+        .arg(&subs)
+        .args([
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-map",
+            "2:s:0",
+            "-c:v",
+            "libx264",
+            "-profile:v",
+            "high",
+            "-level:v",
+            "4.1",
+            "-threads",
+            "2",
+            "-c:a",
+            "aac",
+            "-ac",
+            "1",
+            "-c:s",
+            "srt",
+            "-attach",
+        ])
+        .arg(&attachment)
+        .args(["-metadata:s:t", "mimetype=text/plain"])
+        .arg(&source)
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let original = fs::read(&source).unwrap();
+    let cancel = CancellationToken::new();
+    let probe = ProbeOptions::default();
+    let info = media::inspect(&source, &probe, &cancel).await.unwrap();
+    assert!(info.streams.iter().any(|s| s.kind == "subtitle"));
+    assert!(info.streams.iter().any(|s| s.kind == "attachment"));
+    let mut options = options(dir.path());
+    options.mode = TranscodeMode::Remux;
+    options.timeout = Duration::from_secs(30);
+    let prepared = transcode::prepare(
+        &info,
+        Path::new("ffmpeg"),
+        &probe,
+        &options,
+        &cancel,
+        |_| {},
+    )
+    .await
+    .unwrap();
+    media::validate_direct_play(&prepared.info).unwrap();
+    assert_eq!(prepared.info.streams.len(), 2);
+    assert_eq!(
+        prepared.info.streams[1].channels,
+        Some(1),
+        "mono must not be re-encoded to stereo"
+    );
+    for stream in ["0:v:0", "0:a:0"] {
+        let args = [
+            "-map",
+            stream,
+            "-c",
+            "copy",
+            "-f",
+            "streamhash",
+            "-hash",
+            "sha256",
+            "-",
+        ];
+        assert_eq!(
+            ffmpeg_output(&source, &args).await,
+            ffmpeg_output(&prepared.info.path, &args).await,
+            "{stream} payload changed"
+        );
+    }
+    let input_offset = first_pts(&source, "a:0").await - first_pts(&source, "v:0").await;
+    let output_offset =
+        first_pts(&prepared.info.path, "a:0").await - first_pts(&prepared.info.path, "v:0").await;
+    assert!(
+        (input_offset - output_offset).abs() < 0.003,
+        "relative stream offset changed: {input_offset} -> {output_offset}"
+    );
+    assert_eq!(fs::read(&source).unwrap(), original);
+    let encoded = fs::read(&prepared.info.path).unwrap();
+    let atom = |name: &[u8]| encoded.windows(4).position(|w| w == name).unwrap();
+    assert!(atom(b"moov") < atom(b"mdat"));
+    prepared.close().unwrap();
+    cache_empty(&options);
+}
+
+#[tokio::test]
 async fn audio_only_requires_compatible_video_and_audio_but_no_video_encoder() {
     let dir = tempfile::tempdir().unwrap();
     let (mut info, probe) = input(dir.path()).await;
@@ -393,7 +574,11 @@ async fn preparation_rejects_hdr_ambiguity_missing_encoders_and_insufficient_spa
 #[tokio::test]
 async fn failed_encoding_and_output_validation_remove_partial_media() {
     for fail_encoding in [true, false] {
-        for mode in [TranscodeMode::AudioVideo, TranscodeMode::AudioOnly] {
+        for mode in [
+            TranscodeMode::AudioVideo,
+            TranscodeMode::AudioOnly,
+            TranscodeMode::Remux,
+        ] {
             let dir = tempfile::tempdir().unwrap();
             let (info, probe) = input(dir.path()).await;
             let mut options = options(dir.path());
@@ -446,7 +631,11 @@ exit {}
 #[tokio::test]
 async fn cancellation_and_timeout_reap_encoder_and_remove_output() {
     for interrupt in [true, false] {
-        for mode in [TranscodeMode::AudioVideo, TranscodeMode::AudioOnly] {
+        for mode in [
+            TranscodeMode::AudioVideo,
+            TranscodeMode::AudioOnly,
+            TranscodeMode::Remux,
+        ] {
             let dir = tempfile::tempdir().unwrap();
             let (info, probe) = input(dir.path()).await;
             let mut options = options(dir.path());

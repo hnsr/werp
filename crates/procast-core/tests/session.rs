@@ -747,6 +747,21 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let mkv = dir.path().join("actual test.mkv");
+    let mux = tokio::process::Command::new("ffmpeg")
+        .args(["-nostdin", "-v", "error", "-i"])
+        .arg(&video)
+        .args(["-c", "copy"])
+        .arg(&mkv)
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        mux.status.success(),
+        "{}",
+        String::from_utf8_lossy(&mux.stderr)
+    );
     for (mode, extension, content) in [
         (
             None,
@@ -778,11 +793,26 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
             "vtt",
             "WEBVTT\n\n00:00.000 --> 00:01.500\nHello Procast!\n",
         ),
+        (
+            Some(procast_core::transcode::TranscodeMode::Remux),
+            "srt",
+            "1\n00:00:00,000 --> 00:00:01,500\nHello Procast!\n",
+        ),
+        (
+            Some(procast_core::transcode::TranscodeMode::Remux),
+            "vtt",
+            "WEBVTT\n\n00:00.000 --> 00:01.500\nHello Procast!\n",
+        ),
     ] {
         let subs = dir.path().join(format!("captions.{extension}"));
         fs::write(&subs, content).unwrap();
         let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
-        let mut request = CastRequest::new(video.clone());
+        let source = if mode == Some(procast_core::transcode::TranscodeMode::Remux) {
+            &mkv
+        } else {
+            &video
+        };
+        let mut request = CastRequest::new(source.clone());
         request.target = Target::Host(address);
         request.subtitles = Some(subs);
         let force_transcode = mode.is_some();
@@ -801,8 +831,8 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         if force_transcode {
             assert_ne!(
                 log.video,
-                fs::read(&video).unwrap(),
-                "force must re-encode even compatible input"
+                fs::read(source).unwrap(),
+                "preparation must serve the output rather than the source"
             );
             assert!(
                 fs::read_dir(dir.path().join("cache"))
@@ -822,7 +852,7 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
             .unwrap();
             procast_core::media::validate_direct_play(&info).unwrap();
         } else {
-            assert_eq!(log.video, fs::read(&video).unwrap());
+            assert_eq!(log.video, fs::read(source).unwrap());
         }
         let text = String::from_utf8(log.subtitles.unwrap()).unwrap();
         assert!(text.starts_with("WEBVTT"));

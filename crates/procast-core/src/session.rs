@@ -129,7 +129,7 @@ pub async fn run(
         );
         let info = media::inspect(&request.file, &request.probe, cancel).await?;
         if request.force_transcode && request.direct_play_policy != DirectPlayPolicy::Conservative {
-            return Err(ProcastError::Transcode("forced transcoding and experimental direct play are mutually exclusive".into()));
+            return Err(ProcastError::Transcode("media preparation and experimental direct play are mutually exclusive".into()));
         }
         let assessment = if request.force_transcode { None } else {
             Some(media::assess_direct_play(&info, request.direct_play_policy)?)
@@ -165,6 +165,7 @@ pub async fn run(
             let message = match request.transcode.mode {
                 TranscodeMode::AudioVideo => "Preparing H.264/stereo AAC MP4 before playback",
                 TranscodeMode::AudioOnly => "Copying video and converting audio to stereo AAC before playback",
+                TranscodeMode::Remux => "Copying video and audio into MP4 before playback",
             };
             report(&progress, Phase::Preparing, None, Some(message.into()));
             let mut last_percent = None;
@@ -173,7 +174,11 @@ pub async fn run(
                 |update| {
                     let percent = (update.fraction * 100.0).floor() as u32;
                     if last_percent != Some(percent) {
-                        report(&progress, Phase::Preparing, None, Some(format!("{}: {percent}%", if request.transcode.mode == TranscodeMode::AudioOnly { "Audio conversion" } else { "Transcoding" })));
+                        report(&progress, Phase::Preparing, None, Some(format!("{}: {percent}%", match request.transcode.mode {
+                            TranscodeMode::AudioOnly => "Audio conversion",
+                            TranscodeMode::AudioVideo => "Transcoding",
+                            TranscodeMode::Remux => "Remuxing",
+                        })));
                         last_percent = Some(percent);
                     }
                 },

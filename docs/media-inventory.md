@@ -181,6 +181,18 @@ intermittent startup cutouts on this device. That is a plausible explanation
 for the earlier failure, but its cause remains unresolved and the diagnostic
 changes are not proven to have fixed it.
 
+A later integrated `--transcode-audio` run of `sample-041` also passed: the user
+reported good sound and no issues, then interrupted playback with Ctrl+C.
+The CLI reported cleanup completed and exit code 130; the dedicated preparation
+directory was empty and the HTTP port was closed. Natural completion and
+receiver-initiated stop remain separate, unverified hardware checks for this mode.
+
+The user also reported no problems playing MKV H.264/AAC-stereo `sample-006`
+with `--remux` on the KPN DIW7022. The suggested check covered picture, sound,
+synchronization, and Ctrl+C; no separate measurements or cleanup transcript were
+provided. This confirms an initial successful remux trial for this sample/setup.
+No embedded or external subtitles were selected. See [remux validation](remux-validation.md).
+
 ## Suggested M5 test order
 
 1. MP4 H.264/AAC-stereo picture and sound now pass for three real files above.
@@ -189,12 +201,14 @@ changes are not proven to have fixed it.
    MP4 HEVC Main 10/AAC also has a successful trial with `sample-005`.
    H.264/AC-3 `sample-041` played video but had no audible sound. A saved output
    with copied video and stereo AAC now has a successful playback retry after
-   an unexplained initial startup failure. Integrated conversion/playback
-   completion and cleanup still need hardware confirmation.
+   an unexplained initial startup failure. Integrated audio conversion, playback,
+   and Ctrl+C cleanup now also pass. Natural completion and receiver-initiated
+   stop remain unverified for this mode.
    Confirm picture, colour, audible audio, timing, completion, and cancellation.
-3. Exercise MKV H.264/AAC, HEVC Main/Main 10 with AAC/HE-AAC, and H.264/HEVC
-   with Dolby audio. Treat original MKV delivery as experimental; add MP4
-   stream-copy remuxing where needed. Preserve selected audio/video and handle
+3. MKV H.264/AAC-stereo `sample-006` now has a successful `--remux` hardware
+   trial, alongside the earlier local preparation and cleanup check.
+   Then evaluate HEVC Main/Main 10 with AAC/HE-AAC and H.264/HEVC with Dolby audio.
+   These broader profiles and original MKV delivery are not enabled by `--remux`. Preserve selected audio/video and handle
    subtitle extraction separately rather than copying every stream blindly.
 4. Try the AV1/E-AC-3 sample as a separate low-confidence case.
 5. Inspect the two HDR review samples before considering any conversion. If an
