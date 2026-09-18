@@ -2,8 +2,9 @@
 
 A Rust CLI and reusable backend for casting local videos and external subtitles
 to Chromecast. `cast FILE` selects direct play, remuxing, audio conversion, or full
-conversion and reuses validated prepared files automatically. The latest changes
-have automated coverage; the consolidated TV validation is still pending.
+conversion and reuses validated prepared files automatically. Automated checks
+and the consolidated short-clip TV validation passed on the KPN DIW7022 receiver;
+seeking and long-duration checks for the expanded paths remain follow-ups.
 
 ## Development setup
 

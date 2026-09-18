@@ -7,8 +7,9 @@ is fixed and verified; remaining hardware checks are recorded below. M3 is parke
 M5 now implements automatic preparation selection, extended HEVC/AAC remuxing,
 MKV audio-only conversion, and persistent adjacent-file reuse with user-cache
 fallback. All 58 automated tests and 12 representative local preparation/reuse
-checks passed; consolidated TV validation is pending. Earlier explicit-mode
-hardware evidence remains recorded separately.
+checks passed; the user also confirmed the consolidated short-clip TV batch
+passed without observed issues. Seeking and long-duration checks remain
+follow-ups. Earlier explicit-mode hardware evidence remains recorded separately.
 Updated: 2026-09-18.
 Requirements: [outline.md](outline.md).
 
@@ -322,7 +323,7 @@ tracks, Unicode paths, and explicit overrides.
 
 ### M5 — Automatic playback, broader preparation, and reuse
 
-**Implemented; consolidated hardware validation pending.** See
+**Implemented; consolidated short-clip hardware validation passed.** See
 [automatic playback and reuse](automatic-playback.md) for design, tests, and the
 single guided TV-validation command. The earlier [media inventory](media-inventory.md),
 [transcoding results](transcode-validation.md), and [remux results](remux-validation.md)
@@ -373,10 +374,12 @@ retain the historical evidence from explicit modes.
 Automatic tests cover routing, overrides, fingerprint invalidation, corrupt output,
 symlink destinations, read-only fallback, cancellation, concurrency, codec payloads,
 relative timing, subtitles, and loopback sessions. Tests must not contact TVs.
-At the end, run `scripts/validate-m5.sh` for short representative clips covering
-all preparation paths, cache reuse, subtitles, natural completion, and cancellation.
-Record visual/audio observations separately; longer playback and seeking remain
-follow-ups. The one unexplained early audio-only startup failure remains historical
+The user completed `scripts/validate-m5.sh` on the KPN DIW7022 and confirmed
+all short representative clips looked and sounded correct. The script reported
+all checks passed, covering all preparation paths, cache reuse, subtitles,
+natural completion, cancellation, temporary cleanup, and HTTP port closure.
+Longer playback and seeking remain follow-ups. The one unexplained early
+audio-only startup failure remains historical
 rather than being treated as a proven codec defect or proven fix.
 
 ### M6 — Fedora release readiness
@@ -423,9 +426,10 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Run the consolidated hardware batch described
-in [automatic-playback.md](automatic-playback.md). Keep M3 controls and frontend
-design parked. Do not request TV checks between the implementation units.
+The consolidated hardware batch passed; there is no need to repeat it without a
+new change or failure. The remaining compatibility checks are seeking and longer
+playback on the expanded preparation paths, especially copied HEVC. Keep M3
+controls and frontend design parked until explicitly resumed.
 
 ## Technical references
 

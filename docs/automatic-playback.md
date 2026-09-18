@@ -1,7 +1,8 @@
 # Automatic playback and reusable preparation
 
-Updated: 2026-09-18. Implementation and local verification complete; the
-consolidated hardware batch remains pending. Earlier receiver observations are
+Updated: 2026-09-18. Implementation, local verification, and the consolidated
+short-clip hardware batch passed. Seeking and long-duration checks remain
+follow-ups. Earlier receiver observations are
 recorded in [transcode-validation.md](transcode-validation.md) and
 [remux-validation.md](remux-validation.md).
 
@@ -136,7 +137,27 @@ HE-AAC decoding/conversion was checked with sample 010. The installed fixture
 encoder could not generate HE-AAC, so this case is not claimed as a generated
 HE-AAC integration fixture. No real receiver was contacted by local verification.
 
-## One guided hardware batch
+## Hardware batch result
+
+On 2026-09-18, the user completed the guided batch on the KPN DIW7022 receiver
+and reported that all clips looked and sounded correct, with no issues noted.
+The supplied final transcript contains `All batch checks passed.` and shows
+the final Audio/Extended case reaching playback, stopping, and reporting
+`Cancelled; cleanup completed.`
+
+This confirms the short-clip matrix above on this receiver: automatic direct play,
+remuxing, audio conversion, and full conversion; the Baseline override; external
+SRT/WebVTT captions; natural completion; and persistent reuse with FFmpeg
+unavailable. The script's final success also confirms its SIGINT exit-130,
+temporary-output removal, and HTTP-port-closure assertions passed. Visual/audio
+confirmation comes from the user's observations, separately from those assertions.
+
+The batch used generated clips and adjacent prepared outputs under ignored
+`samples/`. Read-only-folder fallback remains covered by automated tests, not a
+separate hardware scenario. These results do not establish long-duration drift,
+seek behavior on the expanded paths, or compatibility with other receivers.
+
+## Reproduce the guided hardware batch
 
 From the repository, run:
 
