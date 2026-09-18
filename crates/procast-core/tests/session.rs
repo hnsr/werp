@@ -364,6 +364,7 @@ async fn receiver_stop_finishes_without_stopping_other_apps_or_hiding_errors() {
         fs::write(&subtitles, "WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n").unwrap();
         let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video);
+        request.inhibit_sleep = false;
         request.target = Target::Host(address);
         request.subtitles = Some(subtitles);
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
@@ -439,6 +440,7 @@ async fn terminal_broadcasts_complete_promptly_and_do_not_confuse_other_sessions
         fs::write(&subs, "WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n").unwrap();
         let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video);
+        request.inhibit_sleep = false;
         request.target = Target::Host(address);
         request.subtitles = Some(subs);
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
@@ -516,6 +518,7 @@ async fn experimental_formats_require_opt_in_and_serve_original_bytes() {
         let probe = fake_probe(directory.path(), &metadata.to_string());
         let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video.clone());
+        request.inhibit_sleep = false;
         request.mode = PlaybackMode::Direct;
         request.target = Target::Host(address);
         request.probe.executable = probe;
@@ -579,6 +582,7 @@ async fn session_covers_completion_transient_idle_errors_takeover_and_cancellati
         let loaded = Arc::new(AtomicBool::new(false));
         let (address, receiver) = receiver(mode, loaded.clone()).await;
         let mut request = CastRequest::new(file);
+        request.inhibit_sleep = false;
         request.target = Target::Host(address);
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
         request.ffmpeg = directory.path().join("missing-ffmpeg");
@@ -683,6 +687,7 @@ async fn invalid_media_and_subtitles_fail_before_contacting_receiver() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     for malformed_media in [true, false] {
         let mut request = CastRequest::new(file.clone());
+        request.inhibit_sleep = false;
         request.mode = PlaybackMode::Direct;
         request.target = Target::Host(listener.local_addr().unwrap());
         let data = if malformed_media {
@@ -815,6 +820,7 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
             &video
         };
         let mut request = CastRequest::new(source.clone());
+        request.inhibit_sleep = false;
         request.target = Target::Host(address);
         request.subtitles = Some(subs);
         let force_transcode = mode.is_some();

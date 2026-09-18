@@ -11,7 +11,7 @@ checks passed; the user also confirmed the consolidated short-clip TV batch
 passed without observed issues. Seeking and long-duration checks are deferred
 at the user's request and do not block further work. Earlier explicit-mode
 hardware evidence remains recorded separately.
-Updated: 2026-09-18.
+Updated: 2026-09-19.
 Requirements: [outline.md](outline.md).
 
 ## Approach
@@ -42,8 +42,9 @@ small change should leave working behaviour behind.
 - A representative MKV has been supplied and inspected. M1 verified a generated
   direct-play clip with external subtitles on a KPN DIW7022 receiver. Broader
   device and format compatibility still require testing.
-- The host must remain awake during playback. Automatic suspend inhibition comes
-  after the initial casting implementation.
+- The host must remain awake during playback. The Linux CLI now holds a
+  best-effort sleep inhibitor during preparation and casting, verified with KDE;
+  see [sleep inhibition](sleep-inhibition.md).
 - The installed development toolchain is rustc/Cargo 1.96.0. Start with the Rust
   2024 edition and pin a tested toolchain when scaffolding. Establish an older
   minimum Rust version only if we decide to support one and test it.
@@ -394,8 +395,9 @@ rather than being treated as a proven codec defect or proven fix.
 - Keep `cargo build --release` / local installation usable; add RPM packaging
   once runtime dependencies and codec expectations are established.
 - Add a small `doctor` command if recurring setup problems justify it.
-- Evaluate automatic suspend inhibition with a platform adapter and guaranteed
-  release on all shutdown paths.
+- Revisit the initial Linux `systemd-inhibit` adapter with frontend/platform work.
+  Acquisition and release are verified with KDE; broader platform integration
+  remains deferred. Preserve bounded startup and cleanup on all shutdown paths.
 - State exact tested support rather than promising all Chromecast generations or
   all Fedora releases. Future platform/frontend work starts from the stable core.
 

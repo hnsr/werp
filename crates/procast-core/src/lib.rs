@@ -6,6 +6,7 @@ pub mod discovery;
 mod error;
 pub mod media;
 pub mod playback;
+mod power;
 mod process;
 pub mod serve;
 pub mod session;

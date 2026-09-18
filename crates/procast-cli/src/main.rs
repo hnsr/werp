@@ -98,6 +98,9 @@ enum Commands {
         /// Do not reuse or retain prepared files; remove them after this session
         #[arg(long)]
         no_cache: bool,
+        /// Allow normal automatic sleep during this casting session
+        #[arg(long)]
+        no_inhibit_sleep: bool,
         /// Store prepared files here instead of beside the source; alias: --transcode-dir
         #[arg(long, alias = "transcode-dir")]
         cache_dir: Option<PathBuf>,
@@ -266,6 +269,7 @@ async fn execute(
             mode,
             profile,
             no_cache,
+            no_inhibit_sleep,
             cache_dir,
             bind_address,
             http_port,
@@ -305,6 +309,7 @@ async fn execute(
                 );
             }
             request.cache.enabled = !no_cache;
+            request.inhibit_sleep = !no_inhibit_sleep;
             request.cache.directory = cache_dir;
             request.bind_address = bind_address;
             request.http_port = http_port;

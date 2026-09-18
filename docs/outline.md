@@ -1,7 +1,7 @@
 # Procast outline
 
 Status: agreed direction and input for detailed planning.
-Last updated: 2026-09-18.
+Last updated: 2026-09-19.
 
 ## Purpose
 
@@ -193,8 +193,10 @@ A future KDE frontend could use C++/Qt/Kirigami; a GNOME frontend could use GTK.
 Neither toolkit nor an FFI/IPC boundary is selected for future frontends yet.
 
 Full cross-platform support, advanced subtitle rendering, hardware acceleration,
-and a persistent service are outside the first milestone. Automatic suspend
-inhibition should be considered after the basic casting path works.
+and a persistent service are outside the first milestone. The Linux CLI now uses
+a small `systemd-inhibit` adapter during preparation and casting, verified with
+KDE. Broader desktop/platform integration will be revisited with UI work; see
+[sleep inhibition](sleep-inhibition.md).
 
 ## Validation and detailed-planning questions
 

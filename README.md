@@ -16,6 +16,9 @@ seeking and long-duration checks for the expanded paths are deferred.
   playback with existing WebVTT needs no FFmpeg. Forced transcoding requires
   `libx264` and AAC encoders plus a decoder for the input codecs.
 - Network access for the initial Cargo dependency download.
+- On Linux, `systemd-inhibit` for automatic sleep prevention during casting
+  (already present on the Fedora KDE development machine). If unavailable or
+  denied, Procast warns and continues.
 
 No FFmpeg development headers, Qt, or KDE libraries are needed. Cargo resolves
 the Rust dependencies; `Cargo.lock` records tested versions.
@@ -143,6 +146,14 @@ See [automatic playback and reuse validation](docs/automatic-playback.md).
 ### Network and session behaviour
 
 The host must stay awake, and the receiver must be able to fetch files from it.
+On Linux, `cast` holds a `systemd-inhibit` sleep lock during preparation, playback
+(including pauses), and cleanup. KDE PowerDevil honours this lock. Screen dimming
+and locking remain enabled. The lock is released when the session ends; acquisition
+failure produces a warning rather than preventing playback. `--no-inhibit-sleep`
+disables it for a session. This is a small initial Linux adapter; broader desktop
+integration will be revisited with UI work. See [sleep inhibition](docs/sleep-inhibition.md)
+for verification and limits.
+
 Procast chooses a local address using the route to the receiver and an OS-assigned
 HTTP port. `--bind-address LOCAL_IP --http-port 8010` provides a fixed interface
 and port for troubleshooting. Check firewall rules, VPN routing, mDNS, and Wi-Fi

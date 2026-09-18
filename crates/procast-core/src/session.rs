@@ -43,6 +43,8 @@ pub struct CastRequest {
     pub profile: Profile,
     pub cache: CacheOptions,
     pub transcode: TranscodeOptions,
+    /// Best-effort Linux sleep inhibition during preparation and playback.
+    pub inhibit_sleep: bool,
 }
 
 impl CastRequest {
@@ -60,6 +62,7 @@ impl CastRequest {
             profile: Profile::Auto,
             cache: CacheOptions::default(),
             transcode: TranscodeOptions::default(),
+            inhibit_sleep: true,
         }
     }
 }
@@ -130,7 +133,24 @@ pub async fn run(
     let mut server = None;
     let mut transport = None;
     let mut stopped_on_receiver = false;
+    #[cfg(target_os = "linux")]
+    let mut sleep_inhibitor = None;
     let mut result = async {
+        #[cfg(target_os = "linux")]
+        if request.inhibit_sleep {
+            match crate::power::SleepInhibitor::acquire(cancel).await {
+                Ok(inhibitor) => {
+                    sleep_inhibitor = Some(inhibitor);
+                    notice(&progress, "Sleep inhibition active for this casting session".into());
+                }
+                Err(ProcastError::Cancelled) => return Err(ProcastError::Cancelled),
+                Err(error) => tracing::warn!(%error, "Could not inhibit sleep; automatic sleep may interrupt casting"),
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        if request.inhibit_sleep {
+            tracing::warn!("Sleep inhibition is currently implemented only on Linux; keep the host awake while casting");
+        }
         report(
             &progress,
             Phase::Preparing,
@@ -379,6 +399,10 @@ pub async fn run(
                 tracing::warn!(%error, "cleanup warning; local resources released where possible");
             }
         }
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(inhibitor) = sleep_inhibitor {
+        inhibitor.close().await;
     }
     let phase = match &result {
         Ok(()) if stopped_on_receiver => Phase::Stopped,

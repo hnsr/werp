@@ -31,6 +31,7 @@ fn experimental_flag_reaches_preflight_and_preserves_other_checks() {
         let mut command = Command::new(env!("CARGO_BIN_EXE_procast"));
         command
             .arg("cast")
+            .arg("--no-inhibit-sleep")
             .arg(&file)
             .arg("--ffprobe")
             .arg(&probe)
@@ -105,6 +106,7 @@ fn auto_remux_reuses_saved_output_and_readonly_source_falls_back_to_user_cache()
     let run = || {
         let output = Command::new(env!("CARGO_BIN_EXE_procast"))
             .arg("cast")
+            .arg("--no-inhibit-sleep")
             .arg(&source)
             .args(["--host", "127.0.0.1", "--cast-port", &port.to_string()])
             .arg("--ffprobe")
@@ -152,10 +154,22 @@ async fn signals_wait_for_probe_cleanup_and_return_distinct_exit_codes() {
         let probe = dir.path().join("probe");
         fs::write(&probe, "#!/bin/sh\necho $$ > \"$0.pid\"\nexec sleep 60\n").unwrap();
         fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+        let inhibitor = dir.path().join("systemd-inhibit");
+        fs::write(
+            &inhibitor,
+            "#!/bin/sh\necho $$ > \"$0.pid\"\nprintf R\nread -r ignored || :\n",
+        )
+        .unwrap();
+        fs::set_permissions(&inhibitor, fs::Permissions::from_mode(0o700)).unwrap();
+        let search_path = std::env::join_paths(std::iter::once(dir.path().to_path_buf()).chain(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+        ))
+        .unwrap();
         let file = dir.path().join("movie");
         fs::write(&file, "placeholder").unwrap();
         let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_procast"))
             .arg(command)
+            .env("PATH", search_path)
             .arg(file)
             .arg("--ffprobe")
             .arg(&probe)
@@ -197,6 +211,59 @@ async fn signals_wait_for_probe_cleanup_and_return_distinct_exit_codes() {
         );
         assert!(output.stdout.is_empty());
         assert!(!Path::new(&format!("/proc/{probe_pid}")).exists());
+        let inhibitor_pid = dir.path().join("systemd-inhibit.pid");
+        if command == "cast" {
+            let helper_pid = fs::read_to_string(inhibitor_pid).unwrap();
+            assert!(!Path::new(&format!("/proc/{}", helper_pid.trim())).exists());
+            assert!(String::from_utf8_lossy(&output.stderr).contains("Sleep inhibition active"));
+        } else {
+            assert!(!inhibitor_pid.exists(), "inspection must not inhibit sleep");
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn sleep_inhibition_is_best_effort_and_released_on_preflight_failure() {
+    use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+    for mode in ["missing", "denied", "active", "disabled"] {
+        let dir = tempfile::tempdir().unwrap();
+        let helper = dir.path().join("systemd-inhibit");
+        if mode != "missing" {
+            let body = if mode == "denied" {
+                "exit 1"
+            } else {
+                "echo $$ > \"$0.pid\"; printf R; read -r ignored || :"
+            };
+            fs::write(&helper, format!("#!/bin/sh\n{body}\n")).unwrap();
+            fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let mut command = Command::new(env!("CARGO_BIN_EXE_procast"));
+        command
+            .arg("cast")
+            .arg(dir.path().join("missing.mp4"))
+            .env("PATH", dir.path());
+        if mode == "disabled" {
+            command.arg("--no-inhibit-sleep");
+        }
+        let output = command.output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{stderr}");
+        assert!(
+            stderr.contains("missing.mp4"),
+            "preflight must still run: {stderr}"
+        );
+        if mode == "active" {
+            assert!(stderr.contains("Sleep inhibition active"), "{stderr}");
+            let pid = fs::read_to_string(dir.path().join("systemd-inhibit.pid")).unwrap();
+            assert!(!Path::new(&format!("/proc/{}", pid.trim())).exists());
+        } else if mode == "disabled" {
+            assert!(!stderr.contains("inhibit sleep"), "{stderr}");
+            assert!(!dir.path().join("systemd-inhibit.pid").exists());
+        } else {
+            assert!(stderr.contains("Could not inhibit sleep"), "{stderr}");
+            assert!(!stderr.contains("Sleep inhibition active"), "{stderr}");
+        }
     }
 }
 
@@ -240,6 +307,7 @@ exec sleep 60
         let cache = dir.path().join("cache");
         let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_procast"))
             .arg("cast")
+            .arg("--no-inhibit-sleep")
             .arg(&file)
             .arg(flag)
             .args(["--host", "127.0.0.1", "--no-cache"])
