@@ -172,10 +172,13 @@ pub async fn prepare(
         .await
         .map_err(|e| error(format!("cannot resolve source for cache: {e}")))?;
     let source_hash = fingerprint(&source, cancel).await?;
-    let recipe = format!(
+    let mut recipe = format!(
         "v{RECIPE_VERSION}-{:?}-{:?}",
         options.mode, options.playback_policy
     );
+    if let Some(index) = options.bitmap_subtitle {
+        recipe.push_str(&format!("-bitmap-{index}"));
+    }
     let mut digest = Context::new(&SHA256);
     digest.update(source.as_os_str().as_encoded_bytes());
     digest.update(b"\0");

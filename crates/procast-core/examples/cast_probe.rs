@@ -144,6 +144,7 @@ async fn run(args: Args, token: &CancellationToken) -> Result<(), ProcastError> 
                 &server.video_url,
                 server.subtitle_url.as_deref(),
                 "Procast M1 test",
+                0.0,
                 token,
             )
             .await?;

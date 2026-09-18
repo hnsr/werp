@@ -2,12 +2,14 @@
 
 pub mod cache;
 pub mod cast;
+pub mod config;
 pub mod discovery;
 mod error;
 pub mod media;
 pub mod playback;
 mod power;
 mod process;
+mod resume;
 pub mod serve;
 pub mod session;
 pub mod subtitles;

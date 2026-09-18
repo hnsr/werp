@@ -175,12 +175,19 @@ scope.
 Subtitles are a core requirement. Chromecast supports separate text tracks such
 as WebVTT; missing support in an individual player is not a protocol limitation.
 
-- Start with explicit external SRT/WebVTT files.
-- Add embedded text-track extraction and matching sidecar-file discovery later.
+- Explicit external SRT/WebVTT and ASS/SSA files are supported.
+- Embedded text extraction and exact-name SRT discovery are implemented. TOML
+  preferences enable automatic loading and ordered English/Dutch selection.
 - Text extraction/conversion need not re-encode the video.
 - Preserve subtitle timing across playback and seeking.
-- Defer elaborate ASS styling and bitmap subtitles. Preserving their appearance
-  may require burning them into the video and therefore video re-encoding.
+- Embedded bitmap subtitles use full video burn-in. Advanced ASS styling remains
+  limited by text conversion and is reported explicitly. See
+  [preferences and subtitles](preferences-and-subtitles.md) for exact scope.
+
+User preferences also configure an ordered receiver list and resume behavior.
+Resume is enabled by default and persists confirmed playback positions in the
+user state directory; natural completion clears them. Personal preferences and
+playback history remain outside Git.
 
 ## Deferred work
 

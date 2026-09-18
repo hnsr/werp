@@ -82,6 +82,7 @@ struct Transcript {
     polls: usize,
     track_commands: usize,
     receiver_polls: usize,
+    start_position: f64,
 }
 
 fn status(url: &str, state: &str, tracks: bool) -> Value {
@@ -117,6 +118,14 @@ async fn download(url: &str) -> Vec<u8> {
 async fn receiver(
     mode: Mode,
     loaded: Arc<AtomicBool>,
+) -> (SocketAddr, tokio::task::JoinHandle<Transcript>) {
+    receiver_at(mode, loaded, 1.0).await
+}
+
+async fn receiver_at(
+    mode: Mode,
+    loaded: Arc<AtomicBool>,
+    position: f64,
 ) -> (SocketAddr, tokio::task::JoinHandle<Transcript>) {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     let config =
@@ -157,6 +166,7 @@ async fn receiver(
                 }
                 "LOAD" => {
                     log.loads += 1;
+                    log.start_position = payload["currentTime"].as_f64().unwrap();
                     log.url = payload["media"]["contentId"].as_str().unwrap().into();
                     loaded.store(true, Ordering::Release);
                     if mode == Mode::Reject {
@@ -264,6 +274,11 @@ async fn receiver(
                 }
                 other => panic!("unexpected request: {other}"),
             };
+            if let Some(entries) = reply.get_mut("status").and_then(Value::as_array_mut) {
+                for entry in entries {
+                    entry["currentTime"] = json!(position);
+                }
+            }
             if let Some(id) = payload.get("requestId") {
                 reply["requestId"] = id.clone();
             }
@@ -365,8 +380,10 @@ async fn receiver_stop_finishes_without_stopping_other_apps_or_hiding_errors() {
         let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video);
         request.inhibit_sleep = false;
+        request.subtitles = procast_core::subtitles::Request::Off;
+        request.preferences.playback.resume = false;
         request.target = Target::Host(address);
-        request.subtitles = Some(subtitles);
+        request.subtitles = procast_core::subtitles::Request::External(subtitles);
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
         let (progress, updates) = watch::channel(SessionState::default());
         let result = tokio::time::timeout(
@@ -441,8 +458,10 @@ async fn terminal_broadcasts_complete_promptly_and_do_not_confuse_other_sessions
         let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video);
         request.inhibit_sleep = false;
+        request.subtitles = procast_core::subtitles::Request::Off;
+        request.preferences.playback.resume = false;
         request.target = Target::Host(address);
-        request.subtitles = Some(subs);
+        request.subtitles = procast_core::subtitles::Request::External(subs);
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
         let (progress, updates) = watch::channel(SessionState::default());
         let result = tokio::time::timeout(
@@ -519,6 +538,8 @@ async fn experimental_formats_require_opt_in_and_serve_original_bytes() {
         let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video.clone());
         request.inhibit_sleep = false;
+        request.subtitles = procast_core::subtitles::Request::Off;
+        request.preferences.playback.resume = false;
         request.mode = PlaybackMode::Direct;
         request.target = Target::Host(address);
         request.probe.executable = probe;
@@ -583,12 +604,14 @@ async fn session_covers_completion_transient_idle_errors_takeover_and_cancellati
         let (address, receiver) = receiver(mode, loaded.clone()).await;
         let mut request = CastRequest::new(file);
         request.inhibit_sleep = false;
+        request.subtitles = procast_core::subtitles::Request::Off;
+        request.preferences.playback.resume = false;
         request.target = Target::Host(address);
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
         request.ffmpeg = directory.path().join("missing-ffmpeg");
         // Complete exercises the no-subtitle route; all others use WebVTT.
         if mode != Mode::Complete {
-            request.subtitles = Some(subs);
+            request.subtitles = procast_core::subtitles::Request::External(subs);
         }
         let token = CancellationToken::new();
         let (progress, mut updates) = watch::channel(SessionState::default());
@@ -688,6 +711,8 @@ async fn invalid_media_and_subtitles_fail_before_contacting_receiver() {
     for malformed_media in [true, false] {
         let mut request = CastRequest::new(file.clone());
         request.inhibit_sleep = false;
+        request.subtitles = procast_core::subtitles::Request::Off;
+        request.preferences.playback.resume = false;
         request.mode = PlaybackMode::Direct;
         request.target = Target::Host(listener.local_addr().unwrap());
         let data = if malformed_media {
@@ -698,7 +723,7 @@ async fn invalid_media_and_subtitles_fail_before_contacting_receiver() {
         request.probe.executable = fake_probe(dir.path(), &data);
         let sub = dir.path().join("invalid.vtt");
         fs::write(&sub, "WEBVTT\n").unwrap();
-        request.subtitles = Some(sub);
+        request.subtitles = procast_core::subtitles::Request::External(sub);
         let (progress, updates) = watch::channel(SessionState::default());
         let result = session::run(request, progress, &CancellationToken::new()).await;
         assert!(result.is_err());
@@ -821,8 +846,10 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         };
         let mut request = CastRequest::new(source.clone());
         request.inhibit_sleep = false;
+        request.subtitles = procast_core::subtitles::Request::Off;
+        request.preferences.playback.resume = false;
         request.target = Target::Host(address);
-        request.subtitles = Some(subs);
+        request.subtitles = procast_core::subtitles::Request::External(subs);
         let force_transcode = mode.is_some();
         request.mode = match mode {
             Some(procast_core::transcode::TranscodeMode::Remux) => PlaybackMode::Remux,
@@ -872,4 +899,73 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         assert!(text.contains("Hello Procast!"));
         assert_eq!(log.track_commands, 1);
     }
+}
+
+#[tokio::test]
+async fn resume_survives_interruptions_obeys_overrides_and_clears_on_completion() {
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("movie.mp4");
+    fs::write(&video, "original video").unwrap();
+    let mut data: Value = serde_json::from_str(include_str!("fixtures/h264.json")).unwrap();
+    data["format"]["duration"] = json!("120.0");
+    let probe = fake_probe(dir.path(), &data.to_string());
+    let state = dir.path().join("resume");
+    for (mode, enabled, restart, expected_start, position) in [
+        (Mode::Hold, true, false, 0.0, 40.0),
+        (Mode::Reject, true, false, 35.0, 40.0),
+        (Mode::Hold, true, true, 0.0, 60.0),
+        (Mode::Complete, false, false, 0.0, 1.0),
+        (Mode::Complete, true, false, 55.0, 60.0),
+        (Mode::Disconnect, true, false, 0.0, 30.0),
+        (Mode::Complete, true, false, 25.0, 30.0),
+        (Mode::Complete, true, false, 0.0, 1.0),
+    ] {
+        let (address, receiver) =
+            receiver_at(mode, Arc::new(AtomicBool::new(false)), position).await;
+        let mut request = CastRequest::new(video.clone());
+        request.target = Target::Host(address);
+        request.probe.executable = probe.clone();
+        request.inhibit_sleep = false;
+        request.subtitles = procast_core::subtitles::Request::Off;
+        request.preferences.playback.resume = enabled;
+        request.resume_directory = Some(state.clone());
+        request.restart = restart;
+        let cancel = CancellationToken::new();
+        let (progress, mut updates) = watch::channel(SessionState::default());
+        let control = async {
+            if mode == Mode::Hold {
+                loop {
+                    if updates.borrow_and_update().phase == Phase::Playing {
+                        cancel.cancel();
+                        break;
+                    }
+                    if updates.changed().await.is_err() {
+                        break;
+                    }
+                }
+            }
+        };
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::join!(session::run(request, progress, &cancel), control)
+        })
+        .await
+        .unwrap();
+        if matches!(mode, Mode::Hold | Mode::Reject | Mode::Disconnect) {
+            assert!(result.is_err());
+        } else {
+            result.unwrap();
+        }
+        let log = receiver.await.unwrap();
+        assert_eq!(
+            log.start_position, expected_start,
+            "{mode:?}, enabled={enabled}, restart={restart}"
+        );
+    }
+    assert!(
+        !fs::read_dir(state).unwrap().any(|p| p
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|s| s == "json"))
+    );
 }

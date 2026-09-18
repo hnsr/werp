@@ -1,0 +1,13 @@
+# Copy to ~/.config/procast/config.toml (or $XDG_CONFIG_HOME/procast/config.toml).
+# CLI overrides take precedence; omitted fields use these defaults.
+[subtitles]
+auto_load = true
+languages = ["en", "nl"]
+
+[devices]
+# Exact friendly names or stable IDs, highest priority first.
+# Example: preferred = ["Living Room", "Bedroom"]
+preferred = []
+
+[playback]
+resume = true

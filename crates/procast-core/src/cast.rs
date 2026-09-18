@@ -159,6 +159,7 @@ impl CastSession {
         video: &str,
         subtitles: Option<&str>,
         title: &str,
+        start_position: f64,
         cancel: &CancellationToken,
     ) -> Result<Option<PlaybackSnapshot>, ProcastError> {
         let app = self
@@ -172,7 +173,7 @@ impl CastSession {
             .request(
                 MEDIA,
                 &app.transport_id,
-                load_payload(&app.session_id, video, subtitles, title),
+                load_payload(&app.session_id, video, subtitles, title, start_position),
                 cancel,
             )
             .await?;
@@ -546,9 +547,15 @@ fn owned_terminal(
     })
 }
 
-fn load_payload(session: &str, video: &str, subtitles: Option<&str>, title: &str) -> Value {
+fn load_payload(
+    session: &str,
+    video: &str,
+    subtitles: Option<&str>,
+    title: &str,
+    start_position: f64,
+) -> Value {
     let mut payload = json!({
-        "type":"LOAD", "sessionId":session, "autoplay":true, "currentTime":0,
+        "type":"LOAD", "sessionId":session, "autoplay":true, "currentTime":start_position,
         "media":{
             "contentId":video, "contentType":"video/mp4", "streamType":"BUFFERED",
             "metadata":{"metadataType":0,"title":title}
@@ -558,7 +565,7 @@ fn load_payload(session: &str, video: &str, subtitles: Option<&str>, title: &str
         payload["activeTrackIds"] = json!([1]);
         payload["media"]["tracks"] = json!([{"trackId":1,"type":"TEXT","subtype":"SUBTITLES",
                 "trackContentId":subtitles,"trackContentType":"text/vtt",
-                "name":"External subtitles"}]);
+                "name":"Subtitles"}]);
     }
     payload
 }

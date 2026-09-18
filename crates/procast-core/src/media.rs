@@ -33,7 +33,7 @@ pub struct MediaInfo {
     pub streams: Vec<StreamInfo>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct StreamInfo {
     pub index: u32,
     pub kind: String,
@@ -52,6 +52,7 @@ pub struct StreamInfo {
     pub title: Option<String>,
     pub default: bool,
     pub forced: bool,
+    pub hearing_impaired: bool,
     pub attached_picture: bool,
 }
 
@@ -91,7 +92,7 @@ pub async fn inspect(
     command.args([
         "-v", "error", "-print_format", "json", "-show_format", "-show_streams",
         "-show_entries",
-        "format=format_name,duration:stream=index,codec_type,codec_name,profile,level,pix_fmt,r_frame_rate,avg_frame_rate,color_transfer,width,height,sample_rate,channels:stream_tags=language,title:stream_disposition=default,forced,attached_pic:stream_side_data=side_data_type",
+        "format=format_name,duration:stream=index,codec_type,codec_name,profile,level,pix_fmt,r_frame_rate,avg_frame_rate,color_transfer,width,height,sample_rate,channels:stream_tags=language,title:stream_disposition=default,forced,hearing_impaired,attached_pic:stream_side_data=side_data_type",
         "-i",
     ]).arg(&canonical);
     let bytes = process::capture(&mut command, cancellation, options.timeout).await?;
@@ -184,6 +185,10 @@ fn parse(bytes: &[u8], path: PathBuf) -> Result<MediaInfo, ProcastError> {
                 forced: stream
                     .disposition
                     .get("forced")
+                    .is_some_and(|value| *value != 0),
+                hearing_impaired: stream
+                    .disposition
+                    .get("hearing_impaired")
                     .is_some_and(|value| *value != 0),
                 attached_picture: stream
                     .disposition

@@ -11,6 +11,9 @@ checks passed; the user also confirmed the consolidated short-clip TV batch
 passed without observed issues. Seeking and long-duration checks are deferred
 at the user's request and do not block further work. Earlier explicit-mode
 hardware evidence remains recorded separately.
+Configuration, automatic subtitle selection/extraction, image-subtitle burn-in,
+preferred receivers, and persistent resume are implemented; their TV checks are
+pending. See [preferences and subtitles](preferences-and-subtitles.md).
 Updated: 2026-09-19.
 Requirements: [outline.md](outline.md).
 
@@ -147,7 +150,7 @@ procast cast movie.mp4 --host 192.168.1.50
   Default to a reachable local address and an OS-assigned port. A fixed port can
   support a narrowly scoped firewall rule when needed.
 
-No persistent configuration is required for the first release. Use clear errors
+TOML configuration now stores subtitle, device, and resume preferences. Use clear errors
 for missing executables, missing files, invalid subtitles, ambiguous devices,
 unreachable receivers, media rejection, and unavailable conversion capabilities.
 
@@ -308,20 +311,28 @@ one another. Session takeover ends Procast's ownership cleanly.
 
 ### M4 — Better subtitle and audio selection
 
-- Add embedded text-subtitle extraction with explicit track selection.
-- Detect matching external subtitle files; prefer an unambiguous exact match.
-  If several language variants match, list them rather than picking silently.
-- Define precedence: explicit subtitle option wins; include an explicit subtitles
-  off option. Keep automatic embedded-language selection out until preferences
-  are defined.
+**Subtitle implementation complete within the scope below; TV checks pending.**
+
+- Extract embedded text to WebVTT, with absolute stream-index selection.
+- Automatically select by ordered English/Dutch preferences, language tags and
+  track names, preferring full dialogue and text over forced-only/image tracks.
+- Fall back to an exact-basename external SRT. Ambiguous matches require an
+  explicit file; unrelated or language-suffixed basenames are not guessed.
+- Explicit file/track/off options override automatic settings in TOML.
+- Burn embedded PGS/DVD/DVB subtitles into full video conversion; key reusable
+  output by selected image track. PGS has local rendered-frame verification;
+  DVD/DVB and real receiver subtitle/resume checks remain unverified.
+- ASS/SSA text conversion is supported with a styling-loss warning. Faithful
+  complex ASS rendering, external bitmap files, and OCR remain outside this scope.
 - Report audio tracks in `inspect`; implement explicit audio selection with the
   remux/conversion path in M5 if the direct-play receiver cannot select that track.
-- Report image subtitles and unsupported styling honestly. Do not silently claim
-  faithful ASS rendering after reducing it to plain text.
 
-Acceptance: selected embedded text tracks and external subtitles display correctly
-and remain synchronized after seeking. Tests cover ambiguous matches, missing
-tracks, Unicode paths, and explicit overrides.
+Configuration also supports preferred receivers and enabled-by-default resume.
+Resume saves owned receiver positions periodically, restores them in the next
+LOAD, and clears state after FINISHED. Tests cover cancellation, failed LOAD,
+disconnect, explicit restart, disabled resume, corrupt state, and source changes.
+The [TV checklist](preferences-and-subtitles.md#verification-and-tv-checklist)
+covers new subtitle/device/resume behavior without phone controls.
 
 ### M5 — Automatic playback, broader preparation, and reuse
 
@@ -432,8 +443,9 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-The consolidated hardware batch passed; there is no need to repeat it without a
-new change or failure. Seeking and longer playback on the expanded preparation
+Validate the new preferences, embedded/automatic subtitles, and resume using the
+short fixture and checklist in [preferences and subtitles](preferences-and-subtitles.md).
+The earlier M5 hardware batch passed. Seeking and longer playback on the expanded preparation
 paths, especially copied HEVC, are deferred until controls are available or the
 user resumes those checks. They do not block choosing the next development task.
 Keep M3 controls and frontend design parked until explicitly resumed.

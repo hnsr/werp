@@ -33,6 +33,8 @@ pub enum TranscodeMode {
 pub struct TranscodeOptions {
     pub mode: TranscodeMode,
     pub playback_policy: DirectPlayPolicy,
+    /// Absolute index of an embedded image subtitle to burn into full conversion.
+    pub bitmap_subtitle: Option<u32>,
     /// Parent for private session directories. Defaults to the user's cache.
     pub directory: Option<PathBuf>,
     /// Encoding deadline, separate from the short ffprobe timeout.
@@ -44,6 +46,7 @@ impl Default for TranscodeOptions {
         Self {
             mode: TranscodeMode::default(),
             playback_policy: DirectPlayPolicy::Conservative,
+            bitmap_subtitle: None,
             directory: None,
             timeout: Duration::from_secs(24 * 60 * 60),
         }
@@ -266,6 +269,23 @@ pub async fn prepare(
         return Err(ProcastError::Cancelled);
     }
     let input = plan(info)?;
+    if let Some(index) = options.bitmap_subtitle {
+        if options.mode != TranscodeMode::AudioVideo {
+            return Err(error("subtitle burn-in requires full video conversion"));
+        }
+        if !info.streams.iter().any(|s| {
+            s.index == index
+                && s.kind == "subtitle"
+                && matches!(
+                    s.codec.as_deref(),
+                    Some("hdmv_pgs_subtitle" | "dvd_subtitle" | "dvb_subtitle")
+                )
+        }) {
+            return Err(error(
+                "selected bitmap subtitle stream does not exist or is unsupported",
+            ));
+        }
+    }
     match options.mode {
         TranscodeMode::AudioOnly => {
             media::validate_audio_transcode_input(info, options.playback_policy)?
@@ -311,14 +331,19 @@ pub async fn prepare(
     let result = async {
         let mut command = Command::new(ffmpeg);
         command.args(["-nostdin", "-hide_banner", "-v", "error", "-nostats", "-progress", "pipe:1", "-stats_period", "1", "-n", "-copyts", "-start_at_zero", "-i"])
-            .arg(&info.path).args(["-map", &format!("0:{}", input.video)]);
+            .arg(&info.path);
+        let filter = format!("scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,fps={:.8},format=yuv420p", input.fps);
+        if let Some(index) = options.bitmap_subtitle {
+            let graph = format!("[0:{}][0:{index}]overlay=eof_action=pass:repeatlast=0,{filter}[captioned]", input.video);
+            command.args(["-filter_complex", &graph, "-map", "[captioned]"]);
+        } else { command.args(["-map", &format!("0:{}", input.video)]); }
         if let Some(index) = input.audio { command.args(["-map", &format!("0:{index}")]); }
         command.args(["-map_metadata", "-1", "-map_chapters", "-1", "-sn", "-dn"]);
         match options.mode {
             TranscodeMode::AudioOnly | TranscodeMode::Remux => { command.args(["-c:v", "copy"]); }
             TranscodeMode::AudioVideo => {
-                let filter = format!("scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,fps={:.8},format=yuv420p", input.fps);
-                command.args(["-vf", &filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-level:v", "4.1",
+                if options.bitmap_subtitle.is_none() { command.args(["-vf", &filter]); }
+                command.args(["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-level:v", "4.1",
                     "-maxrate", "8M", "-bufsize", "16M", "-pix_fmt", "yuv420p"]);
             }
         }

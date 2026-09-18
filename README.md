@@ -1,10 +1,12 @@
 # Procast
 
-A Rust CLI and reusable backend for casting local videos and external subtitles
+A Rust CLI and reusable backend for casting local videos and subtitles
 to Chromecast. `cast FILE` selects direct play, remuxing, audio conversion, or full
 conversion and reuses validated prepared files automatically. Automated checks
 and the consolidated short-clip TV validation passed on the KPN DIW7022 receiver;
 seeking and long-duration checks for the expanded paths are deferred.
+Configuration, automatic embedded subtitles, preferred devices, and playback
+resume are implemented with local verification; their TV checks are pending.
 
 ## Development setup
 
@@ -39,8 +41,8 @@ cargo run --locked -- inspect /path/to/video.mkv --ffprobe /usr/bin/ffprobe --ti
 
 `devices` scans for five seconds by default (`--scan-seconds 1..60`). Choose an
 exact friendly name or device ID; duplicate names require an ID. Omitting
-`--device` selects automatically only when exactly one discovered receiver
-advertises video support. Known audio-only devices are rejected, and unknown
+`--device` tries the configured preferred list, then selects automatically when
+exactly one discovered receiver advertises video support. Known audio-only devices are rejected, and unknown
 capabilities require explicit selection. `--host 192.168.1.50` bypasses discovery;
 use `--cast-port` only with `--host`. Discovery and casting currently use IPv4.
 
@@ -49,6 +51,22 @@ replaces playback on the selected receiver. Ctrl+C or SIGTERM stops Procast's
 owned media, closes its server and transport, reaps subprocesses, and removes
 temporary media and subtitles. Completed reusable outputs are retained. If another sender takes over, Procast exits without stopping
 their session. Interactive playback controls are planned for M3.
+
+### Preferences and resume
+
+Preferences are read from `~/.config/procast/config.toml` (or
+`$XDG_CONFIG_HOME/procast/config.toml`). See [the example](docs/config.example.toml)
+and [configuration, subtitles, and resume](docs/preferences-and-subtitles.md).
+Defaults enable automatic subtitles, prefer English then Dutch, and save playback
+position. Configure `[devices] preferred` with ordered exact names or stable IDs.
+Explicit `--device`/`--host` overrides preferences. `--config PATH` selects another
+file; `--no-config` uses built-in defaults.
+
+An interrupted video resumes on its next cast, five seconds before the last
+checkpoint. Normal completion clears the checkpoint. Use `--restart` to start
+over while saving progress or `--no-resume` to disable reading/writing position
+for a session. Positions live in the user's state directory, outside the media
+library. This does not automatically reconnect a failed session.
 
 ### Automatic playback and overrides
 
@@ -64,6 +82,8 @@ choice before preparing anything or launching the Cast application:
 2. Copy supported video/audio from MKV or MP4 into MP4 when only a remux is needed.
 3. Copy supported video and encode incompatible audio to stereo AAC in MP4.
 4. Encode unsupported SDR video to H.264 and audio to stereo AAC.
+
+Selected image subtitles require burn-in and therefore full video conversion.
 
 All preparation finishes before playback; seeking uses the existing HTTP range
 server. Selection is based on metadata and a receiver profile. Procast does not
@@ -108,7 +128,9 @@ Reuse verifies a full SHA-256 fingerprint of the source, its canonical path,
 the preparation mode/profile/recipe version, the output digest, and output media
 metadata. This reads files from disk but avoids encoding. Changed or damaged files
 are regenerated under new names without overwriting existing files. Subtitles
-are prepared separately, so changing an external subtitle does not invalidate video.
+are prepared separately for text tracks, so changing an external text subtitle
+does not invalidate video. Image-subtitle burn-in includes the selected track in
+the cache recipe.
 
 Incomplete session work is deleted on handled failures/cancellation. Validated
 outputs survive playback completion, cancellation, or a receiver connection error.
@@ -120,12 +142,22 @@ modified. With `--no-cache`, the previous temporary-output cleanup behavior appl
 
 ### Subtitles and batch validation
 
-External UTF-8 SRT/WebVTT is supported via `--subtitles`; SRT conversion needs
-FFmpeg. Embedded subtitles, attachments, titles, and chapters are omitted during
-preparation. Embedded subtitle extraction and automatic subtitle discovery remain
-separate work.
+Automatic loading first selects an embedded track matching the ordered language
+preferences, then falls back to an exact-name `.srt` beside the video. Explicit
+`--subtitles FILE`, `--subtitle-track INDEX`, and `--no-subtitles` override this;
+`--auto-subtitles` enables it when disabled in config. Use `inspect` for stream indexes.
 
-Run the consolidated hardware checks when ready:
+Embedded text is extracted to WebVTT. External SRT/VTT/ASS/SSA accepts UTF-8 or
+BOM-marked UTF-16. ASS/SSA conversion loses advanced styling and reports that
+limitation. Embedded PGS/DVD/DVB images are burned into a fully converted video;
+they cannot be toggled on the receiver. Text conversion/extraction needs FFmpeg;
+an external WebVTT file does not. Unselected tracks, attachments, titles, and
+chapters are omitted during preparation.
+
+The new [preferences/subtitle/resume checklist](docs/preferences-and-subtitles.md#verification-and-tv-checklist)
+uses a short generated fixture and does not require phone controls.
+
+The earlier M5 batch remains available for regression checks:
 
 ```sh
 bash scripts/validate-m5.sh "Living Room"

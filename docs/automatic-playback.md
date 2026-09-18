@@ -44,9 +44,11 @@ regardless of the requested receiver profile. Known HDR, ambiguous multiple
 audio/video tracks, and missing required duration/frame-rate metadata remain clear
 errors. Tone mapping and track selection are separate work.
 
-External UTF-8 SRT and WebVTT still use `--subtitles`. Embedded tracks, attachments,
-titles, and chapters are omitted during preparation. SRT conversion needs FFmpeg;
-an existing WebVTT file does not.
+Subtitle preferences now select an embedded track or matching external SRT;
+explicit `--subtitles`, `--subtitle-track`, and `--no-subtitles` override this.
+Text is served as WebVTT, while image tracks require full video burn-in. See
+[preferences and subtitles](preferences-and-subtitles.md) for scope and validation.
+Unselected tracks, attachments, titles, and chapters are omitted during preparation.
 
 The CLI exposes preparation through `--mode`, compatibility through `--profile`,
 and storage through `--cache-dir`/`--no-cache`. Legacy flags and aliases have been
@@ -64,7 +66,7 @@ movie.mkv.procast-<recipe-key>-<generation>.mp4.json
 
 The readable source-name prefix is truncated when necessary. The key includes
 the canonical source path, full source SHA-256 digest, preparation mode, resolved
-profile, and recipe version. Recipe version 1 describes the current output
+profile, selected image track for burn-in, and recipe version. Recipe version 1 describes the current output
 settings; output-affecting changes must bump it. External subtitle changes do not
 invalidate the prepared video.
 

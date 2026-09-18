@@ -24,6 +24,12 @@ struct Cli {
     /// Show debug diagnostics on stderr
     #[arg(short, long, global = true)]
     verbose: bool,
+    /// Read preferences from this TOML file instead of the user config directory
+    #[arg(long, global = true, conflicts_with = "no_config")]
+    config: Option<PathBuf>,
+    /// Use built-in preferences without loading a configuration file
+    #[arg(long, global = true)]
+    no_config: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -75,7 +81,7 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Cast a local video, with optional preparation and external SRT/WebVTT subtitles
+    /// Cast a local video with automatic preparation, subtitles, and resume
     Cast {
         file: PathBuf,
         /// Exact friendly name or stable device ID
@@ -86,8 +92,26 @@ enum Commands {
         host: Option<Ipv4Addr>,
         #[arg(long, default_value_t = 8009, requires = "host", value_parser = clap::value_parser!(u16).range(1..))]
         cast_port: u16,
-        #[arg(long)]
+        #[arg(long, group = "subtitle_selection")]
         subtitles: Option<PathBuf>,
+        /// Select an embedded subtitle by its absolute stream index from inspect
+        #[arg(long, group = "subtitle_selection")]
+        subtitle_track: Option<u32>,
+        /// Disable both automatic and explicit subtitles for this session
+        #[arg(long, group = "subtitle_selection")]
+        no_subtitles: bool,
+        /// Enable automatic subtitle selection even when disabled in config
+        #[arg(long, group = "subtitle_selection")]
+        auto_subtitles: bool,
+        /// Resume and save playback position even when disabled in config
+        #[arg(long, group = "resume_behavior")]
+        resume: bool,
+        /// Do not read or save playback position for this session
+        #[arg(long, group = "resume_behavior")]
+        no_resume: bool,
+        /// Start from the beginning and save new playback progress
+        #[arg(long, group = "resume_behavior")]
+        restart: bool,
         /// Select automatically, or require one preparation path
         #[arg(long, value_enum, default_value_t = ModeArg::Auto)]
         mode: ModeArg,
@@ -159,6 +183,11 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    let preferences = if cli.no_config {
+        procast_core::config::Config::default()
+    } else {
+        procast_core::config::load(cli.config.as_deref())?
+    };
     // Register before starting any work, including in noninteractive runs.
     #[cfg(unix)]
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
@@ -176,7 +205,7 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
         }
     };
     let cancellation = CancellationToken::new();
-    let operation = execute(cli.command, &cancellation);
+    let operation = execute(cli.command, &preferences, &cancellation);
     tokio::pin!(operation);
     tokio::select! {
         result = &mut operation => { result?; Ok(ExitCode::SUCCESS) },
@@ -194,6 +223,7 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
 
 async fn execute(
     command: Commands,
+    preferences: &procast_core::config::Config,
     cancel: &CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match command {
@@ -253,6 +283,12 @@ async fn execute(
             host,
             cast_port,
             subtitles,
+            subtitle_track,
+            no_subtitles,
+            auto_subtitles,
+            resume,
+            no_resume,
+            restart,
             mode,
             profile,
             no_cache,
@@ -273,7 +309,26 @@ async fn execute(
             } else {
                 Target::Auto
             };
-            request.subtitles = subtitles;
+            request.preferences = preferences.clone();
+            if resume || restart {
+                request.preferences.playback.resume = true;
+            }
+            if no_resume {
+                request.preferences.playback.resume = false;
+            }
+            request.restart = restart;
+            if auto_subtitles {
+                request.preferences.subtitles.auto_load = true;
+            }
+            request.subtitles = if let Some(path) = subtitles {
+                procast_core::subtitles::Request::External(path)
+            } else if let Some(index) = subtitle_track {
+                procast_core::subtitles::Request::Embedded(index)
+            } else if no_subtitles {
+                procast_core::subtitles::Request::Off
+            } else {
+                procast_core::subtitles::Request::Auto
+            };
             request.mode = mode.into();
             request.profile = profile.into();
             request.cache.enabled = !no_cache;
@@ -429,6 +484,15 @@ mod tests {
             vec!["--mode", "audio", "--profile", "baseline", "--no-cache"],
             vec!["--mode", "transcode", "--cache-dir", "/tmp"],
             vec!["--mode", "auto", "--profile", "auto"],
+            vec![
+                "--config",
+                "preferences.toml",
+                "--auto-subtitles",
+                "--resume",
+            ],
+            vec!["--no-config", "--no-subtitles", "--no-resume"],
+            vec!["--subtitle-track", "3", "--restart"],
+            vec!["--subtitles", "captions.ass"],
         ] {
             let args = ["procast", "cast", "movie.mp4"].into_iter().chain(extra);
             assert!(Cli::try_parse_from(args).is_ok());
@@ -446,6 +510,13 @@ mod tests {
             vec!["--remux"],
             vec!["--experimental-direct-play"],
             vec!["--transcode-dir", "/tmp"],
+            vec!["--config", "preferences.toml", "--no-config"],
+            vec!["--subtitle-track", "3", "--subtitles", "captions.srt"],
+            vec!["--auto-subtitles", "--no-subtitles"],
+            vec!["--subtitle-track", "3", "--no-subtitles"],
+            vec!["--resume", "--no-resume"],
+            vec!["--restart", "--resume"],
+            vec!["--restart", "--no-resume"],
         ] {
             let args = ["procast", "cast", "movie.mp4"].into_iter().chain(extra);
             assert!(Cli::try_parse_from(args).is_err());

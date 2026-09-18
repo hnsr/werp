@@ -32,7 +32,7 @@ pub enum Target {
 #[derive(Debug, Clone)]
 pub struct CastRequest {
     pub file: PathBuf,
-    pub subtitles: Option<PathBuf>,
+    pub subtitles: subtitles::Request,
     pub target: Target,
     pub bind_address: Option<IpAddr>,
     pub http_port: u16,
@@ -45,13 +45,17 @@ pub struct CastRequest {
     pub transcode: TranscodeOptions,
     /// Best-effort Linux sleep inhibition during preparation and playback.
     pub inhibit_sleep: bool,
+    pub preferences: crate::config::Config,
+    pub restart: bool,
+    /// Override state location for embedding/testing; CLI uses XDG_STATE_HOME.
+    pub resume_directory: Option<PathBuf>,
 }
 
 impl CastRequest {
     pub fn new(file: PathBuf) -> Self {
         Self {
             file,
-            subtitles: None,
+            subtitles: subtitles::Request::Auto,
             target: Target::Auto,
             bind_address: None,
             http_port: 0,
@@ -63,6 +67,9 @@ impl CastRequest {
             cache: CacheOptions::default(),
             transcode: TranscodeOptions::default(),
             inhibit_sleep: true,
+            preferences: crate::config::Config::default(),
+            restart: false,
+            resume_directory: None,
         }
     }
 }
@@ -133,6 +140,8 @@ pub async fn run(
     let mut server = None;
     let mut transport = None;
     let mut stopped_on_receiver = false;
+    let mut resume = None;
+    let mut completed_naturally = false;
     #[cfg(target_os = "linux")]
     let mut sleep_inhibitor = None;
     let mut result = async {
@@ -159,12 +168,23 @@ pub async fn run(
         );
         let info = media::inspect(&request.file, &request.probe, cancel).await?;
         transcode::validate_input(&info)?;
+        let mut start_position = 0.0;
+        if request.preferences.playback.resume {
+            match crate::resume::ResumeStore::open(&info, request.resume_directory.as_deref()) {
+                Ok(store) => {
+                    if !request.restart { start_position = store.start_position(); }
+                    if start_position > 0.0 { notice(&progress, format!("Resuming from {start_position:.0} seconds")); }
+                    resume = Some(store);
+                }
+                Err(error) => tracing::warn!(%error, "Resume unavailable for this session; starting from the beginning"),
+            }
+        }
         let (address, model) = match &request.target {
             Target::Host(address) => (*address, None),
             target => {
                 report(&progress, Phase::Discovering, None, None);
                 let devices = discovery::discover(request.scan_duration, cancel).await?;
-                let selected = select_target(&devices, target)?;
+                let selected = select_preferred_target(&devices, target, &request.preferences.devices.preferred)?;
                 (SocketAddr::new(
                     (*selected.addresses.first().ok_or_else(|| {
                         ProcastError::Discovery("selected device has no IPv4 address".into())
@@ -173,19 +193,44 @@ pub async fn run(
             }
         };
         let policy = request.profile.resolve(model.as_deref());
-        let plan = playback::select(&info, request.mode, policy)?;
+        let subtitle = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(ProcastError::Cancelled),
+            selected = subtitles::select(&request.subtitles, &info, &request.file, &request.preferences.subtitles) => selected?,
+        };
+        let bitmap_index = match &subtitle { Some(subtitles::Selection::Bitmap { index }) => Some(*index), _ => None };
+        let mode = if bitmap_index.is_some() {
+            if !matches!(request.mode, Mode::Auto | Mode::Transcode) {
+                return Err(ProcastError::Subtitles("image subtitles require video burn-in; use --mode auto or transcode, choose a text track, or --no-subtitles".into()));
+            }
+            notice(&progress, "Image subtitles selected: burning into video requires full transcoding".into());
+            Mode::Transcode
+        } else { request.mode };
+        let plan = playback::select(&info, mode, policy)?;
         notice(&progress, format!("Selected {:?} ({policy:?} profile): {}", plan.mode, plan.reason));
         if request.profile == Profile::Experimental {
             tracing::warn!("Experimental direct play/profile: receiver audio/video support is not guaranteed; check audible output and picture");
         }
-        if let Some(path) = &request.subtitles {
-            report(&progress, Phase::Preparing, None, Some("Preparing subtitles".into()));
-            prepared = Some(subtitles::prepare(path, &request.ffmpeg, cancel).await?);
+        match subtitle {
+            Some(subtitles::Selection::External(path)) => {
+                notice(&progress, format!("Subtitles: external file {}", path.display()));
+                report(&progress, Phase::Preparing, None, Some("Preparing subtitles".into()));
+                prepared = Some(subtitles::prepare(&path, &request.ffmpeg, cancel).await?);
+            }
+            Some(subtitles::Selection::Text { index, styled }) => {
+                notice(&progress, format!("Subtitles: embedded stream #{index}"));
+                if styled { tracing::warn!("ASS/SSA converted to WebVTT; advanced positioning, fonts and effects are not preserved"); }
+                report(&progress, Phase::Preparing, None, Some("Extracting subtitles".into()));
+                prepared = Some(subtitles::extract(&info, index, &request.ffmpeg, cancel).await?);
+            }
+            Some(subtitles::Selection::Bitmap { index }) => notice(&progress, format!("Subtitles: embedded image stream #{index} (burn-in)")),
+            None => notice(&progress, "Subtitles: none selected".into()),
         }
         if let Some(mode) = plan.preparation() {
             let mut options = request.transcode.clone();
             options.mode = mode;
             options.playback_policy = plan.policy;
+            options.bitmap_subtitle = bitmap_index;
             let label = match mode {
                 TranscodeMode::AudioVideo => "Transcoding",
                 TranscodeMode::AudioOnly => "Audio conversion",
@@ -265,6 +310,7 @@ pub async fn run(
                 &serving.video_url,
                 serving.subtitle_url.as_deref(),
                 &title,
+                start_position,
                 cancel,
             )
             .await
@@ -293,6 +339,9 @@ pub async fn run(
                     tracks_enabled = true;
                 }
                 let status = current.as_ref().unwrap();
+                if matches!(status.player_state.as_str(), "PLAYING" | "PAUSED")
+                    && let Some(store) = &mut resume
+                { store.update(status.current_time); }
                 if status.active_track_ids.contains(&1) {
                     subtitle_confirmed = true;
                 }
@@ -308,6 +357,7 @@ pub async fn run(
                             ));
                         }
                         require_subtitle_fetch(serving)?;
+                        completed_naturally = true;
                         return Ok(());
                     }
                     ("IDLE", Some(reason)) => {
@@ -404,6 +454,9 @@ pub async fn run(
     if let Some(inhibitor) = sleep_inhibitor {
         inhibitor.close().await;
     }
+    if let Some(store) = resume {
+        store.finish(completed_naturally);
+    }
     let phase = match &result {
         Ok(()) if stopped_on_receiver => Phase::Stopped,
         Ok(()) => Phase::Completed,
@@ -445,6 +498,66 @@ pub fn select_target(
     devices: &[discovery::Device],
     target: &Target,
 ) -> Result<discovery::Device, ProcastError> {
+    select_preferred_target(devices, target, &[])
+}
+
+pub fn select_preferred_target(
+    devices: &[discovery::Device],
+    target: &Target,
+    preferred: &[String],
+) -> Result<discovery::Device, ProcastError> {
+    let result = (|| {
+        if matches!(target, Target::Auto) {
+            let eligible: Vec<_> = devices
+                .iter()
+                .filter(|d| {
+                    d.capabilities.is_some_and(|bits| bits & 1 != 0) && !d.addresses.is_empty()
+                })
+                .cloned()
+                .collect();
+            for preference in preferred {
+                if eligible
+                    .iter()
+                    .any(|d| d.id == *preference || d.name == *preference)
+                {
+                    return discovery::select(&eligible, preference);
+                }
+            }
+        }
+        select_target_inner(devices, target)
+    })();
+    result.map_err(|error| match error {
+        ProcastError::Discovery(message) => ProcastError::Discovery(format!(
+            "{message}. Detected devices: {}",
+            if devices.is_empty() {
+                "none".into()
+            } else {
+                devices
+                    .iter()
+                    .map(|d| {
+                        format!(
+                            "{:?} ({}){}",
+                            d.name,
+                            d.id,
+                            if d.capabilities.is_some_and(|c| c & 1 == 0) {
+                                " [audio-only]"
+                            } else {
+                                ""
+                            }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        )),
+        other => other,
+    })
+}
+
+fn select_target_inner(
+    devices: &[discovery::Device],
+    target: &Target,
+) -> Result<discovery::Device, ProcastError> {
     let selected = match target {
         Target::Device(selector) => discovery::select(devices, selector)?,
         Target::Auto => {
@@ -458,13 +571,8 @@ pub fn select_target(
                 [device] => (*device).clone(),
                 _ => {
                     return Err(ProcastError::Discovery(format!(
-                        "found {} confirmed video receivers; choose --device NAME/ID or --host IP. Discovered: {}",
+                        "found {} confirmed video receivers; choose --device NAME/ID or --host IP",
                         eligible.len(),
-                        devices
-                            .iter()
-                            .map(|d| format!("{:?} ({})", d.name, d.id))
-                            .collect::<Vec<_>>()
-                            .join(", ")
                     )));
                 }
             }
@@ -514,6 +622,51 @@ mod tests {
             capabilities: None,
             ..video.clone()
         };
+        let other = discovery::Device {
+            id: "other-id".into(),
+            name: "Other TV".into(),
+            ..video.clone()
+        };
+        let devices = [video.clone(), other.clone(), audio.clone()];
+        assert_eq!(
+            select_preferred_target(
+                &devices,
+                &Target::Auto,
+                &[
+                    "Speaker".into(),
+                    "missing".into(),
+                    "Other TV".into(),
+                    "TV".into()
+                ]
+            )
+            .unwrap()
+            .id,
+            "other-id"
+        );
+        assert_eq!(
+            select_preferred_target(&devices, &Target::Device("TV".into()), &["Other TV".into()])
+                .unwrap()
+                .id,
+            "tv-id"
+        );
+        let error = select_preferred_target(&devices, &Target::Device("Missing".into()), &[])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("Other TV")
+                && error.contains("Speaker")
+                && error.contains("[audio-only]")
+        );
+        let duplicate = discovery::Device {
+            name: "TV".into(),
+            ..other
+        };
+        assert!(
+            select_preferred_target(&[video.clone(), duplicate], &Target::Auto, &["TV".into()])
+                .unwrap_err()
+                .to_string()
+                .contains("ambiguous")
+        );
         assert!(select_target(&[], &Target::Auto).is_err());
         assert!(select_target(&[audio.clone(), unknown.clone()], &Target::Auto).is_err());
         assert_eq!(

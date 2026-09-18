@@ -29,8 +29,10 @@ fn experimental_profile_reaches_preflight_and_preserves_other_checks() {
         metadata["streams"][1]["codec_name"] = serde_json::json!(codec);
         fs::write(dir.path().join("probe.json"), metadata.to_string()).unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_procast"));
+        command.arg("--no-config");
         command
             .arg("cast")
+            .arg("--no-resume")
             .arg("--no-inhibit-sleep")
             .arg(&file)
             .arg("--ffprobe")
@@ -56,6 +58,7 @@ fn experimental_profile_reaches_preflight_and_preserves_other_checks() {
 #[test]
 fn help_and_argument_errors_are_available_without_ffprobe() {
     let output = Command::new(env!("CARGO_BIN_EXE_procast"))
+        .arg("--no-config")
         .arg("--help")
         .output()
         .unwrap();
@@ -65,6 +68,7 @@ fn help_and_argument_errors_are_available_without_ffprobe() {
         assert!(help.contains(command));
     }
     let output = Command::new(env!("CARGO_BIN_EXE_procast"))
+        .arg("--no-config")
         .args(["inspect", "movie.mkv", "--timeout", "0"])
         .output()
         .unwrap();
@@ -105,7 +109,9 @@ fn auto_remux_reuses_saved_output_and_readonly_source_falls_back_to_user_cache()
     drop(listener);
     let run = || {
         let output = Command::new(env!("CARGO_BIN_EXE_procast"))
+            .arg("--no-config")
             .arg("cast")
+            .arg("--no-resume")
             .arg("--no-inhibit-sleep")
             .arg(&source)
             .args(["--host", "127.0.0.1", "--cast-port", &port.to_string()])
@@ -168,6 +174,7 @@ async fn signals_wait_for_probe_cleanup_and_return_distinct_exit_codes() {
         let file = dir.path().join("movie");
         fs::write(&file, "placeholder").unwrap();
         let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_procast"))
+            .arg("--no-config")
             .arg(command)
             .env("PATH", search_path)
             .arg(file)
@@ -239,8 +246,10 @@ fn sleep_inhibition_is_best_effort_and_released_on_preflight_failure() {
             fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
         }
         let mut command = Command::new(env!("CARGO_BIN_EXE_procast"));
+        command.arg("--no-config");
         command
             .arg("cast")
+            .arg("--no-resume")
             .arg(dir.path().join("missing.mp4"))
             .env("PATH", dir.path());
         if mode == "disabled" {
@@ -306,7 +315,9 @@ exec sleep 60
         fs::set_permissions(&ffmpeg, fs::Permissions::from_mode(0o700)).unwrap();
         let cache = dir.path().join("cache");
         let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_procast"))
+            .arg("--no-config")
             .arg("cast")
+            .arg("--no-resume")
             .arg("--no-inhibit-sleep")
             .arg(&file)
             .args(["--mode", mode])
