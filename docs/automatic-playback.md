@@ -1,8 +1,9 @@
 # Automatic playback and reusable preparation
 
 Updated: 2026-09-18. Implementation, local verification, and the consolidated
-short-clip hardware batch passed. Seeking and long-duration checks remain
-follow-ups. Earlier receiver observations are
+short-clip hardware batch passed. Seeking and long-duration checks are deferred
+at the user's request because phone media controls are currently unavailable.
+They do not block further work. Earlier receiver observations are
 recorded in [transcode-validation.md](transcode-validation.md) and
 [remux-validation.md](remux-validation.md).
 
@@ -185,6 +186,7 @@ Allow roughly 15–20 minutes for the interactive run. For each clip:
 The script checks selected modes, completion messages, reuse messages, and port
 closure. It stops at the first failure and preserves logs and successful outputs.
 If a visual check fails, record the sample ID and what happened; protocol success
-alone does not count as a hardware pass. Seeking and long-duration playback are
-separate follow-ups, especially for newly supported copied HEVC paths. M3 controls
-remain parked, so this batch does not depend on phone controls.
+alone does not count as a hardware pass. Seeking and long-duration playback,
+especially for newly supported copied HEVC paths, are deferred rather than
+validated. Revisit them when controls are available or the user resumes those
+checks. M3 controls remain parked; this batch does not depend on phone controls.

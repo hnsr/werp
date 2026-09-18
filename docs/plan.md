@@ -8,8 +8,9 @@ M5 now implements automatic preparation selection, extended HEVC/AAC remuxing,
 MKV audio-only conversion, and persistent adjacent-file reuse with user-cache
 fallback. All 58 automated tests and 12 representative local preparation/reuse
 checks passed; the user also confirmed the consolidated short-clip TV batch
-passed without observed issues. Seeking and long-duration checks remain
-follow-ups. Earlier explicit-mode hardware evidence remains recorded separately.
+passed without observed issues. Seeking and long-duration checks are deferred
+at the user's request and do not block further work. Earlier explicit-mode
+hardware evidence remains recorded separately.
 Updated: 2026-09-18.
 Requirements: [outline.md](outline.md).
 
@@ -378,7 +379,9 @@ The user completed `scripts/validate-m5.sh` on the KPN DIW7022 and confirmed
 all short representative clips looked and sounded correct. The script reported
 all checks passed, covering all preparation paths, cache reuse, subtitles,
 natural completion, cancellation, temporary cleanup, and HTTP port closure.
-Longer playback and seeking remain follow-ups. The one unexplained early
+Longer playback and seeking are deferred at the user's request because phone
+media controls are unavailable; these checks are not claimed as passed and do
+not block subsequent work. The one unexplained early
 audio-only startup failure remains historical
 rather than being treated as a proven codec defect or proven fix.
 
@@ -427,9 +430,10 @@ exists; this workspace now has a local Git repository.
 ## Immediate next step
 
 The consolidated hardware batch passed; there is no need to repeat it without a
-new change or failure. The remaining compatibility checks are seeking and longer
-playback on the expanded preparation paths, especially copied HEVC. Keep M3
-controls and frontend design parked until explicitly resumed.
+new change or failure. Seeking and longer playback on the expanded preparation
+paths, especially copied HEVC, are deferred until controls are available or the
+user resumes those checks. They do not block choosing the next development task.
+Keep M3 controls and frontend design parked until explicitly resumed.
 
 ## Technical references
 
