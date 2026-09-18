@@ -868,6 +868,7 @@ dependencies = [
  "oxicast",
  "prost",
  "rcgen",
+ "rustix",
  "rustls",
  "serde",
  "serde_json",

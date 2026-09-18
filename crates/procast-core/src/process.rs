@@ -1,8 +1,8 @@
-use std::{io, path::PathBuf, process::Stdio, time::Duration};
+use std::{future::Future, io, path::PathBuf, process::Stdio, time::Duration};
 
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
-    process::Command,
+    process::{ChildStdout, Command},
 };
 
 use crate::{CancellationToken, ProcastError};
@@ -17,6 +17,25 @@ pub(crate) async fn capture(
     cancellation: &CancellationToken,
     timeout: Duration,
 ) -> Result<Vec<u8>, ProcastError> {
+    let program = PathBuf::from(command.as_std().get_program());
+    run(command, cancellation, timeout, |stdout| async move {
+        read_metadata(stdout, &program).await
+    })
+    .await
+}
+
+/// Stream stdout through a bounded consumer while retaining the same cancellation,
+/// diagnostic, and reaping guarantees as metadata capture.
+pub(crate) async fn run<T, F, Fut>(
+    command: &mut Command,
+    cancellation: &CancellationToken,
+    timeout: Duration,
+    consume: F,
+) -> Result<T, ProcastError>
+where
+    F: FnOnce(ChildStdout) -> Fut,
+    Fut: Future<Output = Result<T, ProcastError>>,
+{
     if cancellation.is_cancelled() {
         return Err(ProcastError::Cancelled);
     }
@@ -44,7 +63,7 @@ pub(crate) async fn capture(
     let result = {
         let operation = async {
             let (stdout, stderr, status) = tokio::try_join!(
-                read_metadata(stdout, &program),
+                consume(stdout),
                 async { read_tail(stderr, STDERR_LIMIT).await.map_err(io_error) },
                 async { child.wait().await.map_err(io_error) },
             )?;

@@ -43,6 +43,7 @@ pub struct StreamInfo {
     pub pixel_format: Option<String>,
     pub frame_rate: Option<f64>,
     pub color_transfer: Option<String>,
+    pub dolby_vision: bool,
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub sample_rate_hz: Option<u32>,
@@ -90,7 +91,7 @@ pub async fn inspect(
     command.args([
         "-v", "error", "-print_format", "json", "-show_format", "-show_streams",
         "-show_entries",
-        "format=format_name,duration:stream=index,codec_type,codec_name,profile,level,pix_fmt,r_frame_rate,avg_frame_rate,color_transfer,width,height,sample_rate,channels:stream_tags=language,title:stream_disposition=default,forced,attached_pic",
+        "format=format_name,duration:stream=index,codec_type,codec_name,profile,level,pix_fmt,r_frame_rate,avg_frame_rate,color_transfer,width,height,sample_rate,channels:stream_tags=language,title:stream_disposition=default,forced,attached_pic:stream_side_data=side_data_type",
         "-i",
     ]).arg(&canonical);
     let bytes = process::capture(&mut command, cancellation, options.timeout).await?;
@@ -129,6 +130,13 @@ struct ProbeStream {
     tags: BTreeMap<String, String>,
     #[serde(default)]
     disposition: BTreeMap<String, u32>,
+    #[serde(default)]
+    side_data_list: Vec<ProbeSideData>,
+}
+
+#[derive(Deserialize)]
+struct ProbeSideData {
+    side_data_type: Option<String>,
 }
 
 fn parse(bytes: &[u8], path: PathBuf) -> Result<MediaInfo, ProcastError> {
@@ -158,6 +166,11 @@ fn parse(bytes: &[u8], path: PathBuf) -> Result<MediaInfo, ProcastError> {
                     .filter_map(|rate| parse_rate(&rate))
                     .reduce(f64::max),
                 color_transfer: stream.color_transfer,
+                dolby_vision: stream.side_data_list.iter().any(|data| {
+                    data.side_data_type
+                        .as_deref()
+                        .is_some_and(|kind| kind.contains("DOVI") || kind.contains("Dolby Vision"))
+                }),
                 width: stream.width,
                 height: stream.height,
                 sample_rate_hz: stream.sample_rate.and_then(|text| text.parse().ok()),
@@ -216,7 +229,7 @@ pub fn assess_direct_play(
 ) -> Result<DirectPlayAssessment, ProcastError> {
     let unsupported = |reason: &str| {
         ProcastError::UnsupportedMedia(format!(
-            "{reason}. Direct play requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC; experimental mode additionally permits 3–6 channel AAC-LC. Remuxing/transcoding is not implemented yet"
+            "{reason}. Direct play requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC; experimental mode additionally permits 3–6 channel AAC-LC. For SDR input, --force-transcode can prepare a compatible MP4; automatic conversion is not implemented"
         ))
     };
     if !info.container.split(',').any(|format| format == "mp4") {
@@ -260,6 +273,7 @@ pub fn assess_direct_play(
             video.color_transfer.as_deref(),
             Some("smpte2084" | "arib-std-b67")
         )
+        || video.dolby_vision
     {
         return Err(unsupported(&format!(
             "video stream #{} is outside the supported profile (or lacks required metadata)",
@@ -361,6 +375,13 @@ mod tests {
             .unwrap()
             .push(fixture["streams"][1].clone());
         assert!(check(&multiple, DirectPlayPolicy::Experimental).is_err());
+        let mut dolby = fixture.clone();
+        dolby["streams"][0]["side_data_list"] = serde_json::json!([
+            {"side_data_type":"DOVI configuration record"}
+        ]);
+        let info = parse(&serde_json::to_vec(&dolby).unwrap(), "movie.mp4".into()).unwrap();
+        assert!(info.streams[0].dolby_vision);
+        assert!(assess_direct_play(&info, DirectPlayPolicy::Experimental).is_err());
     }
 
     #[test]

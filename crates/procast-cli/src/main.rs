@@ -37,7 +37,7 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Cast a compatible local MP4, with optional external SRT/WebVTT subtitles
+    /// Cast a local video, with optional preparation and external SRT/WebVTT subtitles
     Cast {
         file: PathBuf,
         /// Exact friendly name or stable device ID
@@ -53,6 +53,12 @@ enum Commands {
         /// Try MP4 H.264 with 3–6 channel AAC-LC; receiver audio support is unverified
         #[arg(long)]
         experimental_direct_play: bool,
+        /// Re-encode SDR video/audio to H.264/stereo AAC MP4 before playback
+        #[arg(long, conflicts_with = "experimental_direct_play")]
+        force_transcode: bool,
+        /// Temporary media parent directory (default: user cache/procast)
+        #[arg(long, requires = "force_transcode")]
+        transcode_dir: Option<PathBuf>,
         /// Reachable local IP to advertise to the receiver
         #[arg(long)]
         bind_address: Option<IpAddr>,
@@ -204,6 +210,8 @@ async fn execute(
             cast_port,
             subtitles,
             experimental_direct_play,
+            force_transcode,
+            transcode_dir,
             bind_address,
             http_port,
             scan_seconds,
@@ -220,6 +228,8 @@ async fn execute(
                 Target::Auto
             };
             request.subtitles = subtitles;
+            request.force_transcode = force_transcode;
+            request.transcode.directory = transcode_dir;
             request.direct_play_policy = if experimental_direct_play {
                 DirectPlayPolicy::Experimental
             } else {
@@ -243,7 +253,7 @@ async fn execute(
                     if last.as_ref() != Some(&key)
                         && !matches!(
                             state.phase,
-                            Phase::Completed | Phase::Cancelled | Phase::Failed
+                            Phase::Completed | Phase::Stopped | Phase::Cancelled | Phase::Failed
                         )
                     {
                         eprintln!(
@@ -261,11 +271,20 @@ async fn execute(
                         break;
                     }
                 }
+                updates.borrow().phase
             });
             let result = session::run(request, progress, cancel).await;
-            monitor.await?;
+            let phase = monitor.await?;
             result?;
-            writeln!(io::stdout().lock(), "Playback completed.")?;
+            writeln!(
+                io::stdout().lock(),
+                "{}",
+                if phase == Phase::Stopped {
+                    "Playback stopped on receiver."
+                } else {
+                    "Playback completed."
+                }
+            )?;
         }
     }
     Ok(())
@@ -282,6 +301,7 @@ fn phase_label(phase: Phase) -> &'static str {
         Phase::Buffering => "Buffering",
         Phase::Stopping => "Stopping",
         Phase::Completed => "Completed",
+        Phase::Stopped => "Stopped",
         Phase::Cancelled => "Cancelled",
         Phase::Failed => "Failed",
     }
@@ -357,6 +377,8 @@ mod tests {
             vec!["--cast-port", "8009"],
             vec!["--scan-seconds", "0"],
             vec!["--probe-timeout", "0"],
+            vec!["--force-transcode", "--experimental-direct-play"],
+            vec!["--transcode-dir", "/tmp"],
         ] {
             let args = ["procast", "cast", "movie.mp4"].into_iter().chain(extra);
             assert!(Cli::try_parse_from(args).is_err());

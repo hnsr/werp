@@ -4,8 +4,9 @@ Status: M0 and M1 verified; M2 implemented with automated checks passed and
 user-confirmed SRT/WebVTT playback, Ctrl+C shutdown, and SIGTERM cleanup with exit
 code 143. The IPv4 discovery issue
 is fixed and verified; remaining hardware checks are recorded below. M3 is parked;
-M5 compatibility work is next, starting with playback without re-encoding. The
-local media inventory is complete; broader casting support is not implemented yet.
+M5 is in progress: the media inventory, experimental surround-AAC direct play,
+and explicit forced-transcoding path are implemented. Broader direct-play support,
+remuxing, and automatic conversion decisions remain planned.
 Updated: 2026-09-17.
 Requirements: [outline.md](outline.md).
 
@@ -21,7 +22,9 @@ and cancellation behaviour, not its advertised feature list.
 
 The first usable release is **M2** below. **M3 is parked in favour of M5**, first
 expanding original-file playback and then stream-copy remuxing. Audio/video
-encoding stays deferred until these paths have been evaluated. Milestone numbers
+encoding stays deferred for automatic decisions until these paths have been
+evaluated. An explicit `--force-transcode` preparation path is now implemented
+ahead of further compatibility trials. Milestone numbers
 retain their original meaning, but no longer prescribe execution order. Each
 small change should leave working behaviour behind.
 
@@ -368,7 +371,23 @@ without re-encoding, not original-file playback.
 Acceptance: representative MKVs play after stream-copy remuxing, with unchanged
 video/audio codecs, correct timing, bounded cancellation, and source preservation.
 
-#### M5c — Encoding fallback (deferred)
+#### M5c — Forced encoding implemented; automatic fallback deferred
+
+`--force-transcode` now prepares a complete SDR H.264/stereo AAC MP4, even for
+already compatible input. It checks encoders and available space, reports
+progress, supports cancellation, validates the result, and keeps the output
+owned by the session through HTTP shutdown. Cache storage can be overridden
+with `--transcode-dir`. HDR tone mapping and multiple audio-track selection
+remain unsupported. The short generated fixture works on the TV. On 2026-09-18,
+the user also confirmed picture, audible audio, and phone-controlled seeking,
+pause/resume, and stop for forced-transcoded `sample-004`. Separate short-fixture
+SRT and WebVTT checks also passed, including caption timing, natural completion,
+and exit code 0. Explicit temporary-file/server cleanup passed after natural
+completion and phone stop. The latter exposed a timeout despite successful local
+cleanup; the app-termination fix now also passed a hardware retest with
+`Playback stopped on receiver.`, exit code 0, and no timeout/cleanup warnings.
+Detailed real-file A/V synchronization remains unverified. See
+[implementation validation](transcode-validation.md).
 
 Add audio-only encoding first when video can be preserved, then video encoding
 for confirmed incompatible cases. Check available encoders/decoders/filters
@@ -377,11 +396,10 @@ HDR cases need inspection, not automatic tone mapping or metadata removal.
 
 #### Shared preparation strategy
 
-Proposed first conversion strategy: **prepare a complete temporary MP4 before
-casting**. This is an implementation proposal, not a previously settled product
-requirement. It reuses the tested seekable-file server and keeps arbitrary seeking
-predictable. Start with stream-copy remuxing, then audio conversion, then video
-conversion. Preserve compatible streams, timestamps, selected tracks, and subtitle
+Implemented forced-conversion strategy: **prepare a complete temporary MP4 before
+casting**. It reuses the tested seekable-file server and keeps seeking predictable.
+For future automatic decisions, prefer stream-copy remuxing, then audio conversion,
+then video conversion. Preserve compatible streams, timestamps, selected tracks, and subtitle
 alignment; make output suitable for HTTP playback.
 
 Show progress and cancellation while preparing. Store potentially large outputs
@@ -443,10 +461,14 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Use the [inventory](media-inventory.md) to test MP4 H.264/surround AAC through
+Forced transcoding now has real-file picture/audio and phone-control confirmation.
+Short-fixture SRT/WebVTT, natural completion, and explicit cleanup checks passed.
+The normal phone-stop outcome also passed its hardware retest. Detailed real-file
+synchronization remains useful to verify. Use the
+[inventory](media-inventory.md) to test MP4 H.264/surround AAC through
 `--experimental-direct-play`, then expand M5a decisions to the other MP4
 combinations once outcomes are recorded. Proceed to stream-copy
-remuxing for container compatibility before implementing encoding. M3 controls
+remuxing for container compatibility before automatic encoding fallback. M3 controls
 and frontend design are parked.
 
 M2's remaining hardware checks stay tracked: natural completion with SRT,

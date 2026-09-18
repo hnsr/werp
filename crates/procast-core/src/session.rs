@@ -17,6 +17,7 @@ use crate::{
     media::{self, DirectPlayAssessment, DirectPlayPolicy, ProbeOptions},
     serve::{MediaServer, address_toward},
     subtitles,
+    transcode::{self, TranscodeOptions},
 };
 
 #[derive(Debug, Clone)]
@@ -37,6 +38,9 @@ pub struct CastRequest {
     pub probe: ProbeOptions,
     pub ffmpeg: PathBuf,
     pub direct_play_policy: DirectPlayPolicy,
+    /// Prepare H.264/AAC MP4 even when the source is directly playable.
+    pub force_transcode: bool,
+    pub transcode: TranscodeOptions,
 }
 
 impl CastRequest {
@@ -51,6 +55,8 @@ impl CastRequest {
             probe: ProbeOptions::default(),
             ffmpeg: "ffmpeg".into(),
             direct_play_policy: DirectPlayPolicy::default(),
+            force_transcode: false,
+            transcode: TranscodeOptions::default(),
         }
     }
 }
@@ -67,6 +73,7 @@ pub enum Phase {
     Buffering,
     Stopping,
     Completed,
+    Stopped,
     Cancelled,
     Failed,
 }
@@ -109,8 +116,10 @@ pub async fn run(
     cancel: &CancellationToken,
 ) -> Result<(), ProcastError> {
     let mut prepared = None;
+    let mut prepared_media = None;
     let mut server = None;
     let mut transport = None;
+    let mut stopped_on_receiver = false;
     let mut result = async {
         report(
             &progress,
@@ -119,8 +128,13 @@ pub async fn run(
             Some("Inspecting media".into()),
         );
         let info = media::inspect(&request.file, &request.probe, cancel).await?;
-        let assessment = media::assess_direct_play(&info, request.direct_play_policy)?;
-        if let DirectPlayAssessment::ExperimentalAacSurround { channels } = assessment {
+        if request.force_transcode && request.direct_play_policy != DirectPlayPolicy::Conservative {
+            return Err(ProcastError::Transcode("forced transcoding and experimental direct play are mutually exclusive".into()));
+        }
+        let assessment = if request.force_transcode { None } else {
+            Some(media::assess_direct_play(&info, request.direct_play_policy)?)
+        };
+        if let Some(DirectPlayAssessment::ExperimentalAacSurround { channels }) = assessment {
             tracing::warn!(
                 channels,
                 "Experimental direct play: AAC-LC surround support is unverified on this receiver. Serving the original file without conversion; check audible audio and correct downmix or surround output."
@@ -135,6 +149,21 @@ pub async fn run(
             );
             prepared = Some(subtitles::prepare(path, &request.ffmpeg, cancel).await?);
         }
+        if request.force_transcode {
+            report(&progress, Phase::Preparing, None, Some("Preparing H.264/stereo AAC MP4 before playback".into()));
+            let mut last_percent = None;
+            prepared_media = Some(transcode::prepare(
+                &info, &request.ffmpeg, &request.probe, &request.transcode, cancel,
+                |update| {
+                    let percent = (update.fraction * 100.0).floor() as u32;
+                    if last_percent != Some(percent) {
+                        report(&progress, Phase::Preparing, None, Some(format!("Transcoding: {percent}%")));
+                        last_percent = Some(percent);
+                    }
+                },
+            ).await?);
+        }
+        let media_path = prepared_media.as_ref().map_or(&info.path, |prepared| &prepared.info.path);
         let address = match &request.target {
             Target::Host(address) => *address,
             target => {
@@ -171,7 +200,7 @@ pub async fn run(
         server = Some(
             MediaServer::start(
                 SocketAddr::new(bind, request.http_port),
-                &info.path,
+                media_path,
                 prepared.as_ref().map(|s| s.path.as_path()),
             )
             .await?,
@@ -233,6 +262,10 @@ pub async fn run(
                     subtitle_confirmed = true;
                 }
                 match (status.player_state.as_str(), status.idle_reason.as_deref()) {
+                    ("IDLE", Some("CANCELLED" | "RECEIVER_STOPPED")) => {
+                        stopped_on_receiver = true;
+                        return Ok(());
+                    }
                     ("IDLE", Some("FINISHED")) => {
                         if !subtitle_confirmed {
                             return Err(ProcastError::Subtitles(
@@ -316,6 +349,7 @@ pub async fn run(
         remote,
         local,
         prepared.map_or(Ok(()), subtitles::PreparedSubtitles::close),
+        prepared_media.map_or(Ok(()), transcode::PreparedMedia::close),
     ] {
         if let Err(error) = cleanup {
             if result.is_ok() {
@@ -326,6 +360,7 @@ pub async fn run(
         }
     }
     let phase = match &result {
+        Ok(()) if stopped_on_receiver => Phase::Stopped,
         Ok(()) => Phase::Completed,
         Err(ProcastError::Cancelled) => Phase::Cancelled,
         Err(_) => Phase::Failed,

@@ -209,9 +209,72 @@ impl CastSession {
                 json!({"type":"GET_STATUS"}),
                 cancel,
                 ).await
-            } => value?,
+            } => value,
         };
-        self.adopt_status(&value)
+        match value {
+            Ok(value) => self.adopt_status(&value),
+            Err(error) => {
+                // An app can disappear without a usable media terminal broadcast.
+                // Ask the receiver itself; never turn a network timeout alone into success.
+                if cancel.is_cancelled() {
+                    return Err(ProcastError::Cancelled);
+                }
+                if self.media_id.is_some() {
+                    let ended = self.receiver_app_ended(cancel).await.unwrap_or(false);
+                    if cancel.is_cancelled() {
+                        return Err(ProcastError::Cancelled);
+                    }
+                    if ended {
+                        return Ok(Some(self.receiver_stopped_snapshot()));
+                    }
+                }
+                Err(error)
+            }
+        }
+    }
+
+    async fn receiver_app_ended(&self, cancel: &CancellationToken) -> Result<bool, ProcastError> {
+        let Some(app) = &self.app else {
+            return Ok(false);
+        };
+        let response = self
+            .request(RECEIVER, "receiver-0", json!({"type":"GET_STATUS"}), cancel)
+            .await?;
+        let status = response
+            .get("status")
+            .and_then(Value::as_object)
+            .ok_or_else(|| ProcastError::Cast("receiver omitted its status object".into()))?;
+        // Receivers may omit applications entirely when none are running.
+        let Some(applications) = status.get("applications") else {
+            return Ok(status.contains_key("volume"));
+        };
+        let applications = applications.as_array().ok_or_else(|| {
+            ProcastError::Cast("receiver applications field is not an array".into())
+        })?;
+        for value in applications {
+            let candidate: Application = serde_json::from_value(value.clone())
+                .map_err(|e| ProcastError::Cast(format!("invalid receiver application: {e}")))?;
+            if candidate.app_id == app.app_id
+                && candidate.session_id == app.session_id
+                && candidate.transport_id == app.transport_id
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn receiver_stopped_snapshot(&self) -> PlaybackSnapshot {
+        PlaybackSnapshot {
+            media_session_id: self
+                .media_id
+                .expect("only check app termination after adopting media"),
+            player_state: "IDLE".into(),
+            current_time: 0.0,
+            // Internal adapter outcome, distinct from the protocol's FINISHED reason.
+            idle_reason: Some("RECEIVER_STOPPED".into()),
+            active_track_ids: vec![],
+        }
     }
 
     async fn terminal_event(&self) -> Result<PlaybackSnapshot, ProcastError> {
@@ -224,6 +287,30 @@ impl CastSession {
                         tracing::debug!(state = %terminal.player_state, reason = ?terminal.idle_reason, "received owned terminal media event");
                         return Ok(terminal);
                     }
+                }
+                Some(CastEvent::RawMessage {
+                    namespace,
+                    source,
+                    payload,
+                    ..
+                }) if namespace == CONNECTION
+                    && self.media_id.is_some()
+                    && self
+                        .app
+                        .as_ref()
+                        .is_some_and(|app| app.transport_id == source)
+                    && serde_json::from_str::<Value>(&payload)
+                        .ok()
+                        .is_some_and(|value| value["type"] == "CLOSE") =>
+                {
+                    let token = CancellationToken::new();
+                    if self.receiver_app_ended(&token).await? {
+                        return Ok(self.receiver_stopped_snapshot());
+                    }
+                    return Err(ProcastError::Cast(
+                        "receiver closed the app channel while the application is still running"
+                            .into(),
+                    ));
                 }
                 // MediaSessionEnded lacks content identity. Use the accompanying
                 // MediaStatusChanged event, which permits the full ownership check.

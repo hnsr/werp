@@ -2,6 +2,8 @@ use std::{io, path::PathBuf, process::ExitStatus, time::Duration};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProcastError {
+    #[error("media preparation failed: {0}")]
+    Transcode(String),
     #[error("unsupported media: {0}")]
     UnsupportedMedia(String),
     #[error("invalid subtitles: {0}")]

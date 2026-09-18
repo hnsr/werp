@@ -1,8 +1,8 @@
 # Procast
 
 A Rust CLI and reusable backend for casting local videos and subtitles to
-Chromecast. **The CLI now supports discovery, direct-play casting, and external
-SRT/WebVTT subtitles.** The M2 CLI has passed automated tests, and the user has
+Chromecast. **The CLI supports discovery, direct-play casting, optional forced
+transcoding, and external SRT/WebVTT subtitles.** The M2 CLI has passed automated tests, and the user has
 verified visible subtitles and Ctrl+C shutdown with both formats on a KPN DIW7022.
 Further hardware checks are tracked in the validation notes.
 
@@ -12,7 +12,9 @@ Further hardware checks are tracked in the validation notes.
   rustup installs the pinned toolchain when needed.
 - A working native linker/C compiler (such as Fedora's GCC).
 - `ffprobe` on PATH for inspection and casting. `ffmpeg` is required for SRT
-  conversion and optional test-fixture generation. Existing WebVTT needs no FFmpeg.
+  conversion, forced transcoding, and optional test-fixture generation. Direct
+  playback with existing WebVTT needs no FFmpeg. Forced transcoding requires
+  `libx264` and AAC encoders plus a decoder for the input codecs.
 - Network access for the initial Cargo dependency download.
 
 No FFmpeg development headers, Qt, or KDE libraries are needed. Cargo resolves
@@ -42,7 +44,7 @@ use `--cast-port` only with `--host`. Discovery and casting currently use IPv4.
 `cast` stays in the foreground until natural completion or interruption. It
 replaces playback on the selected receiver. Ctrl+C or SIGTERM stops Procast's
 owned media, closes its server and transport, reaps subprocesses, and removes
-temporary subtitles. If another sender takes over, Procast exits without stopping
+temporary media and subtitles. If another sender takes over, Procast exits without stopping
 their session. Interactive playback controls are planned for M3.
 
 ### Current media support
@@ -72,7 +74,8 @@ the flag keeps the conservative policy. The reusable backend exposes the policy
 and assessment independently of the CLI. See the [media inventory and hardware
 results](docs/media-inventory.md) for current evidence.
 
-Embedded subtitle extraction and remuxing/transcoding are not implemented yet.
+Embedded subtitle extraction, stream-copy remuxing, and automatic conversion
+fallback are not implemented yet.
 Subtitles are used only when explicitly selected; source
 files are never modified. SRT conversion has a 30-second limit, and temporary
 files are session-owned. WebVTT cue timing is validated; styling semantics are
@@ -81,6 +84,48 @@ rendering, which requires the hardware check.
 
 Override executables with `cast --ffprobe PATH --ffmpeg PATH`; use
 `--probe-timeout SECONDS` to change the probe limit.
+
+### Force transcoding
+
+```sh
+cargo run --locked -- cast /path/to/movie.mkv --device "Living Room" \
+  --force-transcode --subtitles /path/to/movie.srt --http-port 8010
+```
+
+`--force-transcode` re-encodes the video and any audio even if the original file
+could play directly. It prepares a complete MP4 before connecting to the receiver:
+H.264 High/level 4.1, 8-bit 4:2:0, at most 1920×1080 and 30 fps, and stereo AAC
+at 48 kHz. Smaller inputs are not deliberately enlarged; scaling preserves aspect
+ratio. Audio-free inputs remain silent. Encoding uses the CPU (`libx264`,
+`veryfast`, CRF 20, maximum video rate 8 Mbps; AAC 192 kbps).
+
+Preparation shows percentage progress and remains cancellable with Ctrl+C or
+SIGTERM. The source is never overwritten. Output is probed and checked before
+serving, with metadata at the front of the MP4 for HTTP playback. Playback cannot
+start until preparation finishes; quality loss and extra disk space are expected.
+
+Private session directories default to `$XDG_CACHE_HOME/procast`, falling back to
+`$HOME/.cache/procast`. Use `--transcode-dir /path/to/disk/cache` to choose another
+parent. Space is estimated before encoding and checked during progress updates;
+this is not a disk reservation. Avoid RAM-backed `/tmp` for long videos. Outputs
+are deleted on normal completion, errors, or handled cancellation; a machine
+crash or SIGKILL can leave a `session-*` directory to remove after Procast stops.
+Outputs are not reused across sessions. The encoding deadline is 24 hours,
+independent of the short probe timeout.
+
+Initial limits: one video and at most one audio track, known duration/frame rate,
+and SDR input. Known PQ/HLG and Dolby Vision signalling is rejected because tone
+mapping is not implemented; missing HDR metadata cannot be detected reliably.
+External SRT/WebVTT keeps the existing path; embedded subtitles are not selected
+or burned in. `--force-transcode` and `--experimental-direct-play` are mutually
+exclusive. Hardware acceleration and on-the-fly transcoding are deferred.
+
+See [forced-transcoding validation](docs/transcode-validation.md). The user has
+confirmed real-file picture/audio playback and seeking, pause/resume, and stop
+from a phone, plus short-fixture SRT/WebVTT captions and natural completion.
+Temporary-file/server cleanup also passed after natural completion and phone stop.
+Improved phone-stop reporting also passed its hardware retest with exit code 0.
+Detailed real-file synchronization remains to be checked.
 
 ### Network and session behaviour
 
@@ -96,6 +141,10 @@ Cast connections use TLS without receiver identity verification, and media is
 served over HTTP. Use a trusted LAN; see the [transport decision](docs/decisions/001-cast-library.md).
 Procast consumes terminal broadcasts alongside status polls, so a one-time
 FINISHED notification completes the session even if later polls would be empty.
+An owned CANCELLED status or confirmed termination of the receiver application
+ends the session normally with `Playback stopped on receiver.`; Procast does not
+send a redundant STOP. An app-channel close or failed media request is checked
+against receiver status, so transport loss alone is not reported as a normal stop.
 Transient empty/IDLE statuses are not completion. A lost connection fails without
 automatically restarting the video. Inactive loading/buffering has a 30-second
 limit; individual Cast requests have a 10-second limit. Cleanup attempts remote

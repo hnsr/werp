@@ -29,7 +29,9 @@ backend should also be reusable by a GNOME/GTK frontend or other platforms.
   reliable session startup and shutdown. Add more media handling incrementally.
 - With the basic CLI working, park M3 playback controls and prioritize M5 media
   compatibility: original-file playback first, stream-copy remuxing next, and
-  encoding only after those options have been evaluated. See the
+  automatic encoding only after those options have been evaluated. An explicit
+  `--force-transcode` escape hatch now prepares SDR H.264/stereo AAC MP4 before
+  playback, even for compatible inputs. See the
   [local format inventory](media-inventory.md) for representative test cases.
 - Preserve the option of platform-specific frontends without designing their
   language bindings, plugin system, or IPC protocol prematurely.

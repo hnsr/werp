@@ -61,6 +61,12 @@ enum Mode {
     BroadcastThenDisconnect,
     ForeignFinished,
     ZeroFinished,
+    CloseAppDuringPoll,
+    ForeignClose,
+    CloseAppStillRunning,
+    BroadcastCancelled,
+    MediaErrorAppGone,
+    MediaErrorAppRunning,
 }
 
 #[derive(Default, Debug)]
@@ -72,6 +78,7 @@ struct Transcript {
     url: String,
     polls: usize,
     track_commands: usize,
+    receiver_polls: usize,
 }
 
 fn status(url: &str, state: &str, tracks: bool) -> Value {
@@ -176,40 +183,58 @@ async fn receiver(
                     }
                 }
                 "GET_STATUS" => {
-                    log.polls += 1;
-                    if mode == Mode::Takeover {
-                        let mut foreign = status("another-sender", "PLAYING", false);
-                        foreign["mediaSessionId"] = json!(99);
-                        json!({"type":"MEDIA_STATUS","status":[foreign]})
-                    } else if matches!(
-                        mode,
-                        Mode::BroadcastFinished
-                            | Mode::BroadcastError
-                            | Mode::BroadcastDuringPoll
-                            | Mode::BroadcastThenDisconnect
-                    ) || (mode == Mode::Transient && log.polls == 1)
-                    {
-                        json!({"type":"MEDIA_STATUS","status":[]})
-                    } else {
-                        state = if matches!(
+                    if message.namespace == "urn:x-cast:com.google.cast.receiver" {
+                        log.receiver_polls += 1;
+                        let applications = if matches!(
                             mode,
-                            Mode::Complete
-                                | Mode::MissingSubtitles
-                                | Mode::ForeignFinished
-                                | Mode::ZeroFinished
-                        ) || (mode == Mode::Transient && log.polls >= 4)
-                        {
-                            "IDLE"
-                        } else if mode == Mode::Transient && log.polls == 2 {
-                            "BUFFERING"
+                            Mode::CloseAppStillRunning | Mode::MediaErrorAppRunning
+                        ) {
+                            json!([{"appId":"CC1AD845","sessionId":"app-session","transportId":"app-transport"}])
                         } else {
-                            "PLAYING"
+                            json!([])
                         };
-                        let mut entry = status(&log.url, state, tracks);
-                        if state == "IDLE" {
-                            entry["idleReason"] = json!("FINISHED");
+                        json!({"type":"RECEIVER_STATUS","status":{"applications":applications,"volume":{"level":1.0,"muted":false}}})
+                    } else {
+                        log.polls += 1;
+                        if matches!(mode, Mode::MediaErrorAppGone | Mode::MediaErrorAppRunning)
+                            && log.polls == 1
+                        {
+                            json!({"type":"INVALID_REQUEST","reason":"media channel unavailable"})
+                        } else if mode == Mode::Takeover {
+                            let mut foreign = status("another-sender", "PLAYING", false);
+                            foreign["mediaSessionId"] = json!(99);
+                            json!({"type":"MEDIA_STATUS","status":[foreign]})
+                        } else if matches!(
+                            mode,
+                            Mode::BroadcastFinished
+                                | Mode::BroadcastError
+                                | Mode::BroadcastDuringPoll
+                                | Mode::BroadcastThenDisconnect
+                        ) || (mode == Mode::Transient && log.polls == 1)
+                        {
+                            json!({"type":"MEDIA_STATUS","status":[]})
+                        } else {
+                            state = if matches!(
+                                mode,
+                                Mode::Complete
+                                    | Mode::MissingSubtitles
+                                    | Mode::ForeignFinished
+                                    | Mode::ZeroFinished
+                                    | Mode::ForeignClose
+                            ) || (mode == Mode::Transient && log.polls >= 4)
+                            {
+                                "IDLE"
+                            } else if mode == Mode::Transient && log.polls == 2 {
+                                "BUFFERING"
+                            } else {
+                                "PLAYING"
+                            };
+                            let mut entry = status(&log.url, state, tracks);
+                            if state == "IDLE" {
+                                entry["idleReason"] = json!("FINISHED");
+                            }
+                            json!({"type":"MEDIA_STATUS","status":[entry]})
                         }
-                        json!({"type":"MEDIA_STATUS","status":[entry]})
                     }
                 }
                 "EDIT_TRACKS_INFO" => {
@@ -233,12 +258,14 @@ async fn receiver(
                 protocol_version: 0,
                 source_id: message.destination_id,
                 destination_id: message.source_id,
-                namespace: message.namespace,
+                namespace: message.namespace.clone(),
                 payload_type: 0,
                 payload_utf8: Some(reply.to_string()),
             };
             // Exercise a FINISHED broadcast while GET_STATUS never replies.
-            let pending_poll = mode == Mode::BroadcastDuringPoll && payload["type"] == "GET_STATUS";
+            let pending_poll = matches!(mode, Mode::BroadcastDuringPoll | Mode::CloseAppDuringPoll)
+                && payload["type"] == "GET_STATUS"
+                && message.namespace == "urn:x-cast:com.google.cast.media";
             if !pending_poll && send(&mut stream, &response).await.is_err() {
                 break;
             }
@@ -250,8 +277,9 @@ async fn receiver(
                         | Mode::BroadcastThenDisconnect
                         | Mode::ForeignFinished
                         | Mode::ZeroFinished
+                        | Mode::BroadcastCancelled
                 );
-            if after_tracks || pending_poll {
+            if after_tracks || (pending_poll && mode == Mode::BroadcastDuringPoll) {
                 let mut entry = json!({"mediaSessionId":7,"playerState":"IDLE","idleReason":"FINISHED","currentTime":0});
                 if mode == Mode::ForeignFinished {
                     entry["media"] = json!({"contentId":"another-senders-file"});
@@ -259,6 +287,8 @@ async fn receiver(
                     entry["mediaSessionId"] = json!(0);
                 } else if mode == Mode::BroadcastError {
                     entry["idleReason"] = json!("ERROR");
+                } else if mode == Mode::BroadcastCancelled {
+                    entry["idleReason"] = json!("CANCELLED");
                 }
                 let event = Envelope {
                     payload_utf8: Some(
@@ -273,6 +303,25 @@ async fn receiver(
                     break;
                 }
             }
+            if (pending_poll && mode == Mode::CloseAppDuringPoll)
+                || (payload["type"] == "EDIT_TRACKS_INFO"
+                    && matches!(mode, Mode::ForeignClose | Mode::CloseAppStillRunning))
+            {
+                let close = Envelope {
+                    source_id: if mode == Mode::ForeignClose {
+                        "other-app"
+                    } else {
+                        "app-transport"
+                    }
+                    .into(),
+                    namespace: "urn:x-cast:com.google.cast.tp.connection".into(),
+                    payload_utf8: Some(json!({"type":"CLOSE"}).to_string()),
+                    ..response.clone()
+                };
+                if send(&mut stream, &close).await.is_err() {
+                    break;
+                }
+            }
             if mode == Mode::Disconnect && log.loads > 0 {
                 break;
             }
@@ -280,6 +329,81 @@ async fn receiver(
         log
     });
     (address, task)
+}
+
+#[tokio::test]
+async fn receiver_stop_finishes_without_stopping_other_apps_or_hiding_errors() {
+    for mode in [
+        Mode::CloseAppDuringPoll,
+        Mode::ForeignClose,
+        Mode::CloseAppStillRunning,
+        Mode::BroadcastCancelled,
+        Mode::MediaErrorAppGone,
+        Mode::MediaErrorAppRunning,
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let video = directory.path().join("movie.mp4");
+        fs::write(&video, "original bytes").unwrap();
+        let subtitles = directory.path().join("captions.vtt");
+        fs::write(&subtitles, "WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n").unwrap();
+        let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
+        let mut request = CastRequest::new(video);
+        request.target = Target::Host(address);
+        request.subtitles = Some(subtitles);
+        request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
+        let (progress, updates) = watch::channel(SessionState::default());
+        let result = tokio::time::timeout(
+            Duration::from_secs(4),
+            session::run(request, progress, &CancellationToken::new()),
+        )
+        .await
+        .expect("app stop waited for a media request timeout");
+        let log = tokio::time::timeout(Duration::from_secs(1), receiver)
+            .await
+            .unwrap()
+            .unwrap();
+        let should_fail = matches!(
+            mode,
+            Mode::CloseAppStillRunning | Mode::MediaErrorAppRunning
+        );
+        if should_fail {
+            assert!(
+                result.is_err(),
+                "must not mask errors when the app remains active"
+            );
+            assert_eq!(updates.borrow().phase, Phase::Failed);
+        } else {
+            assert!(result.is_ok(), "{mode:?}: {result:?}");
+            assert_eq!(
+                updates.borrow().phase,
+                if mode == Mode::ForeignClose {
+                    Phase::Completed
+                } else {
+                    Phase::Stopped
+                }
+            );
+            assert!(
+                log.stops.is_empty(),
+                "must not send a redundant STOP: {mode:?}"
+            );
+        }
+        if matches!(mode, Mode::ForeignClose | Mode::BroadcastCancelled) {
+            assert_eq!(log.receiver_polls, 0);
+        } else {
+            assert_eq!(log.receiver_polls, 1);
+        }
+        let host = log
+            .url
+            .strip_prefix("http://")
+            .unwrap()
+            .split('/')
+            .next()
+            .unwrap();
+        assert!(
+            TcpStream::connect(host).await.is_err(),
+            "HTTP server survived receiver stop"
+        );
+    }
 }
 
 #[tokio::test]
@@ -601,9 +725,27 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    for (extension, content) in [
-        ("srt", "1\n00:00:00,000 --> 00:00:01,500\nHello Procast!\n"),
-        ("vtt", "WEBVTT\n\n00:00.000 --> 00:01.500\nHello Procast!\n"),
+    for (force_transcode, extension, content) in [
+        (
+            false,
+            "srt",
+            "1\n00:00:00,000 --> 00:00:01,500\nHello Procast!\n",
+        ),
+        (
+            false,
+            "vtt",
+            "WEBVTT\n\n00:00.000 --> 00:01.500\nHello Procast!\n",
+        ),
+        (
+            true,
+            "srt",
+            "1\n00:00:00,000 --> 00:00:01,500\nHello Procast!\n",
+        ),
+        (
+            true,
+            "vtt",
+            "WEBVTT\n\n00:00.000 --> 00:01.500\nHello Procast!\n",
+        ),
     ] {
         let subs = dir.path().join(format!("captions.{extension}"));
         fs::write(&subs, content).unwrap();
@@ -611,6 +753,8 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         let mut request = CastRequest::new(video.clone());
         request.target = Target::Host(address);
         request.subtitles = Some(subs);
+        request.force_transcode = force_transcode;
+        request.transcode.directory = Some(dir.path().join("cache"));
         let (progress, _) = watch::channel(SessionState::default());
         tokio::time::timeout(
             Duration::from_secs(10),
@@ -620,7 +764,32 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         .unwrap()
         .unwrap();
         let log = receiver.await.unwrap();
-        assert_eq!(log.video, fs::read(&video).unwrap());
+        if force_transcode {
+            assert_ne!(
+                log.video,
+                fs::read(&video).unwrap(),
+                "force must re-encode even compatible input"
+            );
+            assert!(
+                fs::read_dir(dir.path().join("cache"))
+                    .unwrap()
+                    .next()
+                    .is_none(),
+                "prepared media survived completion"
+            );
+            let received = dir.path().join("received.mp4");
+            fs::write(&received, &log.video).unwrap();
+            let info = procast_core::media::inspect(
+                &received,
+                &Default::default(),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            procast_core::media::validate_direct_play(&info).unwrap();
+        } else {
+            assert_eq!(log.video, fs::read(&video).unwrap());
+        }
         let text = String::from_utf8(log.subtitles.unwrap()).unwrap();
         assert!(text.starts_with("WEBVTT"));
         assert!(text.contains("Hello Procast!"));
