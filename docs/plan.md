@@ -343,8 +343,9 @@ retain the historical evidence from explicit modes.
   remains explicitly selectable and is not promoted into normal profiles.
 - No blind runtime retry after receiver or network failure. Silent audio cannot
   be inferred from successful protocol status.
-- Retain legacy playback flags as migration aliases. Explain the chosen mode,
-  reason, reuse, and fallback storage reliably even when progress updates coalesce.
+- Keep only the current mode/profile/storage options; no legacy aliases. Explain
+  the chosen mode, reason, reuse, and fallback storage reliably even when progress
+  updates coalesce.
 
 #### Broader preparation
 

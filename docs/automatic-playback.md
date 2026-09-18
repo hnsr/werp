@@ -1,6 +1,6 @@
 # Automatic playback and reusable preparation
 
-Updated: 2026-09-18. Implementation, local verification, and the consolidated
+Updated: 2026-09-19. Implementation, local verification, and the consolidated
 short-clip hardware batch passed. Seeking and long-duration checks are deferred
 at the user's request because phone media controls are currently unavailable.
 They do not block further work. Earlier receiver observations are
@@ -48,11 +48,9 @@ External UTF-8 SRT and WebVTT still use `--subtitles`. Embedded tracks, attachme
 titles, and chapters are omitted during preparation. SRT conversion needs FFmpeg;
 an existing WebVTT file does not.
 
-The old `--force-transcode`, `--transcode-audio`, `--remux`, and
-`--experimental-direct-play` flags remain hidden migration aliases. They conflict
-with an explicit `--mode`. The experimental alias selects Direct/Experimental.
-`--transcode-dir` aliases `--cache-dir`; old conversion commands now retain their
-completed output unless `--no-cache` is supplied.
+The CLI exposes preparation through `--mode`, compatibility through `--profile`,
+and storage through `--cache-dir`/`--no-cache`. Legacy flags and aliases have been
+removed; backward compatibility is not maintained at this stage.
 
 ## Storage and reuse
 

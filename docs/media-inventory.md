@@ -1,5 +1,9 @@
 # Local media inventory
 
+This is the initial inventory and early trial history. Commands use current CLI
+spellings; historical compatibility limits and test status below are superseded
+by [automatic playback and reuse](automatic-playback.md).
+
 Scanned 2026-09-17 using ffprobe 8.1.2. Recursively found and successfully probed
 **75 videos (88.63 GiB): 45 Matroska/MKV and 30 MP4**. No probe failures.
 Also found **230 external SRT files**; their contents and matching video/language
@@ -108,8 +112,8 @@ Procast's current M2 guard is intentionally narrower: MP4-family H.264 with
 mono/stereo AAC-LC and conservative video limits. Only **6** library files fit
 that apparent format envelope; three now have user-confirmed picture and sound.
 Inventory
-membership does not bypass that guard. The new `--experimental-direct-play`
-option additionally admits one 3–6 channel AAC-LC track and HEVC Main/Main 10
+membership does not bypass that guard. The experimental direct-play path
+(`--mode direct --profile experimental`) additionally admits one 3–6 channel AAC-LC track and HEVC Main/Main 10
 MP4 up to level 4.0 at 1080p30, with 8/10-bit 4:2:0 pixels and no known HDR
 signalling. It serves original bytes and reports receiver-dependent support.
 H.264/AC-3 MP4 trials are also enabled for one 1–6 channel audio track at 32,
@@ -137,7 +141,7 @@ completion, and shutdown were not reported for these runs. Earlier generated
 fixture results remain separate evidence.
 
 On 2026-09-18, the user reported that `sample-004` also works with
-`--experimental-direct-play` on the existing KPN DIW7022 receiver. This serves
+`--mode direct --profile experimental` on the existing KPN DIW7022 receiver. This serves
 the original MP4 containing H.264 High, 1920×1040 at approximately 23.976 fps,
 and six-channel AAC-LC, without remuxing or transcoding. The requested check
 covered picture, audible dialogue, and A/V synchronization; the user reported
@@ -146,7 +150,7 @@ surround output, long-duration synchronization, or compatibility with all files
 in the group or other receivers. No external subtitle was selected for this run.
 
 The user also reported success on 2026-09-18 for original-file playback of
-`sample-005` with `--experimental-direct-play` on the KPN DIW7022: MP4 with
+`sample-005` with `--mode direct --profile experimental` on the KPN DIW7022: MP4 with
 HEVC Main 10, 10-bit 4:2:0, 1920×1080 at approximately 23.976 fps, and six-channel
 AAC-LC. The suggested checks covered picture/colours, dialogue, synchronization,
 and phone-controlled seeking/pause/resume. The user reported general success
@@ -155,14 +159,14 @@ This is evidence for this file/receiver combination, not universal HEVC support
 or confirmation of discrete surround output or full-duration playback.
 
 On 2026-09-18, the user tested original-file playback of `sample-041` with
-`--experimental-direct-play` on the same KPN DIW7022 setup: H.264 High,
+`--mode direct --profile experimental` on the same KPN DIW7022 setup: H.264 High,
 1920×804 at 24 fps, with six-channel AC-3 at 48 kHz in MP4. Video played, but
 there was no audible sound. This is a failed audio-output trial, not successful
 direct playback. It does not isolate the cause between receiver decoding,
 passthrough/output configuration, or the particular file. Other receivers and
 the remaining AC-3 files have not been tested. Keep the original scan's candidate
 classification as a hypothesis; do not promote AC-3 into the default policy.
-The subsequent `--transcode-audio` trial produced audible sound for roughly
+The subsequent `--mode audio` trial produced audible sound for roughly
 one or two seconds, then returned to the Google TV home screen. Picture was not
 observed. The CLI reported Playing, then Buffering, and eventually a 30-second
 playable-state timeout. This is not a successful playback result; the cause of
@@ -181,14 +185,14 @@ intermittent startup cutouts on this device. That is a plausible explanation
 for the earlier failure, but its cause remains unresolved and the diagnostic
 changes are not proven to have fixed it.
 
-A later integrated `--transcode-audio` run of `sample-041` also passed: the user
+A later integrated `--mode audio` run of `sample-041` also passed: the user
 reported good sound and no issues, then interrupted playback with Ctrl+C.
 The CLI reported cleanup completed and exit code 130; the dedicated preparation
 directory was empty and the HTTP port was closed. Natural completion and
 receiver-initiated stop remain separate, unverified hardware checks for this mode.
 
 The user also reported no problems playing MKV H.264/AAC-stereo `sample-006`
-with `--remux` on the KPN DIW7022. The suggested check covered picture, sound,
+with `--mode remux` on the KPN DIW7022. The suggested check covered picture, sound,
 synchronization, and Ctrl+C; no separate measurements or cleanup transcript were
 provided. This confirms an initial successful remux trial for this sample/setup.
 No embedded or external subtitles were selected. See [remux validation](remux-validation.md).
@@ -205,10 +209,10 @@ No embedded or external subtitles were selected. See [remux validation](remux-va
    and Ctrl+C cleanup now also pass. Natural completion and receiver-initiated
    stop remain unverified for this mode.
    Confirm picture, colour, audible audio, timing, completion, and cancellation.
-3. MKV H.264/AAC-stereo `sample-006` now has a successful `--remux` hardware
+3. MKV H.264/AAC-stereo `sample-006` now has a successful `--mode remux` hardware
    trial, alongside the earlier local preparation and cleanup check.
    Then evaluate HEVC Main/Main 10 with AAC/HE-AAC and H.264/HEVC with Dolby audio.
-   These broader profiles and original MKV delivery are not enabled by `--remux`. Preserve selected audio/video and handle
+   These broader profiles and original MKV delivery are not enabled by `--mode remux`. Preserve selected audio/video and handle
    subtitle extraction separately rather than copying every stream blindly.
 4. Try the AV1/E-AC-3 sample as a separate low-confidence case.
 5. Inspect the two HDR review samples before considering any conversion. If an

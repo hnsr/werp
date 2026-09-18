@@ -94,7 +94,7 @@ pub(crate) fn cache_directory() -> Result<PathBuf, ProcastError> {
         return Ok(path.join(".cache/procast"));
     }
     Err(error(
-        "cannot locate the user cache; specify --transcode-dir PATH",
+        "cannot locate the user cache; specify --cache-dir PATH",
     ))
 }
 
@@ -115,7 +115,7 @@ fn available_space(_path: &Path) -> Result<u64, ProcastError> {
 fn require_space(available: u64, required: u64) -> Result<(), ProcastError> {
     if available < required {
         return Err(error(format!(
-            "insufficient preparation disk space: need about {} MiB, have {} MiB; choose --transcode-dir on a larger disk",
+            "insufficient preparation disk space: need about {} MiB, have {} MiB; choose --cache-dir on a larger disk",
             required.div_ceil(1024 * 1024),
             available / (1024 * 1024)
         )));

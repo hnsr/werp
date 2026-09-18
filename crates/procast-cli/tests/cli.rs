@@ -2,7 +2,7 @@ use std::process::Command;
 
 #[cfg(unix)]
 #[test]
-fn experimental_flag_reaches_preflight_and_preserves_other_checks() {
+fn experimental_profile_reaches_preflight_and_preserves_other_checks() {
     use std::{fs, os::unix::fs::PermissionsExt};
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("surround.mp4");
@@ -39,7 +39,7 @@ fn experimental_flag_reaches_preflight_and_preserves_other_checks() {
             .arg("--subtitles")
             .arg(dir.path().join("missing.vtt"));
         if experimental {
-            command.arg("--experimental-direct-play");
+            command.args(["--mode", "direct", "--profile", "experimental"]);
         } else {
             command.args(["--mode", "direct", "--profile", "baseline"]);
         }
@@ -269,15 +269,15 @@ fn sleep_inhibition_is_best_effort_and_released_on_preflight_failure() {
 
 #[cfg(target_os = "linux")]
 #[tokio::test]
-async fn force_transcode_signals_reap_encoder_and_remove_partial_output() {
+async fn preparation_signals_reap_encoder_and_remove_partial_output() {
     use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Stdio, time::Duration};
-    for (flag, signal, exit_code) in [
-        ("--force-transcode", "-INT", 130),
-        ("--force-transcode", "-TERM", 143),
-        ("--transcode-audio", "-INT", 130),
-        ("--transcode-audio", "-TERM", 143),
-        ("--remux", "-INT", 130),
-        ("--remux", "-TERM", 143),
+    for (mode, signal, exit_code) in [
+        ("transcode", "-INT", 130),
+        ("transcode", "-TERM", 143),
+        ("audio", "-INT", 130),
+        ("audio", "-TERM", 143),
+        ("remux", "-INT", 130),
+        ("remux", "-TERM", 143),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("compatible.mp4");
@@ -309,9 +309,9 @@ exec sleep 60
             .arg("cast")
             .arg("--no-inhibit-sleep")
             .arg(&file)
-            .arg(flag)
+            .args(["--mode", mode])
             .args(["--host", "127.0.0.1", "--no-cache"])
-            .arg("--transcode-dir")
+            .arg("--cache-dir")
             .arg(&cache)
             .arg("--ffprobe")
             .arg(&probe)
@@ -335,7 +335,7 @@ exec sleep 60
             }
         })
         .await
-        .expect("force-transcode did not start the encoder for compatible media");
+        .expect("preparation did not start FFmpeg for compatible media");
         assert!(
             Command::new("kill")
                 .args([signal, &pid.to_string()])

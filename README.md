@@ -90,11 +90,6 @@ selected explicitly on a receiver whose audio or video support differs. Dolby
 and HE-AAC audio convert to AAC-LC under the normal profiles. Full encoding uses
 libx264 veryfast/CRF 20, up to 1080p30, and stereo AAC 192 kbps/48 kHz.
 
-The old `--force-transcode`, `--transcode-audio`, `--remux`, and
-`--experimental-direct-play` flags remain hidden compatibility aliases with a
-migration notice. They conflict with an explicit `--mode`. `--transcode-dir` is
-an alias for `--cache-dir`; it no longer implies temporary-only storage.
-
 Known PQ/HLG/Dolby Vision, ambiguous multiple audio/video tracks, and missing
 required duration/frame-rate information produce clear errors. HDR tone mapping,
 hardware acceleration, on-the-fly conversion, and track selection remain deferred.

@@ -2,7 +2,8 @@
 
 These notes describe the earlier explicit-mode implementation. Current default
 selection, broader profiles, and persistent storage supersede its temporary-only
-behavior; see [automatic playback and reuse](automatic-playback.md).
+behavior; see [automatic playback and reuse](automatic-playback.md). Commands
+below use the current CLI spelling; the observations retain their original scope.
 
 Implemented on 2026-09-18 with the existing Rust and FFmpeg/ffprobe toolchain.
 No additional packages or dependencies were needed. The first hardware playback
@@ -10,7 +11,7 @@ trial succeeded; detailed evidence and limits are recorded below.
 
 ## Behavior and limits
 
-`cast --remux` prepares a complete MP4 from Matroska/MKV or MP4 before contacting
+`cast --mode remux` prepares a complete MP4 from Matroska/MKV or MP4 before contacting
 the receiver. It copies one H.264 stream and zero or one mono/stereo AAC-LC stream
 without encoding. The conservative video profile remains 8-bit 4:2:0, up to
 1920×1080/30 fps and level 4.1; known HDR and missing required metadata are rejected.
@@ -22,14 +23,13 @@ and chapters are omitted. External SRT/WebVTT uses the existing subtitle path.
 Remuxing requires FFmpeg's demuxer/muxer support but no audio/video encoders.
 
 The preparation code reuses progress, bounded subprocess handling, cancellation,
-private session storage, and cleanup. `--transcode-dir` can choose storage for
+private session storage, and cleanup. `--cache-dir` can choose storage for
 remuxing as well. Space estimation uses the source size plus 10% overhead and
 64 MiB headroom, with free-space checks during progress. The output has faststart
 metadata; probing verifies its conservative playback profile, audio parameters,
 and duration before it is served. The original is never overwritten.
 
-`--remux`, `--force-transcode`, `--transcode-audio`, and
-`--experimental-direct-play` are mutually exclusive.
+Choose one preparation path using `--mode`.
 
 ## Automated and local evidence
 
@@ -58,10 +58,10 @@ and duration before it is served. The original is never overwritten.
 ```sh
 cargo run --locked -- cast \
   samples/library/no-transcode-candidates/sample-006_h264-high-8bit_720x480_23.976fps_aac-lc-2ch.mkv \
-  --device "Living Room" --remux --http-port 8010
+  --device "Living Room" --mode remux --profile baseline --no-cache --http-port 8010
 ```
 
-The user reported no problems running this command on the existing KPN DIW7022
+The user reported no problems running the equivalent command on the existing KPN DIW7022
 receiver. The requested checks covered picture, sound, synchronization, and Ctrl+C;
 the reply was a general success report without per-check details or a terminal
 transcript. This is initial hardware confirmation for this remuxed sample, not

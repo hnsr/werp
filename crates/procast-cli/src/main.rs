@@ -89,11 +89,10 @@ enum Commands {
         #[arg(long)]
         subtitles: Option<PathBuf>,
         /// Select automatically, or require one preparation path
-        #[arg(long, value_enum, default_value_t = ModeArg::Auto,
-            conflicts_with_all = ["force_transcode", "transcode_audio", "remux", "experimental_direct_play"])]
+        #[arg(long, value_enum, default_value_t = ModeArg::Auto)]
         mode: ModeArg,
         /// Receiver compatibility profile (auto uses discovered model; unknown/--host uses baseline)
-        #[arg(long, value_enum, default_value_t = ProfileArg::Auto, conflicts_with = "experimental_direct_play")]
+        #[arg(long, value_enum, default_value_t = ProfileArg::Auto)]
         profile: ProfileArg,
         /// Do not reuse or retain prepared files; remove them after this session
         #[arg(long)]
@@ -101,17 +100,9 @@ enum Commands {
         /// Allow normal automatic sleep during this casting session
         #[arg(long)]
         no_inhibit_sleep: bool,
-        /// Store prepared files here instead of beside the source; alias: --transcode-dir
-        #[arg(long, alias = "transcode-dir")]
+        /// Store prepared files here instead of beside the source
+        #[arg(long)]
         cache_dir: Option<PathBuf>,
-        #[arg(long, hide = true, group = "legacy_mode")]
-        experimental_direct_play: bool,
-        #[arg(long, hide = true, group = "legacy_mode")]
-        force_transcode: bool,
-        #[arg(long, hide = true, group = "legacy_mode")]
-        transcode_audio: bool,
-        #[arg(long, hide = true, group = "legacy_mode")]
-        remux: bool,
         /// Reachable local IP to advertise to the receiver
         #[arg(long)]
         bind_address: Option<IpAddr>,
@@ -262,10 +253,6 @@ async fn execute(
             host,
             cast_port,
             subtitles,
-            experimental_direct_play,
-            force_transcode,
-            transcode_audio,
-            remux,
             mode,
             profile,
             no_cache,
@@ -287,27 +274,8 @@ async fn execute(
                 Target::Auto
             };
             request.subtitles = subtitles;
-            request.mode = if force_transcode {
-                procast_core::playback::Mode::Transcode
-            } else if transcode_audio {
-                procast_core::playback::Mode::Audio
-            } else if remux {
-                procast_core::playback::Mode::Remux
-            } else if experimental_direct_play {
-                procast_core::playback::Mode::Direct
-            } else {
-                mode.into()
-            };
-            request.profile = if experimental_direct_play {
-                procast_core::playback::Profile::Experimental
-            } else {
-                profile.into()
-            };
-            if force_transcode || transcode_audio || remux || experimental_direct_play {
-                eprintln!(
-                    "Note: legacy playback flag; prefer --mode and --profile. Prepared files are now retained unless --no-cache is set."
-                );
-            }
+            request.mode = mode.into();
+            request.profile = profile.into();
             request.cache.enabled = !no_cache;
             request.inhibit_sleep = !no_inhibit_sleep;
             request.cache.directory = cache_dir;
@@ -445,36 +413,24 @@ mod tests {
 
     #[test]
     fn cast_target_defaults_and_conflicts() {
-        for args in [
-            vec!["procast", "cast", "movie.mp4"],
-            vec!["procast", "cast", "movie.mp4", "--device", "Living Room"],
-            vec!["procast", "cast", "movie.mp4", "--host", "127.0.0.1"],
-            vec!["procast", "cast", "movie.mp4", "--experimental-direct-play"],
+        for extra in [
+            vec![],
+            vec!["--device", "Living Room"],
+            vec!["--host", "127.0.0.1"],
+            vec!["--mode", "direct", "--profile", "experimental"],
             vec![
-                "procast",
-                "cast",
-                "movie.mkv",
-                "--remux",
-                "--transcode-dir",
+                "--mode",
+                "remux",
+                "--profile",
+                "extended",
+                "--cache-dir",
                 "/tmp",
             ],
-            vec![
-                "procast",
-                "cast",
-                "movie.mp4",
-                "--transcode-audio",
-                "--transcode-dir",
-                "/tmp",
-            ],
-            vec![
-                "procast",
-                "cast",
-                "movie.mp4",
-                "--force-transcode",
-                "--transcode-dir",
-                "/tmp",
-            ],
+            vec!["--mode", "audio", "--profile", "baseline", "--no-cache"],
+            vec!["--mode", "transcode", "--cache-dir", "/tmp"],
+            vec!["--mode", "auto", "--profile", "auto"],
         ] {
+            let args = ["procast", "cast", "movie.mp4"].into_iter().chain(extra);
             assert!(Cli::try_parse_from(args).is_ok());
         }
         for extra in [
@@ -482,13 +438,14 @@ mod tests {
             vec!["--cast-port", "8009"],
             vec!["--scan-seconds", "0"],
             vec!["--probe-timeout", "0"],
-            vec!["--force-transcode", "--experimental-direct-play"],
-            vec!["--transcode-audio", "--experimental-direct-play"],
-            vec!["--force-transcode", "--transcode-audio"],
-            vec!["--remux", "--force-transcode"],
-            vec!["--remux", "--transcode-audio"],
-            vec!["--remux", "--experimental-direct-play"],
-            vec!["--mode", "auto", "--remux"],
+            vec!["--mode", "invalid"],
+            vec!["--profile", "invalid"],
+            vec!["--mode", "direct", "--mode", "audio"],
+            vec!["--force-transcode"],
+            vec!["--transcode-audio"],
+            vec!["--remux"],
+            vec!["--experimental-direct-play"],
+            vec!["--transcode-dir", "/tmp"],
         ] {
             let args = ["procast", "cast", "movie.mp4"].into_iter().chain(extra);
             assert!(Cli::try_parse_from(args).is_err());

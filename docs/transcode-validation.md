@@ -2,7 +2,8 @@
 
 These notes describe the earlier explicit-mode implementation. Current default
 selection, broader profiles, and persistent storage supersede its temporary-only
-behavior; see [automatic playback and reuse](automatic-playback.md).
+behavior; see [automatic playback and reuse](automatic-playback.md). Commands
+below use the current CLI spelling; the observations retain their original scope.
 
 Implemented on 2026-09-17 with Rust 1.96.0 and FFmpeg/ffprobe 8.1.2 on Fedora 44.
 No additional system packages were needed. This is an explicit escape hatch;
@@ -11,7 +12,7 @@ was added later; see [remux validation](remux-validation.md).
 
 ## Behaviour
 
-`cast --force-transcode` always encodes the selected video and any audio before
+`cast --mode transcode` always encodes the selected video and any audio before
 receiver discovery/connection. The first version accepts one video and at most
 one audio track, with known positive duration and frame rate. It rejects known
 PQ/HLG and Dolby Vision metadata; it does not implement HDR tone mapping.
@@ -32,7 +33,7 @@ Progress reaches 100% only after output validation. This is metadata validation,
 not a complete verification of perceptual quality or synchronization.
 
 Preparation uses a private session directory under the user's cache, or an
-explicit `--transcode-dir`. An upper-rate estimate with overhead and 64 MiB
+explicit `--cache-dir`. An upper-rate estimate with overhead and 64 MiB
 headroom is checked before encoding; progress updates check remaining headroom.
 This does not reserve space against other writers. The default encoding deadline
 is 24 hours, separate from the probe timeout. Handled interruption, conversion
@@ -82,7 +83,7 @@ cargo test --locked --workspace -- --include-ignored
 
 ## Audio-only preparation
 
-Added on 2026-09-18: `--transcode-audio` preserves conservative-profile H.264
+Added on 2026-09-18: `--mode audio` preserves conservative-profile H.264
 video from MP4 and converts its single audio track to stereo AAC at 48 kHz,
 192 kbps. It requires AAC encoding but no video encoder. Initial input limits
 exclude HEVC, MKV, known HDR, missing audio, and multiple audio tracks. This is
@@ -112,7 +113,7 @@ completion or cleanup. That retry did not rerun the integrated preparation step.
 The user reports similar intermittent startup problems on this device; the
 original failure's cause remains unresolved.
 
-The user subsequently reran the complete `--transcode-audio` workflow for
+The user subsequently reran the complete `--mode audio` workflow for
 `sample-041` with a dedicated preparation directory and interrupted playback
 with Ctrl+C. Sound was good and no issues were reported. The CLI reached Playing,
 then printed `Cancelled; cleanup completed.` and returned exit code 130.
@@ -152,16 +153,16 @@ The user reported that the suggested forced-transcoding test with the short
 generated fixture worked on the TV. This is initial hardware confirmation of
 the preparation/playback path. Subsequent focused checks are recorded below.
 
-The suggested command was:
+The equivalent command using the current CLI is:
 
 ```sh
 cargo run --locked -- cast samples/short/test.mp4 \
-  --device "Living Room" --force-transcode \
+  --device "Living Room" --mode transcode --no-cache \
   --subtitles samples/short/subtitles.vtt --http-port 8010
 ```
 
 On 2026-09-18, the user additionally tested `sample-004` with
-`--force-transcode` on the existing KPN DIW7022 test receiver and confirmed:
+`--mode transcode` on the existing KPN DIW7022 test receiver and confirmed:
 
 - Visible video and audible audio after the complete file was prepared.
 - Seeking, pause, resume, and stop using the receiver controls on a phone.
