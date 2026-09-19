@@ -26,7 +26,7 @@ changes require a version bump. Frontends should ignore additional response fiel
 | `hello` | `version: 1` | `version`, `application` |
 | `inspect` | `file: string` | `media`, `subtitles`, `suggested_subtitles`, `subtitle_warning`, `resume_position`, `resume_warning` |
 | `discover` | Omit params | `devices: array` from a five-second IPv4 scan |
-| `start` | `file`, `device_id`, `subtitles`, `position` | `session_id: integer` |
+| `start` | `file`, `device_id`, `subtitles`, `position`, optional `subtitle_delay_ms` | `session_id: integer` |
 | `convert` | `file: string` | `operation_id: integer` |
 | `cancel_conversion` | `operation_id` | Empty object after conversion cleanup |
 | `pause`, `play` | `session_id` | Empty object after receiver acknowledgement |
@@ -41,9 +41,13 @@ IPv4 address. Known audio-only receivers are rejected. Subtitle selection is one
 of `{"kind":"none"}`, `{"kind":"embedded","index":2}`, or
 `{"kind":"external","path":"/path/to/video.srt"}`. The embedded index is the
 source stream index, not the index in the returned subtitle array.
+`subtitle_delay_ms` is a signed 32-bit integer, defaulting to zero. Positive values
+show subtitles later and negative values earlier, on the full video timeline
+(including resume/seek). It applies to prepared text tracks and image burn-in;
+it cannot be changed during an active session.
 
 ```json
-{"id":4,"method":"start","params":{"file":"/path/to/video.mkv","device_id":"example-device-id","subtitles":{"kind":"embedded","index":2},"position":0}}
+{"id":4,"method":"start","params":{"file":"/path/to/video.mkv","device_id":"example-device-id","subtitles":{"kind":"embedded","index":2},"subtitle_delay_ms":-500,"position":0}}
 {"id":4,"ok":true,"result":{"session_id":1}}
 {"id":5,"method":"seek","params":{"session_id":1,"position":45}}
 ```

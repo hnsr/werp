@@ -54,6 +54,8 @@ enum Command {
         file: PathBuf,
         device_id: String,
         subtitles: Subtitle,
+        #[serde(default)]
+        subtitle_delay_ms: i32,
         position: f64,
     },
     Pause {
@@ -329,7 +331,7 @@ async fn run(args: Args) -> Result<(), String> {
                             if operation.stops.len() >= 16 { send(&output,error(Some(id),"busy","cancellation is already pending")).await?; continue; }
                             pending.insert(id); operation.stops.push(id); operation.cancel.cancel();
                         }
-                        Command::Start { file, device_id, subtitles, position } => {
+                        Command::Start { file, device_id, subtitles, subtitle_delay_ms, position } => {
                             if active.is_some() || converting.is_some() { send(&output,error(Some(id),"busy","a session is already active")).await?; continue; }
                             let Some(device) = devices.get(&device_id).cloned() else {
                                 send(&output,error(Some(id),"invalid_device","select a discovered device")).await?; continue;
@@ -348,6 +350,7 @@ async fn run(args: Args) -> Result<(), String> {
                             request.compatibility = compatibility;
                             request.target = Some(Target::Device(device));
                             request.start_position = position;
+                            request.subtitle_delay_ms = subtitle_delay_ms;
                             request.probe = probe.clone(); request.ffmpeg = args.ffmpeg.clone();
                             request.inhibit_sleep = !args.no_inhibit_sleep;
                             request.http_port = args.http_port;
@@ -429,5 +432,29 @@ fn main() {
     if let Err(error) = result {
         eprintln!("{error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn start_accepts_signed_subtitle_delay_and_defaults_to_zero() {
+        for delay in [None, Some(-1500), Some(750)] {
+            let mut params = json!({"file":"video.mkv","device_id":"test","subtitles":{"kind":"none"},"position":0});
+            if let Some(delay) = delay {
+                params["subtitle_delay_ms"] = json!(delay);
+            }
+            let request: Request =
+                serde_json::from_value(json!({"id":1,"method":"start","params":params})).unwrap();
+            let Command::Start {
+                subtitle_delay_ms, ..
+            } = request.command
+            else {
+                panic!("expected start")
+            };
+            assert_eq!(subtitle_delay_ms, delay.unwrap_or(0));
+        }
     }
 }

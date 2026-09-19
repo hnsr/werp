@@ -35,6 +35,8 @@ pub enum Target {
 pub struct CastRequest {
     pub file: PathBuf,
     pub subtitles: subtitles::Request,
+    /// Positive delays captions; negative shows them earlier. Applied before playback.
+    pub subtitle_delay_ms: i32,
     pub target: Option<Target>,
     pub bind_address: Option<IpAddr>,
     pub http_port: u16,
@@ -58,6 +60,7 @@ impl CastRequest {
         Self {
             file,
             subtitles: subtitles::Request::Off,
+            subtitle_delay_ms: 0,
             target: None,
             bind_address: None,
             http_port: 0,
@@ -279,11 +282,17 @@ pub async fn run_controlled(
             Some(subtitles::Selection::Bitmap { index }) => notice(&progress, format!("Subtitles: embedded image stream #{index} (burn-in)")),
             None => notice(&progress, "Subtitles: none selected".into()),
         }
+        if let Some(captions) = &prepared
+            && !captions.apply_delay(request.subtitle_delay_ms, cancel).await? {
+            prepared.take().unwrap().close()?;
+            notice(&progress, "Subtitle delay moves all captions before the start of the video".into());
+        }
         if let Some(mode) = plan.preparation() {
             let mut options = request.transcode.clone();
             options.mode = mode;
             options.playback_policy = plan.policy;
             options.bitmap_subtitle = bitmap_index;
+            options.subtitle_delay_ms = request.subtitle_delay_ms;
             let label = match mode {
                 TranscodeMode::AudioVideo => "Transcoding",
                 TranscodeMode::AudioOnly => "Audio conversion",

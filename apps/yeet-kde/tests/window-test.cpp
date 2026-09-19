@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSlider>
+#include <QSpinBox>
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QTest>
@@ -191,6 +192,8 @@ private slots:
         auto *progress=window.findChild<QProgressBar *>("preparationProgress");
         auto *pause=window.findChild<QPushButton *>("pause");
         auto *seek=window.findChild<QSlider *>("seek");
+        auto *delay=window.findChild<QSpinBox *>("subtitleDelay");
+        QCOMPARE(delay->value(),0); QVERIFY(delay->minimum()<0);
         const auto log=helper+".log";
         QTRY_COMPARE_WITH_TIMEOUT(devices->count(),3,5000);
         QTRY_COMPARE(subtitles->count(),4);
@@ -204,11 +207,14 @@ private slots:
         QVERIFY(!selected->isAncestorOf(window.findChild<QPushButton *>("openVideo")));
         screenshot(window,"selection");
         devices->setCurrentIndex(2); subtitles->setCurrentIndex(2); QVERIFY(yeet->isEnabled());
+        delay->setValue(-1500);
         QTest::mouseClick(resume,Qt::LeftButton);
         QTRY_COMPARE(progress->value(),42); QCOMPARE(pages->currentIndex(),1);
         QVERIFY(!devices->isEnabled()); QVERIFY(!subtitles->isEnabled()); screenshot(window,"preparing");
         QTRY_COMPARE(starts(log).size(),1);
         QCOMPARE(starts(log).last()["position"].toDouble(),25.0);
+        QCOMPARE(starts(log).last()["subtitle_delay_ms"].toInt(),-1500);
+        QVERIFY(!delay->isEnabled());
         QCOMPARE(starts(log).last()["subtitles"].toObject()["index"].toInt(),3);
         QTRY_COMPARE(pages->currentIndex(),2); screenshot(window,"playing");
         window.activateWindow(); window.findChild<QPushButton *>("stop")->setFocus();
@@ -219,8 +225,10 @@ private slots:
         QTest::keyClick(seek,Qt::Key_Space); QTRY_COMPARE(pause->text(),QString("Pause"));
         QTest::mouseClick(window.findChild<QPushButton *>("stop"),Qt::LeftButton);
         QTRY_COMPARE(pages->currentIndex(),0); QTRY_VERIFY(yeet->isEnabled()); QCOMPARE(subtitles->currentIndex(),2);
+        QVERIFY(delay->isEnabled()); QCOMPARE(delay->value(),-1500); delay->setValue(750);
         QTest::mouseClick(yeet,Qt::LeftButton); QTRY_COMPARE(starts(log).size(),2);
         QCOMPARE(starts(log).last()["position"].toDouble(),0.0);
+        QCOMPARE(starts(log).last()["subtitle_delay_ms"].toInt(),750);
         QTRY_VERIFY(window.findChild<QPushButton *>("cancel")->isEnabled());
         QTest::mouseClick(window.findChild<QPushButton *>("cancel"),Qt::LeftButton);
         QTRY_COMPARE(pages->currentIndex(),0);
@@ -228,6 +236,7 @@ private slots:
         for (const auto &call : calls(log)) if (call["method"]=="seek") { QCOMPARE(call["params"].toObject()["position"].toDouble(),60.0); sawSeek=true; }
         QVERIFY(sawSeek);
         QCOMPARE(QSettings(settings,QSettings::IniFormat).value("lastDeviceId").toString(),QString("tv"));
+        window.openFile(dir.filePath("another video.mp4")); QCOMPARE(delay->value(),0);
         QSignalSpy exited(window.findChild<Backend *>(),&Backend::exited);
         QTest::mouseClick(window.findChild<QPushButton *>("quit"),Qt::LeftButton);
         QTRY_COMPARE_WITH_TIMEOUT(exited.count(),1,5000); QVERIFY(!window.isVisible());

@@ -253,6 +253,9 @@ pub async fn prepare(
     }
     if let Some(index) = options.bitmap_subtitle {
         recipe.push_str(&format!("-bitmap-{index}"));
+        if options.subtitle_delay_ms != 0 {
+            recipe.push_str(&format!("-delay-ms-{}", options.subtitle_delay_ms));
+        }
     }
     let mut digest = Context::new(&SHA256);
     digest.update(source.as_os_str().as_encoded_bytes());

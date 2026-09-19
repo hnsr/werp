@@ -40,6 +40,8 @@ pub struct TranscodeOptions {
     pub playback_policy: DirectPlayPolicy,
     /// Absolute index of an embedded image subtitle to burn into full conversion.
     pub bitmap_subtitle: Option<u32>,
+    /// Timing adjustment for bitmap burn-in; irrelevant when no bitmap is selected.
+    pub subtitle_delay_ms: i32,
     /// Parent for private session directories. Defaults to the user's cache.
     pub directory: Option<PathBuf>,
     /// Encoding deadline, separate from the short ffprobe timeout.
@@ -52,9 +54,20 @@ impl Default for TranscodeOptions {
             mode: TranscodeMode::default(),
             playback_policy: DirectPlayPolicy::Conservative,
             bitmap_subtitle: None,
+            subtitle_delay_ms: 0,
             directory: None,
             timeout: Duration::from_secs(24 * 60 * 60),
         }
+    }
+}
+
+fn bitmap_filter(video: u32, subtitle: u32, delay_ms: i32, filter: &str) -> String {
+    if delay_ms == 0 {
+        format!("[0:{video}][0:{subtitle}]overlay=eof_action=pass:repeatlast=0,{filter}[captioned]")
+    } else {
+        format!(
+            "[0:{subtitle}]setpts=PTS+({delay_ms})/1000/TB[delayed];[0:{video}][delayed]overlay=eof_action=pass:repeatlast=0,{filter}[captioned]"
+        )
     }
 }
 
@@ -339,7 +352,7 @@ pub async fn prepare(
             .arg(&info.path);
         let filter = format!("scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,fps={:.8},format=yuv420p", input.fps);
         if let Some(index) = options.bitmap_subtitle {
-            let graph = format!("[0:{}][0:{index}]overlay=eof_action=pass:repeatlast=0,{filter}[captioned]", input.video);
+            let graph = bitmap_filter(input.video, index, options.subtitle_delay_ms, &filter);
             command.args(["-filter_complex", &graph, "-map", "[captioned]"]);
         } else { command.args(["-map", &format!("0:{}", input.video)]); }
         if let Some(index) = input.audio { command.args(["-map", &format!("0:{index}")]); }

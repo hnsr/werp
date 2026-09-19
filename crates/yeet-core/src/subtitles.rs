@@ -356,6 +356,28 @@ pub struct PreparedSubtitles {
 }
 
 impl PreparedSubtitles {
+    /// Adjust this session's WebVTT snapshot, never the source file. Returns
+    /// false if every caption was shifted entirely before the video's start.
+    pub async fn apply_delay(
+        &self,
+        delay_ms: i32,
+        cancel: &CancellationToken,
+    ) -> Result<bool, YeetError> {
+        if delay_ms == 0 {
+            return Ok(true);
+        }
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => Err(YeetError::Cancelled),
+            result = async {
+                let text = tokio::fs::read_to_string(&self.path).await.map_err(|e| invalid(e.to_string()))?;
+                let (shifted, has_cues) = shift_webvtt(&text, delay_ms)?;
+                tokio::fs::write(&self.path, shifted).await.map_err(|e| invalid(e.to_string()))?;
+                Ok(has_cues)
+            } => result,
+        }
+    }
+
     pub fn close(self) -> Result<(), YeetError> {
         self.directory
             .close()
@@ -482,6 +504,86 @@ fn invalid(reason: impl Into<String>) -> YeetError {
     YeetError::Subtitles(reason.into())
 }
 
+fn shifted_timestamp(ms: u64, delay_ms: i32) -> Result<String, YeetError> {
+    let shifted = u64::try_from((i128::from(ms) + i128::from(delay_ms)).max(0))
+        .map_err(|_| invalid("subtitle delay overflows timestamp"))?;
+    Ok(format!(
+        "{:02}:{:02}:{:02}.{:03}",
+        shifted / 3_600_000,
+        shifted / 60_000 % 60,
+        shifted / 1000 % 60,
+        shifted % 1000
+    ))
+}
+
+fn shift_webvtt(text: &str, delay_ms: i32) -> Result<(String, bool), YeetError> {
+    let text = sanitize_timed_cues(text, false)?;
+    let mut output = Vec::new();
+    let mut cues = 0;
+    for (block_index, block) in text.trim_end_matches('\n').split("\n\n").enumerate() {
+        let mut lines: Vec<String> = block.lines().map(str::to_owned).collect();
+        let first = lines.first().map(String::as_str).unwrap_or("");
+        if block_index == 0
+            || first == "NOTE"
+            || first.starts_with("NOTE ")
+            || first.starts_with("NOTE\t")
+            || first == "STYLE"
+            || first == "REGION"
+        {
+            output.push(block.to_owned());
+            continue;
+        }
+        let timing_index = usize::from(!first.contains("-->"));
+        let (start, rest) = lines[timing_index]
+            .split_once("-->")
+            .expect("validated cue");
+        let rest = rest.trim_start();
+        let end_length = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let start = timestamp(start.trim(), false).expect("validated start");
+        let end = timestamp(&rest[..end_length], false).expect("validated end");
+        if i128::from(end) + i128::from(delay_ms) <= 0 {
+            continue;
+        }
+        lines[timing_index] = format!(
+            "{} --> {}{}",
+            shifted_timestamp(start, delay_ms)?,
+            shifted_timestamp(end, delay_ms)?,
+            &rest[end_length..]
+        );
+        // WebVTT can also contain inline timestamps for karaoke-style captions.
+        for line in &mut lines[timing_index + 1..] {
+            let mut shifted = String::new();
+            let mut remaining = line.as_str();
+            while let Some((before, tag)) = remaining.split_once('<') {
+                shifted.push_str(before);
+                if let Some((value, after)) = tag.split_once('>') {
+                    if let Some(ms) = timestamp(value, false) {
+                        if i128::from(ms) + i128::from(delay_ms) > 0 {
+                            shifted.push('<');
+                            shifted.push_str(&shifted_timestamp(ms, delay_ms)?);
+                            shifted.push('>');
+                        }
+                    } else {
+                        shifted.push('<');
+                        shifted.push_str(value);
+                        shifted.push('>');
+                    }
+                    remaining = after;
+                } else {
+                    shifted.push('<');
+                    remaining = tag;
+                    break;
+                }
+            }
+            shifted.push_str(remaining);
+            *line = shifted;
+        }
+        output.push(lines.join("\n"));
+        cues += 1;
+    }
+    Ok((output.join("\n\n") + "\n", cues > 0))
+}
+
 /// Validate timing and omit empty cues. Cue identifiers/settings and
 /// NOTE/STYLE/REGION blocks are preserved for the WebVTT receiver to interpret.
 fn sanitize_timed_cues(text: &str, srt: bool) -> Result<String, YeetError> {
@@ -594,6 +696,28 @@ fn timestamp(text: &str, srt: bool) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signed_delay_preserves_cue_settings_and_clips_at_zero() {
+        let text = "WEBVTT\n\nNOTE keep me\n\nfirst\n00:00.500 --> 00:01.000\nEarly\n\nsecond\n00:01.500 --> 00:03.000 align:start\n<b>Later</b> <00:02.000>word\n";
+        let (later, has_cues) = shift_webvtt(text, 750).unwrap();
+        assert!(has_cues);
+        assert!(later.contains("first\n00:00:01.250 --> 00:00:01.750\nEarly"));
+        assert!(later.contains(
+            "00:00:02.250 --> 00:00:03.750 align:start\n<b>Later</b> <00:00:02.750>word"
+        ));
+        assert!(later.contains("NOTE keep me"));
+        let (earlier, has_cues) = shift_webvtt(text, -2000).unwrap();
+        assert!(has_cues);
+        assert!(!earlier.contains("Early"));
+        assert!(
+            earlier
+                .contains("second\n00:00:00.000 --> 00:00:01.000 align:start\n<b>Later</b> word")
+        );
+        assert!(!shift_webvtt(text, -3000).unwrap().1);
+        assert!(!shift_webvtt(text, i32::MIN).unwrap().1);
+        assert!(shift_webvtt(text, i32::MAX).unwrap().1);
+    }
 
     fn stream(index: u32, language: &str, title: &str, codec: &str) -> StreamInfo {
         StreamInfo {

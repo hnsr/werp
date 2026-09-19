@@ -93,6 +93,14 @@ be re-encoded. External SRT, WebVTT, ASS, and SSA are supported in UTF-8 or
 BOM-marked UTF-16. Conversion/extraction needs FFmpeg; external WebVTT does not.
 Empty timed cues are skipped during preparation without modifying the original
 file. Invalid timestamps and files with no non-empty cues still produce an error.
+Use `--subtitle-delay-ms 1500` to show captions 1.5 seconds later, or
+`--subtitle-delay-ms -1500` to show them earlier. The default is zero. The KDE
+selection screen offers the same setting as **Subtitle delay**, in milliseconds.
+It applies when playback starts, including resume, and changes subtitle timing
+without shifting audio or video. Text cues crossing the beginning are clipped to
+zero; cues ending before or at zero are dropped. If none remain, playback proceeds
+without a subtitle track. Originals are never modified. Image subtitle burn-in
+also respects the delay and uses a separate cache recipe for each offset.
 ASS/SSA conversion warns that advanced fonts, positioning, and effects are lost;
 this is readable caption support, not faithful ASS rendering.
 

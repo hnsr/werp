@@ -136,6 +136,9 @@ struct PlaybackArgs {
     cast_port: u16,
     #[arg(long, group = "subtitle_selection")]
     subtitles: Option<PathBuf>,
+    /// Subtitle delay in milliseconds: positive is later, negative is earlier
+    #[arg(long, default_value_t = 0, allow_hyphen_values = true)]
+    subtitle_delay_ms: i32,
     /// Select an embedded subtitle by its absolute stream index from inspect
     #[arg(long, group = "subtitle_selection")]
     subtitle_track: Option<u32>,
@@ -342,6 +345,7 @@ async fn execute(
             cast_port,
             subtitles,
             subtitle_track,
+            subtitle_delay_ms,
             no_subtitles,
             auto_subtitles,
             resume,
@@ -373,6 +377,7 @@ async fn execute(
                 subtitle_preferences.auto_load = true;
             }
             request.save_position = !no_resume;
+            request.subtitle_delay_ms = subtitle_delay_ms;
             request.subtitles = if let Some(path) = subtitles {
                 yeet_core::subtitles::Request::External(path)
             } else if let Some(index) = subtitle_track {
@@ -597,6 +602,18 @@ mod tests {
             vec!["yeet", "cast", "movie.mkv"],
         ] {
             assert!(Cli::try_from_args(args).is_err());
+        }
+    }
+
+    #[test]
+    fn subtitle_delay_accepts_signed_milliseconds() {
+        for value in ["-1500", "0", "750"] {
+            let cli =
+                Cli::try_from_args(["yeet", "movie.mp4", "--subtitle-delay-ms", value]).unwrap();
+            assert_eq!(
+                cli.playback.subtitle_delay_ms,
+                value.parse::<i32>().unwrap()
+            );
         }
     }
 

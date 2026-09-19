@@ -624,6 +624,7 @@ async fn session_covers_completion_transient_idle_errors_takeover_and_cancellati
         request.target = Some(Target::Host(address));
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
         request.ffmpeg = directory.path().join("missing-ffmpeg");
+        request.subtitle_delay_ms = 750;
         // Complete exercises the no-subtitle route; all others use WebVTT.
         if mode != Mode::Complete {
             request.subtitles = yeet_core::subtitles::Request::External(subs);
@@ -710,11 +711,41 @@ async fn session_covers_completion_transient_idle_errors_takeover_and_cancellati
             if !matches!(mode, Mode::Complete | Mode::MissingSubtitles) {
                 assert!(
                     String::from_utf8_lossy(log.subtitles.as_ref().unwrap())
-                        .contains("Hello Yeet!")
+                        .contains("00:00:00.750 --> 00:00:02.750\nHello Yeet!")
                 );
             }
         }
     }
+}
+
+#[tokio::test]
+async fn delay_that_removes_all_captions_still_plays_video() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("movie.mp4");
+    fs::write(&file, b"selected video bytes").unwrap();
+    let subs = directory.path().join("captions.vtt");
+    let original = "WEBVTT\n\n00:00.000 --> 00:02.000\nHello Yeet!\n";
+    fs::write(&subs, original).unwrap();
+    let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
+    let mut request = CastRequest::new(file);
+    request.inhibit_sleep = false;
+    request.save_position = false;
+    request.subtitles = yeet_core::subtitles::Request::External(subs.clone());
+    request.subtitle_delay_ms = -2000;
+    request.target = Some(Target::Host(address));
+    request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
+    let (progress, _) = watch::channel(SessionState::default());
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        session::run(request, progress, &CancellationToken::new()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let log = receiver.await.unwrap();
+    assert_eq!(log.loads, 1);
+    assert!(log.subtitles.is_none());
+    assert_eq!(fs::read_to_string(subs).unwrap(), original);
 }
 
 #[tokio::test]
@@ -911,7 +942,7 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         }
         let text = String::from_utf8(log.subtitles.unwrap()).unwrap();
         assert!(text.starts_with("WEBVTT"));
-        assert!(text.contains("Hello Yeet!"));
+        assert!(text.contains("00:00:00.750 --> 00:00:02.750\nHello Yeet!"));
         assert_eq!(log.track_commands, 1);
     }
 }

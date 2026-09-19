@@ -84,6 +84,47 @@ printf 'complete prepared file' > "$last"
 }
 
 #[tokio::test]
+async fn bitmap_delay_has_its_own_cache_recipe() {
+    let mut fixture = Fixture::new();
+    let cancel = CancellationToken::new();
+    let cache = CacheOptions::default();
+    let mut info = media::inspect(&fixture.source, &fixture.probe, &cancel)
+        .await
+        .unwrap();
+    info.streams.push(media::StreamInfo {
+        index: 2,
+        kind: "subtitle".into(),
+        codec: Some("hdmv_pgs_subtitle".into()),
+        ..Default::default()
+    });
+    fixture.options.mode = TranscodeMode::AudioVideo;
+    fixture.options.bitmap_subtitle = Some(2);
+    let mut paths = Vec::new();
+    for delay in [0, 1500, -1500, 1500] {
+        fixture.options.subtitle_delay_ms = delay;
+        let mut reused = false;
+        let output = cache::prepare(
+            &info,
+            &fixture.ffmpeg,
+            &fixture.probe,
+            &fixture.options,
+            &cache,
+            &cancel,
+            |event| reused |= matches!(event, Event::Reused(_)),
+        )
+        .await
+        .unwrap();
+        assert_eq!(reused, paths.len() == 3);
+        paths.push(output.info.path.clone());
+        output.close().unwrap();
+    }
+    assert_ne!(paths[0], paths[1]);
+    assert_ne!(paths[1], paths[2]);
+    assert_ne!(paths[0], paths[2]);
+    assert_eq!(paths[1], paths[3]);
+}
+
+#[tokio::test]
 async fn completed_output_is_retained_reused_and_invalidated_by_source_and_recipe() {
     let mut fixture = Fixture::new();
     let cancel = CancellationToken::new();
@@ -96,6 +137,8 @@ async fn completed_output_is_retained_reused_and_invalidated_by_source_and_recip
     // A valid hit does not even need an installed FFmpeg executable.
     fs::rename(&fixture.ffmpeg, fixture.dir.path().join("saved-ffmpeg")).unwrap();
     let mut reused = false;
+    // Text subtitle timing does not change a prepared video's cache recipe.
+    fixture.options.subtitle_delay_ms = 1500;
     let hit = fixture
         .prepare(&cache, &cancel, |e| reused |= matches!(e, Event::Reused(_)))
         .await

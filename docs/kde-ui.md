@@ -59,6 +59,10 @@ existing ranking with fixed English-then-Dutch language order, then a matching
 SRT fallback. Unsupported tracks are skipped; ambiguous sidecars leave None selected
 and show a warning. Manual subtitle choices, including None, survive stopping and
 restarting the same video. CLI configuration and flags do not affect these defaults.
+The **Subtitle delay: [input] ms** row accepts signed milliseconds (positive is
+later, negative is earlier). It defaults to zero for each newly opened video,
+survives stop/restart, and applies when starting or resuming playback. It is
+disabled during preparation and playback, like subtitle selection.
 
 A single local video can also be dragged onto the idle window. Dropping opens it
 without playback; drops during preparation/playback, multiple files, directories,

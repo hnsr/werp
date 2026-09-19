@@ -17,6 +17,15 @@ async fn srt_empty_cues_do_not_drop_following_captions() {
     assert_eq!(output.matches("-->").count(), 2);
     assert!(output.contains("00:02.000 --> 00:03.000\nFirst caption"));
     assert!(output.contains("00:04.000 --> 00:05.000\nLast caption"));
+    assert!(
+        prepared
+            .apply_delay(-2500, &CancellationToken::new())
+            .await
+            .unwrap()
+    );
+    let shifted = fs::read_to_string(&prepared.path).unwrap();
+    assert!(shifted.contains("00:00:00.000 --> 00:00:00.500\nFirst caption"));
+    assert!(shifted.contains("00:00:01.500 --> 00:00:02.500\nLast caption"));
     assert_eq!(fs::read_to_string(&path).unwrap(), original);
     prepared.close().unwrap();
 }
@@ -193,6 +202,12 @@ async fn embedded_languages_mp4_text_and_ass_extract_to_timed_webvtt() {
         assert!(
             vtt.contains(text) && vtt.contains("00:01.000 --> 00:02.000"),
             "{vtt}"
+        );
+        assert!(prepared.apply_delay(1250, &token).await.unwrap());
+        assert!(
+            fs::read_to_string(&prepared.path)
+                .unwrap()
+                .contains("00:00:02.250 --> 00:00:03.250")
         );
         prepared.close().unwrap();
     }

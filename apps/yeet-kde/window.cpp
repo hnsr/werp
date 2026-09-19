@@ -1,4 +1,6 @@
 #include "window.h"
+#include <QSpinBox>
+#include <limits>
 #include "selectedvideopanel.h"
 #include <QAbstractItemView>
 #include <QCloseEvent>
@@ -84,6 +86,13 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     m_subtitles = new SubtitleComboBox; m_subtitles->setObjectName("subtitles"); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
     form->addRow(i18n("Subtitles:"),m_subtitles);
     m_browse = new QPushButton(i18n("Choose subtitle file…")); form->addRow("",m_browse);
+    m_subtitleDelay = new QSpinBox; m_subtitleDelay->setObjectName("subtitleDelay");
+    m_subtitleDelay->setRange(std::numeric_limits<int>::min(),std::numeric_limits<int>::max());
+    m_subtitleDelay->setSingleStep(100);
+    m_subtitleDelay->setToolTip(i18n("Positive values show subtitles later; negative values show them earlier. Applies when playback starts."));
+    auto *delayRow = new QHBoxLayout; delayRow->addWidget(m_subtitleDelay);
+    delayRow->addWidget(new QLabel(i18n("ms"))); delayRow->addStretch();
+    form->addRow(i18n("Subtitle delay:"),delayRow);
     auto *buttons = new QHBoxLayout;
     m_start = new QPushButton(i18n("Yeet")); m_start->setObjectName("yeet"); m_start->setDefault(true);
     m_resumeButton = new QPushButton(i18n("Yeet from last position")); m_resumeButton->setObjectName("resume");
@@ -148,6 +157,7 @@ void Window::openFile(const QString &file) {
     if (m_busy) { showError(i18n("Stop playback before opening another video.")); return; }
     ++m_generation; m_file=QFileInfo(file).absoluteFilePath(); m_directory=QFileInfo(m_file).absolutePath();
     m_selectedVideo->setFile(m_file);
+    m_subtitleDelay->setValue(0);
     m_inspected=false; m_applySuggestedSubtitle=true; m_resume=-1; m_duration=0; showError({});
     m_subtitles->clear(); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
     if (m_backend.ready()) inspect();
@@ -236,6 +246,7 @@ void Window::refreshActions() {
     const bool idle=!m_busy && m_backend.ready();
     m_discoveryProgress->setVisible(m_discovering);
     m_devices->setItemText(0,m_discovering ? i18n("Searching for devices…") : i18n("Choose a device…"));
+    m_subtitleDelay->setEnabled(idle && m_inspected);
     m_open->setEnabled(!m_busy); m_devices->setEnabled(idle && !m_discovering); m_subtitles->setEnabled(idle && m_inspected);
     m_browse->setEnabled(idle && m_inspected);
     const bool canStart=idle && !m_discovering && m_inspected && !m_devices->currentData().toString().isEmpty();
@@ -249,7 +260,7 @@ void Window::startPlayback(bool resume) {
     m_cancel->setEnabled(false); m_pages->setCurrentIndex(1); refreshActions();
     const auto deviceId=m_devices->currentData().toString();
     const auto subtitle=QJsonDocument::fromJson(m_subtitles->currentData().toString().toUtf8()).object();
-    m_backend.request("start",{{"file",m_file},{"device_id",deviceId},{"subtitles",subtitle},{"position",resume?m_resume:0.0}},[this,deviceId](const QJsonObject &reply) {
+    m_backend.request("start",{{"file",m_file},{"device_id",deviceId},{"subtitles",subtitle},{"subtitle_delay_ms",m_subtitleDelay->value()},{"position",resume?m_resume:0.0}},[this,deviceId](const QJsonObject &reply) {
         if (!check(reply)) { m_busy=false; m_pages->setCurrentIndex(0); refreshActions(); return; }
         m_settings.setValue("lastDeviceId",deviceId); m_settings.sync();
         if (m_settings.status()!=QSettings::NoError) showError(i18n("Could not remember the selected device."));

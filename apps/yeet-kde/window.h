@@ -6,6 +6,7 @@
 class QShortcut; class QDragEnterEvent; class QDragMoveEvent; class QDropEvent;
 class QComboBox; class QLabel; class QPushButton; class QSlider; class QProgressBar; class QStackedWidget;
 class SelectedVideoPanel;
+class QSpinBox;
 
 class Window : public QMainWindow {
     Q_OBJECT
@@ -44,4 +45,5 @@ private:
     QPushButton *m_open, *m_refresh, *m_browse, *m_start, *m_resumeButton, *m_pause, *m_stop, *m_cancel, *m_retry;
     QProgressBar *m_progress, *m_discoveryProgress;
     QSlider *m_seek;
+    QSpinBox *m_subtitleDelay;
 };
