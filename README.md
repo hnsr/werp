@@ -8,7 +8,8 @@ seeking and long-duration checks for the expanded paths are deferred.
 Configuration, automatic embedded subtitles, preferred devices, and playback
 resume are implemented. Automatic English embedded captions and interrupted
 playback resume are confirmed on the TV, along with explicit Dutch selection,
-restart, and completion clearing the saved position. Remaining checks are in the checklist.
+restart, completion clearing the saved position, automatic external SRT loading,
+and subtitles off. Optional remaining checks are in the checklist.
 
 ## Development setup
 

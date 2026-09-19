@@ -3,8 +3,9 @@
 Implemented 2026-09-19. Local and simulated-receiver verification is described
 below. The user confirmed automatic English embedded subtitles and interrupted
 playback resume on the TV, followed by explicit Dutch selection, restart, and
-normal completion clearing the saved position. The remaining TV checks are listed below. No TV was
-contacted during implementation. Earlier seeking and long-duration checks remain deferred.
+normal completion clearing the saved position. Automatic external SRT loading and
+subtitles off also passed. Optional remaining TV checks are listed below. No TV
+was contacted during implementation. Earlier seeking and long-duration checks remain deferred.
 
 ## Configuration
 
@@ -125,9 +126,10 @@ checkpoint interval of reported progress. No state is stored in Git or in media.
 The user ran the generated embedded-subtitle fixture on the KPN DIW7022 and
 confirmed English captions and successful resume after interruption. A subsequent
 check confirmed explicit Dutch track selection with restart, and playback starting
-from zero after normal completion without the restart flag. Automatic external
-fallback, subtitles off, and image-caption playback remain pending hardware checks.
-Automatic Dutch preference has local test coverage only. This report does
+from zero after normal completion without the restart flag. The external fixture
+also passed automatic same-name SRT loading and a second run with no captions
+when `--no-subtitles` was supplied. Image-caption playback remains an optional
+pending hardware check. Automatic Dutch preference has local test coverage only. This report does
 not establish subtitle synchronization after arbitrary seeking.
 
 `cargo test --locked --workspace -- --include-ignored` passed all 68 tests,
