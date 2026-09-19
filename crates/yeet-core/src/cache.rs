@@ -16,6 +16,11 @@ use crate::{
 
 // Bump whenever output-affecting FFmpeg arguments or preparation semantics change.
 const RECIPE_VERSION: u32 = 1;
+// Filename tags are lookup hints; manifests retain the full SHA-256 values.
+const KEY_TAG_LEN: usize = 12;
+const GENERATION_BYTES: usize = 4;
+const MAX_NAME_BYTES: usize = 255;
+const PUBLICATION_ATTEMPTS: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct CacheOptions {
@@ -57,6 +62,63 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+fn filename_prefix(source: &Path, key: &str) -> String {
+    let stem = source.file_stem().unwrap_or_default().to_string_lossy();
+    // Reserve room for the longer metadata filename, including both extensions.
+    let suffix_bytes = ".yeet-".len() + KEY_TAG_LEN + 1 + GENERATION_BYTES * 2 + ".mp4.json".len();
+    let mut end = stem.len().min(MAX_NAME_BYTES - suffix_bytes);
+    while !stem.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}.yeet-{}-", &stem[..end], &key[..KEY_TAG_LEN])
+}
+
+async fn publish(
+    parent: &Path,
+    prefix: &str,
+    source: &Path,
+    metadata: &[u8],
+    cancel: &CancellationToken,
+    mut generation: impl FnMut() -> Result<String, YeetError>,
+) -> Result<PathBuf, YeetError> {
+    for _ in 0..PUBLICATION_ATTEMPTS {
+        if cancel.is_cancelled() {
+            return Err(YeetError::Cancelled);
+        }
+        let path = parent.join(format!("{prefix}{}.mp4", generation()?));
+        // An atomic no-replace link handles competing producers and random-ID
+        // collisions without overwriting anything or repeating the conversion.
+        match tokio::fs::hard_link(source, &path).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(error(format!("cannot publish prepared file: {e}"))),
+        }
+        let publication = (|| -> std::io::Result<()> {
+            let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+            temp.write_all(metadata)?;
+            temp.as_file().sync_all()?;
+            temp.persist_noclobber(path.with_extension("mp4.json"))
+                .map_err(|e| e.error)?;
+            Ok(())
+        })();
+        match publication {
+            Ok(()) => return Ok(path),
+            Err(cause) => {
+                // Only remove the media link successfully created by this call.
+                tokio::fs::remove_file(&path)
+                    .await
+                    .map_err(|e| error(format!("cannot remove unpublished prepared file: {e}")))?;
+                if cause.kind() != std::io::ErrorKind::AlreadyExists {
+                    return Err(error(format!("cannot publish cache metadata: {cause}")));
+                }
+            }
+        }
+    }
+    Err(error(
+        "could not allocate an unused prepared-media filename",
+    ))
+}
+
 async fn fingerprint(path: &Path, cancel: &CancellationToken) -> Result<String, YeetError> {
     let mut file = tokio::fs::File::open(path)
         .await
@@ -79,7 +141,6 @@ async fn fingerprint(path: &Path, cancel: &CancellationToken) -> Result<String, 
 
 async fn cached(
     parent: &Path,
-    prefix: &str,
     key: &str,
     probe: &ProbeOptions,
     options: &TranscodeOptions,
@@ -109,7 +170,12 @@ async fn cached(
         let Some(name) = name.to_str() else {
             continue;
         };
-        if !name.starts_with(prefix) || !name.ends_with(".mp4.json") {
+        // The readable stem is not an identity check. This also permits reuse
+        // of existing entries with previously longer tags or truncated names.
+        let matches_tag = name
+            .rsplit_once(".yeet-")
+            .is_some_and(|(_, suffix)| suffix.starts_with(&key[..KEY_TAG_LEN]));
+        if !matches_tag || !name.ends_with(".mp4.json") {
             continue;
         }
         let meta = tokio::fs::symlink_metadata(entry.path()).await;
@@ -185,21 +251,14 @@ pub async fn prepare(
     digest.update(source_hash.as_bytes());
     digest.update(recipe.as_bytes());
     let key = hex(digest.finish().as_ref());
-    let stem: String = source
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .chars()
-        .take(40)
-        .collect();
-    let prefix = format!("{stem}.yeet-{}-", &key[..20]);
+    let prefix = filename_prefix(&source, &key);
     let adjacent = source
         .parent()
         .ok_or_else(|| error("source has no parent directory"))?;
     let mut parent = cache.directory.clone().unwrap_or_else(|| adjacent.into());
     // Read valid entries before testing writability: a read-only folder can still
     // contain a perfectly reusable completed output.
-    if let Some(prepared) = cached(&parent, &prefix, &key, probe, options, cancel).await? {
+    if let Some(prepared) = cached(&parent, &key, probe, options, cancel).await? {
         event(Event::Reused(prepared.info.path.clone()));
         return Ok(prepared);
     }
@@ -218,7 +277,7 @@ pub async fn prepare(
         }
         parent = transcode::cache_directory()?;
         event(Event::Fallback(parent.clone()));
-        if let Some(prepared) = cached(&parent, &prefix, &key, probe, options, cancel).await? {
+        if let Some(prepared) = cached(&parent, &key, probe, options, cancel).await? {
             event(Event::Reused(prepared.info.path.clone()));
             return Ok(prepared);
         }
@@ -243,39 +302,100 @@ pub async fn prepare(
     if cancel.is_cancelled() {
         return Err(YeetError::Cancelled);
     }
-    let mut nonce = [0; 8];
-    getrandom::fill(&mut nonce).map_err(|e| error(e.to_string()))?;
-    let path = parent.join(format!("{prefix}{}.mp4", hex(&nonce)));
-    let manifest_path = path.with_extension("mp4.json");
-    // Hard-link publishing is atomic and never replaces another file. Concurrent
-    // producers use different suffixes, so readers never see a partially written MP4.
-    tokio::fs::hard_link(&prepared.info.path, &path)
-        .await
-        .map_err(|e| error(format!("cannot publish prepared file: {e}")))?;
-    let publication = (|| -> Result<(), YeetError> {
-        let manifest = Manifest {
-            version: RECIPE_VERSION,
-            key,
-            output_sha256,
-            output_size,
-        };
-        let mut temp =
-            tempfile::NamedTempFile::new_in(&parent).map_err(|e| error(e.to_string()))?;
-        temp.write_all(&serde_json::to_vec(&manifest)?)
-            .map_err(|e| error(e.to_string()))?;
-        temp.as_file()
-            .sync_all()
-            .map_err(|e| error(e.to_string()))?;
-        temp.persist_noclobber(&manifest_path)
-            .map_err(|e| error(format!("cannot publish cache metadata: {e}")))?;
-        Ok(())
-    })();
-    if let Err(cause) = publication {
-        let _ = tokio::fs::remove_file(&path).await; // Only the link created by this call.
-        return Err(cause);
-    }
+    let manifest = Manifest {
+        version: RECIPE_VERSION,
+        key,
+        output_sha256,
+        output_size,
+    };
+    let path = publish(
+        &parent,
+        &prefix,
+        &prepared.info.path,
+        &serde_json::to_vec(&manifest)?,
+        cancel,
+        || {
+            let mut nonce = [0; GENERATION_BYTES];
+            getrandom::fill(&mut nonce).map_err(|e| error(e.to_string()))?;
+            Ok(hex(&nonce))
+        },
+    )
+    .await?;
     prepared.close()?;
     let output = media::inspect(&path, probe, cancel).await?;
     event(Event::Stored(path));
     Ok(PreparedMedia::retained(output))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readable_names_are_preserved_with_a_utf8_safe_metadata_budget() {
+        let key = "a".repeat(64);
+        let stem = "Sample.Series.S01E01.1080p.10bit.WEBRip.Extended.Release.Name";
+        assert_eq!(
+            filename_prefix(Path::new(&format!("{stem}.mkv")), &key),
+            format!("{stem}.yeet-aaaaaaaaaaaa-")
+        );
+        for stem in ["a".repeat(251), "界".repeat(80), "é".repeat(120)] {
+            let prefix = filename_prefix(Path::new(&format!("{stem}.mkv")), &key);
+            let readable = prefix.split(".yeet-").next().unwrap();
+            assert!(stem.starts_with(readable));
+            assert!(readable.len() > 200);
+            assert!(format!("{prefix}01234567.mp4.json").len() <= MAX_NAME_BYTES);
+        }
+    }
+
+    #[tokio::test]
+    async fn publication_retries_colliding_media_and_orphan_metadata_without_overwriting() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("prepared.mp4");
+        std::fs::write(&source, b"new output").unwrap();
+        let prefix = "movie.yeet-0123456789ab-";
+        let media = dir.path().join(format!("{prefix}00000001.mp4"));
+        let orphan = dir.path().join(format!("{prefix}00000002.mp4.json"));
+        std::fs::write(&media, b"existing media").unwrap();
+        std::fs::write(&orphan, b"existing metadata").unwrap();
+        let mut next = 0;
+        let path = publish(
+            dir.path(),
+            prefix,
+            &source,
+            b"new metadata",
+            &CancellationToken::new(),
+            || {
+                next += 1;
+                Ok(format!("{next:08x}"))
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(next, 3);
+        assert_eq!(std::fs::read(&path).unwrap(), b"new output");
+        assert_eq!(
+            std::fs::read(path.with_extension("mp4.json")).unwrap(),
+            b"new metadata"
+        );
+        assert_eq!(std::fs::read(&media).unwrap(), b"existing media");
+        assert_eq!(std::fs::read(&orphan).unwrap(), b"existing metadata");
+        assert!(!dir.path().join(format!("{prefix}00000002.mp4")).exists());
+        let mut attempts = 0;
+        let failed = publish(
+            dir.path(),
+            prefix,
+            &source,
+            b"unused",
+            &CancellationToken::new(),
+            || {
+                attempts += 1;
+                Ok("00000001".into())
+            },
+        )
+        .await;
+        assert!(failed.is_err());
+        assert_eq!(attempts, PUBLICATION_ATTEMPTS);
+        assert_eq!(std::fs::read(&media).unwrap(), b"existing media");
+    }
 }

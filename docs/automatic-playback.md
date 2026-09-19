@@ -60,11 +60,28 @@ By default, preparation places an MP4 and `.mp4.json` completion record beside t
 canonical source, following symlinks. A name has this form:
 
 ```text
-movie.mkv.yeet-<recipe-key>-<generation>.mp4
-movie.mkv.yeet-<recipe-key>-<generation>.mp4.json
+movie.yeet-<12-hex-key-tag>-<8-hex-generation>.mp4
+movie.yeet-<12-hex-key-tag>-<8-hex-generation>.mp4.json
 ```
 
-The readable source-name prefix is truncated when necessary. The key includes
+The full source stem (without its old extension) is preserved, replacing the
+previous fixed 40-character cutoff. Only exceptionally long names are shortened:
+both the MP4 and its metadata sidecar stay within a 255-byte filename budget,
+leaving up to 219 UTF-8 bytes for the source stem without splitting a character.
+This fits the usual Linux filename limit, including
+[ext4's 255-byte limit](https://docs.kernel.org/filesystems/ext4/directory.html).
+
+The visible key tag is 12 hexadecimal characters (48 bits); the generation is a
+random 8-character hexadecimal ID (32 bits), not another content hash. Neither is
+a correctness guarantee on its own. The metadata retains the full SHA-256 cache
+key and output digest. A short-tag collision cannot select the wrong cached file:
+the full key must match before reuse. Publishing uses atomic no-replace operations
+for both files; an occupied media or metadata name triggers a fresh random ID,
+up to 32 attempts, without repeating the conversion or overwriting existing data.
+Existing files with the older naming scheme remain reusable under their current
+names; renaming them is unnecessary.
+
+The key includes
 the canonical source path, full source SHA-256 digest, preparation mode, resolved
 profile, selected image track for burn-in, and recipe version. Recipe version 1 describes the current output
 settings; output-affecting changes must bump it. External subtitle changes do not

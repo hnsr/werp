@@ -216,3 +216,100 @@ async fn concurrent_producers_do_not_overwrite_each_other() {
     let reused = fixture.prepare(&cache, &cancel, |_| {}).await.unwrap();
     reused.close().unwrap();
 }
+
+#[tokio::test]
+async fn full_names_short_tags_and_existing_prepared_names_remain_reusable() {
+    let mut fixture = Fixture::new();
+    let stem = "Sample.Series.S01E01.1080p.10bit.WEBRip.Extended.Release.Name";
+    let source = fixture.source.with_file_name(format!("{stem}.mkv"));
+    fs::rename(&fixture.source, &source).unwrap();
+    fixture.source = source;
+    let cancel = CancellationToken::new();
+    let output = fixture
+        .prepare(&CacheOptions::default(), &cancel, |_| {})
+        .await
+        .unwrap();
+    let path = output.info.path.clone();
+    output.close().unwrap();
+    let name = path.file_name().unwrap().to_str().unwrap();
+    let suffix = name
+        .strip_prefix(&format!("{stem}.yeet-"))
+        .unwrap()
+        .strip_suffix(".mp4")
+        .unwrap();
+    let (tag, generation) = suffix.split_once('-').unwrap();
+    assert_eq!(tag.len(), 12);
+    assert_eq!(generation.len(), 8);
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(path.with_extension("mp4.json")).unwrap()).unwrap();
+    let key = manifest["key"].as_str().unwrap();
+    assert_eq!(key.len(), 64);
+    assert_eq!(manifest["output_sha256"].as_str().unwrap().len(), 64);
+    let old_stem: String = fixture
+        .source
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .chars()
+        .take(40)
+        .collect();
+    let old = path.with_file_name(format!(
+        "{old_stem}.yeet-{}-0123456789abcdef.mp4",
+        &key[..20]
+    ));
+    fs::rename(&path, &old).unwrap();
+    fs::rename(
+        path.with_extension("mp4.json"),
+        old.with_extension("mp4.json"),
+    )
+    .unwrap();
+    fs::remove_file(&fixture.ffmpeg).unwrap();
+    let reused = fixture
+        .prepare(&CacheOptions::default(), &cancel, |_| {})
+        .await
+        .unwrap();
+    assert_eq!(reused.info.path, old);
+    reused.close().unwrap();
+    assert_eq!(fs::read(&fixture.source).unwrap(), b"original");
+
+    // Exercise the actual filesystem with a long multibyte source name too.
+    let mut unicode = Fixture::new();
+    let source = unicode
+        .source
+        .with_file_name(format!("{}.mkv", "界".repeat(80)));
+    fs::rename(&unicode.source, &source).unwrap();
+    unicode.source = source;
+    let prepared = unicode
+        .prepare(&CacheOptions::default(), &cancel, |_| {})
+        .await
+        .unwrap();
+    let metadata = prepared.info.path.with_extension("mp4.json");
+    assert!(metadata.exists());
+    assert!(metadata.file_name().unwrap().as_encoded_bytes().len() <= 255);
+    prepared.close().unwrap();
+}
+
+#[tokio::test]
+async fn matching_short_tag_never_substitutes_for_the_full_cache_key() {
+    let fixture = Fixture::new();
+    let cancel = CancellationToken::new();
+    let options = CacheOptions::default();
+    let output = fixture.prepare(&options, &cancel, |_| {}).await.unwrap();
+    let path = output.info.path.clone();
+    output.close().unwrap();
+    let metadata = path.with_extension("mp4.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&metadata).unwrap()).unwrap();
+    let mut other_key = manifest["key"].as_str().unwrap().to_owned();
+    let replacement = if &other_key[12..13] == "0" { "1" } else { "0" };
+    other_key.replace_range(12..13, replacement);
+    manifest["key"] = other_key.into();
+    let foreign_metadata = serde_json::to_vec(&manifest).unwrap();
+    fs::write(&metadata, &foreign_metadata).unwrap();
+    let fresh = fixture.prepare(&options, &cancel, |_| {}).await.unwrap();
+    assert_ne!(fresh.info.path, path);
+    assert_eq!(fs::read(&metadata).unwrap(), foreign_metadata);
+    assert_eq!(fs::read(&path).unwrap(), b"complete prepared file");
+    fresh.close().unwrap();
+}

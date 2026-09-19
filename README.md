@@ -151,10 +151,14 @@ valid cache hit does not require FFmpeg for media preparation.
 ### Persistent prepared files
 
 Prepared files are stored beside the **canonical original file**, following
-symlinks. Names look like `movie.mkv.yeet-<key>-<generation>.mp4`, with a small
+symlinks. Names look like `movie.yeet-<12-hex-key-tag>-<8-hex-generation>.mp4`, with a small
 `.mp4.json` completion record. Only registered media/subtitles are served; the
 sidecar is not exposed. If the source directory is not writable, Yeet announces
 a fallback to `$XDG_CACHE_HOME/yeet` or `$HOME/.cache/yeet`.
+The full source stem is preserved unless it exceeds the filename budget; Unicode
+characters are never split. Short tags are backed by full SHA-256 validation and
+no-overwrite publication with collision retries. Older prepared filenames remain
+reusable. See [naming and collision handling](docs/automatic-playback.md#storage-and-reuse).
 
 Reuse verifies a full SHA-256 fingerprint of the source, its canonical path,
 the preparation mode/profile/recipe version, the output digest, and output media
