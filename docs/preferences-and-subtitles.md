@@ -4,7 +4,8 @@ Implemented 2026-09-19. Local and simulated-receiver verification is described
 below. The user confirmed automatic English embedded subtitles and interrupted
 playback resume on the TV, followed by explicit Dutch selection, restart, and
 normal completion clearing the saved position. Automatic external SRT loading and
-subtitles off also passed. Optional remaining TV checks are listed below. No TV
+subtitles off also passed, followed by embedded PGS burn-in. Optional remaining
+TV checks are listed below. No TV
 was contacted during implementation. Earlier seeking and long-duration checks remain deferred.
 
 ## Configuration
@@ -77,8 +78,9 @@ on the receiver. Automatic mode selects full conversion and explains why. An
 explicit Direct/Remux/Audio mode fails rather than violating its no-video-encoding
 constraint. Selecting another track or disabling subtitles uses a distinct cache
 recipe, so an output with burned captions is never reused for a different choice.
-PGS burn-in was checked locally; DVD/DVB use the same route but have no local
-representative hardware validation. External image-subtitle files and OCR are
+PGS burn-in passed local rendered-frame verification and user-confirmed TV
+playback. DVD/DVB use the same route but remain unverified with representative
+samples. External image-subtitle files and OCR are
 not implemented. Existing SDR/HDR and audio-track limits still apply.
 
 The library scan found 53 of 75 videos with embedded subtitles: 145 SubRip,
@@ -128,8 +130,9 @@ confirmed English captions and successful resume after interruption. A subsequen
 check confirmed explicit Dutch track selection with restart, and playback starting
 from zero after normal completion without the restart flag. The external fixture
 also passed automatic same-name SRT loading and a second run with no captions
-when `--no-subtitles` was supplied. Image-caption playback remains an optional
-pending hardware check. Automatic Dutch preference has local test coverage only. This report does
+when `--no-subtitles` was supplied. The user also confirmed embedded PGS burn-in
+on the TV using the short image-caption fixture. Automatic Dutch preference has
+local test coverage only. This report does
 not establish subtitle synchronization after arbitrary seeking.
 
 `cargo test --locked --workspace -- --include-ignored` passed all 68 tests,

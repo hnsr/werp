@@ -15,8 +15,8 @@ Configuration, automatic subtitle selection/extraction, image-subtitle burn-in,
 preferred receivers, and persistent resume are implemented. Automatic English
 embedded captions, explicit Dutch selection, restart, interrupted playback resume,
 completion clearing the saved position, automatic external SRT loading, and
-subtitles off are confirmed on the TV. Optional image-caption and automatic Dutch
-preference checks remain. See [preferences and subtitles](preferences-and-subtitles.md).
+subtitles off, and embedded PGS burn-in are confirmed on the TV. An optional
+automatic Dutch preference check remains. See [preferences and subtitles](preferences-and-subtitles.md).
 Updated: 2026-09-19.
 Requirements: [outline.md](outline.md).
 
@@ -324,8 +324,8 @@ captions and resume confirmed on TV, remaining checks pending.**
   explicit file; unrelated or language-suffixed basenames are not guessed.
 - Explicit file/track/off options override automatic settings in TOML.
 - Burn embedded PGS/DVD/DVB subtitles into full video conversion; key reusable
-  output by selected image track. PGS has local rendered-frame verification;
-  DVD/DVB and image-caption playback on the receiver remain unverified.
+  output by selected image track. PGS passed local rendered-frame verification
+  and user-confirmed TV playback; DVD/DVB remain unverified.
 - ASS/SSA text conversion is supported with a styling-loss warning. Faithful
   complex ASS rendering, external bitmap files, and OCR remain outside this scope.
 - Report audio tracks in `inspect`; implement explicit audio selection with the
@@ -447,8 +447,8 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-The core subtitle/resume TV checklist passed. Optional checks for image captions
-and automatic Dutch preference remain available using
+The core subtitle/resume TV checklist and PGS burn-in passed. An optional check
+for automatic Dutch preference remains available using
 the short fixture and checklist in [preferences and subtitles](preferences-and-subtitles.md).
 The earlier M5 hardware batch passed. Seeking and longer playback on the expanded preparation
 paths, especially copied HEVC, are deferred until controls are available or the

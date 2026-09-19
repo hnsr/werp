@@ -9,7 +9,7 @@ Configuration, automatic embedded subtitles, preferred devices, and playback
 resume are implemented. Automatic English embedded captions and interrupted
 playback resume are confirmed on the TV, along with explicit Dutch selection,
 restart, completion clearing the saved position, automatic external SRT loading,
-and subtitles off. Optional remaining checks are in the checklist.
+subtitles off, and embedded PGS burn-in. Optional remaining checks are in the checklist.
 
 ## Development setup
 
