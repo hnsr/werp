@@ -89,6 +89,12 @@ alternatives. Common metadata included `eng`, `dut`, `English`, `English SDH`,
 `Forced`, and `Nederlands`; these informed the ranking above. Private filenames
 and raw metadata remain under ignored `samples/`.
 
+The user considers this subtitle scope sufficient for now: all subtitle codec
+types found in the provided sample set are supported, including external SRT.
+Further format expansion and optional subtitle checks are parked until a real
+file exposes a gap. This is format coverage, not a claim that every sample and
+subtitle stream has been played through on the receiver.
+
 ## Device selection
 
 Explicit `--device NAME/ID` or `--host IP` wins. Otherwise, Procast tries the

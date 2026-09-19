@@ -314,8 +314,10 @@ one another. Session takeover ends Procast's ownership cleanly.
 
 ### M4 — Better subtitle and audio selection
 
-**Subtitle implementation complete within the scope below; automatic English
-captions and resume confirmed on TV, remaining checks pending.**
+**Current subtitle scope accepted as complete.** All subtitle codec types in the
+provided sample set are supported. Core subtitle/resume TV checks and PGS burn-in
+passed. Further subtitle expansion and optional checks are parked until a real
+file exposes a gap; explicit audio-track selection remains separate work.
 
 - Extract embedded text to WebVTT, with absolute stream-index selection.
 - Automatically select by ordered English/Dutch preferences, language tags and
@@ -447,9 +449,10 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-The core subtitle/resume TV checklist and PGS burn-in passed. An optional check
-for automatic Dutch preference remains available using
-the short fixture and checklist in [preferences and subtitles](preferences-and-subtitles.md).
+The current subtitle scope is accepted as complete for the provided sample set.
+Further subtitle expansion and optional checks are parked. The short fixture and
+checklist in [preferences and subtitles](preferences-and-subtitles.md) remain
+available for regression testing when needed.
 The earlier M5 hardware batch passed. Seeking and longer playback on the expanded preparation
 paths, especially copied HEVC, are deferred until controls are available or the
 user resumes those checks. They do not block choosing the next development task.
