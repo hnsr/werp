@@ -1,4 +1,7 @@
 #include "../window.h"
+#include "../conversionwindow.h"
+#include <QLabel>
+#include <QRegularExpression>
 #include <QComboBox>
 #include <QFile>
 #include <QJsonDocument>
@@ -28,11 +31,68 @@ class WindowTest : public QObject {
         for (const auto &call : calls(path)) if (call["method"]=="start") result << call["params"].toObject();
         return result;
     }
-    static void screenshot(Window &window,const QString &name) {
+    static void screenshot(QWidget &window,const QString &name) {
         const auto output=qEnvironmentVariable("YEET_UI_SCREENSHOTS");
         if (!output.isEmpty()) { QDir().mkpath(output); QVERIFY(window.grab().save(output+"/"+name+".png")); }
     }
 private slots:
+    void destroying_active_backend_does_not_call_destroyed_callback_state() {
+        QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        auto backend=std::make_unique<Backend>(helper);
+        backend->start(); QTRY_VERIFY(backend->ready());
+        QTest::ignoreMessage(QtWarningMsg,QRegularExpression("QProcess: Destroyed while process .* is still running."));
+        backend.reset(); // Emergency destruction, as when a test assertion exits early.
+    }
+    void conversion_progress_completion_and_countdown() {
+        QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        ConversionWindow window(helper,dir.filePath("complete video.mkv")); window.show();
+        const auto button=window.findChild<QPushButton *>("conversionButton");
+        const auto progress=window.findChild<QProgressBar *>("conversionProgress");
+        QTRY_COMPARE(progress->value(),42);
+        QCOMPARE(button->text(),QString("Cancel"));
+        QVERIFY(window.findChild<QLabel *>("conversionSource")->text().contains("HEVC"));
+        screenshot(window,"conversion-progress");
+        QTRY_COMPARE(button->text(),QString("Close"));
+        QCOMPARE(progress->value(),100);
+        QVERIFY(window.findChild<QLabel *>("conversionOutput")->text().contains("test.yeet-prepared.mp4"));
+        QVERIFY(window.findChild<QLabel *>("conversionTarget")->text().contains("AAC"));
+        QVERIFY(window.isVisible()); screenshot(window,"conversion-complete");
+        QTest::qWait(1000); QVERIFY(window.isVisible());
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isVisible(),6000);
+        for (const auto &call : calls(helper+".log")) {
+            QVERIFY(call["method"]!="discover"); QVERIFY(call["method"]!="start"); QVERIFY(call["method"]!="inspect");
+        }
+    }
+    void conversion_cancel_failure_and_window_close() {
+        QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        ConversionWindow cancelled(helper,dir.filePath("long video.mkv")); cancelled.show();
+        auto *button=cancelled.findChild<QPushButton *>("conversionButton");
+        QTRY_COMPARE(cancelled.findChild<QProgressBar *>("conversionProgress")->value(),42);
+        QTest::mouseClick(button,Qt::LeftButton);
+        QTRY_COMPARE(button->text(),QString("Close"));
+        QVERIFY(cancelled.findChild<QLabel *>("conversionStatus")->text().contains("cleanup completed"));
+        QVERIFY(cancelled.findChild<QLabel *>("conversionCountdown")->text().isEmpty());
+        QTest::qWait(100); QCOMPARE(button->text(),QString("Close")); // Ignore stale progress.
+        QTest::mouseClick(button,Qt::LeftButton); QTRY_VERIFY(!cancelled.isVisible());
+        ConversionWindow failed(helper,dir.filePath("fail.mkv")); failed.show();
+        QTRY_COMPARE(failed.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
+        QVERIFY(failed.findChild<QLabel *>("conversionStatus")->text().contains("Test conversion failure"));
+        QVERIFY(failed.findChild<QLabel *>("conversionCountdown")->text().isEmpty());
+        screenshot(failed,"conversion-failed"); failed.close(); QTRY_VERIFY(!failed.isVisible());
+        ConversionWindow active(helper,dir.filePath("long.mkv")); active.show();
+        QTRY_COMPARE(active.findChild<QProgressBar *>("conversionProgress")->value(),42);
+        active.close(); QTRY_VERIFY(!active.isVisible());
+        ConversionWindow early(helper,dir.filePath("long.mkv")); early.show();
+        QTest::mouseClick(early.findChild<QPushButton *>("conversionButton"),Qt::LeftButton);
+        QTRY_COMPARE(early.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
+        early.close(); QTRY_VERIFY(!early.isVisible());
+    }
     void explicit_choices_preparation_controls_and_stop() {
         QTemporaryDir dir;
         const auto helper=dir.filePath("backend.py");

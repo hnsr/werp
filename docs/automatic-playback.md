@@ -83,8 +83,9 @@ names; renaming them is unnecessary.
 
 The key includes
 the canonical source path, full source SHA-256 digest, preparation mode, resolved
-profile, selected image track for burn-in, and recipe version. Recipe version 1 describes the current output
-settings; output-affecting changes must bump it. External subtitle changes do not
+profile, selected image track for burn-in, and recipe versions. The base recipe
+is version 1; encoded audio additionally uses the versioned stereo-matrix recipe
+described below. Output-affecting changes must update the relevant recipe version. External subtitle changes do not
 invalidate the prepared video.
 
 A cache hit verifies the completion record, output size, full output SHA-256, and
@@ -207,3 +208,24 @@ alone does not count as a hardware pass. Seeking and long-duration playback,
 especially for newly supported copied HEVC paths, are deferred rather than
 validated. Revisit them when controls are available or the user resumes those
 checks. M3 controls remain parked; this batch does not depend on phone controls.
+
+## Stereo downmix
+
+Audio encoding uses an explicit layout-aware FFmpeg stereo matrix. Centre and
+surround coefficients are 0.70710678 before normalization (the usual -3 dB
+contribution); centre reaches both left and right, and side/back surrounds go to
+the corresponding side. LFE is not added to ordinary stereo. Matrix encoding is
+`none`, and `rematrix_maxval=1` normalizes the sum to avoid overload at the mixing
+stage. Existing mono/stereo audio is not given a dialogue boost. The audio remains
+AAC-LC, 192 kbps, 48 kHz; stream-copy/remux paths do not alter samples.
+
+This guards against dropped dialogue channels and overload during downmixing.
+It does not guarantee subjective intelligibility, fix a poor original mix, or
+limit every reconstructed AAC peak. No loudness compression, EQ or dialogue
+enhancement is applied. See [FFmpeg's resampler controls](https://www.ffmpeg.org/ffmpeg-resampler.html).
+
+Encoded-audio cache recipes include `stereo-matrix-v1`; older audio conversions
+remain on disk but are not reused for the updated recipe. Remux and silent-video
+recipes are unchanged. Synthetic 5.1, 5.1(side), and 7.1 tests verify centre,
+surround routing and overload protection; generated media tests also decode the
+resulting AAC and check centre-only audio is audible in both channels.

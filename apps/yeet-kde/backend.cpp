@@ -27,6 +27,12 @@ Backend::Backend(QString program, QObject *parent, const QStringList &arguments)
         emit exited();
     });
 }
+Backend::~Backend() {
+    // QProcess may emit finished while being destroyed. Our callback state and
+    // the owning window's widgets can already be gone at that point. Normal
+    // window closure still uses shutdown() and waits for graceful helper exit.
+    disconnect(&m_process,nullptr,this,nullptr);
+}
 void Backend::start() {
     if (m_process.state() != QProcess::NotRunning) return;
     m_buffer.clear(); m_diagnostics.clear(); m_pending.clear(); m_ready = false; m_closing = false;

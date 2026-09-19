@@ -19,6 +19,11 @@ use crate::{
 const RESERVE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_PROGRESS_LINE: usize = 8192;
 
+// Ordinary stereo, with the centre present equally on both sides and normalized
+// coefficients to avoid overload when full-scale channels are summed. FFmpeg's
+// layout-aware matrix also handles side/back surrounds without assuming indices.
+pub(crate) const STEREO_FILTER: &str = "aresample=out_chlayout=stereo:center_mix_level=0.70710678:surround_mix_level=0.70710678:lfe_mix_level=0:matrix_encoding=none:rematrix_maxval=1";
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TranscodeMode {
     #[default]
@@ -349,7 +354,7 @@ pub async fn prepare(
         }
         if input.audio.is_some() {
             if options.mode == TranscodeMode::Remux { command.args(["-c:a", "copy"]); }
-            else { command.args(["-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"]); }
+            else { command.args(["-af", STEREO_FILTER, "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"]); }
         }
         command.args(["-movflags", "+faststart", "-f", "mp4"]).arg(&path);
         update(TranscodeProgress { encoded_seconds: 0.0, fraction: 0.0 });
@@ -398,6 +403,88 @@ pub async fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "requires real FFmpeg with aresample and lavfi"]
+    fn stereo_matrix_preserves_centre_and_surrounds_without_sum_overload() {
+        fn mix(layout: &str, levels: &[f32]) -> [f32; 2] {
+            let source = format!(
+                "aevalsrc={}:s=48000:d=0.1:c={layout}",
+                levels
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("|")
+            );
+            let output = std::process::Command::new("ffmpeg")
+                .args([
+                    "-nostdin",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &source,
+                    "-af",
+                    STEREO_FILTER,
+                    "-c:a",
+                    "pcm_f32le",
+                    "-f",
+                    "f32le",
+                    "-",
+                ])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let samples: Vec<f32> = output
+                .stdout
+                .chunks_exact(4)
+                .map(|s| f32::from_le_bytes(s.try_into().unwrap()))
+                .collect();
+            assert!(samples.len() > 100);
+            assert!(
+                samples.iter().all(|s| s.is_finite() && s.abs() <= 1.00001),
+                "the mixing stage must not overload"
+            );
+            [samples[100], samples[101]]
+        }
+        for (layout, channels) in [("5.1", 6), ("5.1(side)", 6), ("7.1", 8)] {
+            let mut levels = vec![0.0; channels];
+            levels[0] = 0.5;
+            let front = mix(layout, &levels);
+            assert!(front[0] > 0.05 && front[1].abs() < 0.0001);
+            levels[0] = 0.0;
+            levels[2] = 0.5;
+            let centre = mix(layout, &levels);
+            assert!(
+                (centre[0] - centre[1]).abs() < 0.0001,
+                "dialogue must reach both speakers equally"
+            );
+            assert!((centre[0] / front[0] - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.001);
+            levels[2] = 0.0;
+            for channel in 4..channels {
+                levels[channel] = 0.5;
+                let surround = mix(layout, &levels);
+                assert!(surround[channel % 2] > 0.01);
+                assert!(surround[1 - channel % 2].abs() < 0.0001);
+                levels[channel] = 0.0;
+            }
+            levels[3] = 0.5;
+            assert_eq!(
+                mix(layout, &levels),
+                [0.0, 0.0],
+                "LFE is not added to ordinary stereo"
+            );
+            mix(layout, &vec![1.0; channels]);
+        }
+        let stereo = mix("stereo", &[0.2, 0.4]);
+        assert!((stereo[0] - 0.2).abs() < 0.0001 && (stereo[1] - 0.4).abs() < 0.0001);
+        let mono = mix("mono", &[0.5]);
+        assert!(mono[0] > 0.3 && (mono[0] - mono[1]).abs() < 0.0001);
+    }
     #[tokio::test]
     async fn progress_is_incremental_bounded_and_finite() {
         let mut updates = Vec::new();

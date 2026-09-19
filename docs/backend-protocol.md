@@ -27,6 +27,8 @@ changes require a version bump. Frontends should ignore additional response fiel
 | `inspect` | `file: string` | `media`, `subtitles`, `suggested_subtitles`, `subtitle_warning`, `resume_position`, `resume_warning` |
 | `discover` | Omit params | `devices: array` from a five-second IPv4 scan |
 | `start` | `file`, `device_id`, `subtitles`, `position` | `session_id: integer` |
+| `convert` | `file: string` | `operation_id: integer` |
+| `cancel_conversion` | `operation_id` | Empty object after conversion cleanup |
 | `pause`, `play` | `session_id` | Empty object after receiver acknowledgement |
 | `seek` | `session_id`, `position` | Empty object after receiver acknowledgement |
 | `stop` | `session_id` | Empty object after session cleanup |
@@ -60,7 +62,7 @@ Errors have the form:
 ```
 
 Error codes are `invalid_request`, `protocol_version`, `busy`, `operation_failed`,
-`invalid_device`, `invalid_position`, `invalid_session`, and `not_playing`.
+`invalid_device`, `invalid_position`, `invalid_session`, `invalid_operation`, and `not_playing`.
 Malformed input can produce a null response ID when no ID can be recovered.
 Display the message; do not parse its prose to drive frontend behavior.
 
@@ -129,3 +131,36 @@ or control requests and 16 queued stop acknowledgements. Output uses a bounded
 enqueue wait. An unresponsive frontend cannot stall the media session indefinitely.
 The Qt client additionally bounds buffered output to 8 MiB and pending requests
 to 32. Large libraries are not sent wholesale: inspection covers one file.
+
+## Offline conversion
+
+`convert` starts receiver-independent preparation targeting the conservative
+H.264/AAC MP4 profile. Its acknowledgement precedes events. `start` and `convert`
+reject overlapping work with `busy`; IDs share the helper's monotonic sequence.
+No CLI preferences, discovery, subtitle selection, HTTP server or resume state
+are involved. Completed output uses the shared retained cache. An already
+compatible input completes without invoking FFmpeg or creating a duplicate.
+
+```json
+{"id":10,"method":"convert","params":{"file":"/path/to/video.mkv"}}
+{"id":10,"ok":true,"result":{"operation_id":2}}
+{"event":"conversion_state","operation_id":2,"state":{"phase":"preparing","source":null,"target":null,"operation":"Copying video and audio into MP4","fraction":0.42,"message":"Copying video and audio into MP4","output":null,"reused":false,"already_compatible":false,"warnings":[],"error":null}}
+{"id":11,"method":"cancel_conversion","params":{"operation_id":2}}
+```
+
+Snapshots contain `phase` (`inspecting`, `preparing`, `completed`, `cancelled`,
+`failed`), nullable `source`/`target` media objects, nullable display-text
+`operation`, nullable `fraction` in 0..1, display-text `message`, nullable `output`
+path, booleans `reused`/`already_compatible`, `warnings` (strings), and nullable
+`error`. The initial target is the fixed conservative profile; `target` becomes
+actual probed output metadata on success. Fraction may reset to indeterminate
+for cache validation; it reaches 1 only on successful completion.
+
+Progress snapshots can coalesce. A reliable `conversion_ended` event carries
+`operation_id` and the complete final `state` after cleanup and inhibitor release.
+Ignore subsequent snapshots for that operation. Cancellation acknowledgements
+wait for cleanup and precede this event. Cancellation racing completion may
+still finish successfully. A stale cancellation receives `invalid_operation`.
+At most 16 cancellation acknowledgements may be pending. Shutdown, EOF and
+output failure cancel and join conversions as well as playback/query tasks.
+Auto-close timing belongs to the frontend, not the core or protocol.

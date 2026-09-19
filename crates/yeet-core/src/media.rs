@@ -25,7 +25,7 @@ impl Default for ProbeOptions {
 }
 
 /// Normalized metadata, not a promise that a receiver can play this file.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MediaInfo {
     pub path: PathBuf,
     pub container: String,
@@ -33,7 +33,7 @@ pub struct MediaInfo {
     pub streams: Vec<StreamInfo>,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct StreamInfo {
     pub index: u32,
     pub kind: String,

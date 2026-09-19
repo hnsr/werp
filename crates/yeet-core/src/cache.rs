@@ -14,7 +14,8 @@ use crate::{
     transcode::{self, PreparedMedia, TranscodeOptions, TranscodeProgress},
 };
 
-// Bump whenever output-affecting FFmpeg arguments or preparation semantics change.
+// Base recipe version. Output changes must bump this or a versioned component
+// below (the audio matrix has its own version to preserve unaffected remux hits).
 const RECIPE_VERSION: u32 = 1;
 // Filename tags are lookup hints; manifests retain the full SHA-256 values.
 const KEY_TAG_LEN: usize = 12;
@@ -242,6 +243,14 @@ pub async fn prepare(
         "v{RECIPE_VERSION}-{:?}-{:?}",
         options.mode, options.playback_policy
     );
+    // Keep remux and silent-video recipes reusable. Audio encodes now use an
+    // explicit normalized stereo matrix; old encoded audio must not masquerade
+    // as output produced by the new recipe.
+    if options.mode != transcode::TranscodeMode::Remux
+        && info.streams.iter().any(|s| s.kind == "audio")
+    {
+        recipe.push_str("-stereo-matrix-v1");
+    }
     if let Some(index) = options.bitmap_subtitle {
         recipe.push_str(&format!("-bitmap-{index}"));
     }

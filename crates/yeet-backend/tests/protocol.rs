@@ -16,6 +16,9 @@ struct Helper {
 }
 impl Helper {
     fn new(probe: Option<&Path>, state: &Path) -> Self {
+        Self::with_ffmpeg(probe, None, state)
+    }
+    fn with_ffmpeg(probe: Option<&Path>, ffmpeg: Option<&Path>, state: &Path) -> Self {
         let mut command = Command::new(env!("CARGO_BIN_EXE_yeet-backend"));
         command
             .arg("--no-inhibit-sleep")
@@ -23,6 +26,9 @@ impl Helper {
             .env("XDG_CONFIG_HOME", state.with_extension("config"));
         if let Some(probe) = probe {
             command.arg("--ffprobe").arg(probe);
+        }
+        if let Some(ffmpeg) = ffmpeg {
+            command.arg("--ffmpeg").arg(ffmpeg);
         }
         let mut child = command
             .stdin(Stdio::piped())
@@ -197,4 +203,138 @@ fn eof_cancels_and_reaps_an_active_probe() {
     drop(helper.child.stdin.take());
     helper.wait();
     assert!(!Path::new(&format!("/proc/{}", pid.trim())).exists());
+}
+
+#[test]
+fn conversion_reports_noop_and_failure_without_device_or_resume_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let probe = dir.path().join("probe");
+    fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(
+        dir.path().join("probe.json"),
+        include_str!("../../yeet-core/tests/fixtures/h264.json"),
+    )
+    .unwrap();
+    let file = dir.path().join("video.mp4");
+    fs::write(&file, "fixture").unwrap();
+    let state = dir.path().join("state");
+    let mut helper = Helper::with_ffmpeg(Some(&probe), Some(&dir.path().join("no-ffmpeg")), &state);
+    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+    assert_eq!(helper.read()["ok"], true);
+    for (id, source, phase) in [
+        (2, file.clone(), "completed"),
+        (3, dir.path().join("missing"), "failed"),
+    ] {
+        helper.send(json!({"id":id,"method":"convert","params":{"file":source}}));
+        let ack = helper.read();
+        assert_eq!(ack["id"], id);
+        assert_eq!(ack["ok"], true);
+        let operation = ack["result"]["operation_id"].clone();
+        loop {
+            let event = helper.read();
+            assert_eq!(event["operation_id"], operation);
+            if event["event"] == "conversion_ended" {
+                assert_eq!(event["state"]["phase"], phase);
+                if phase == "completed" {
+                    assert_eq!(event["state"]["already_compatible"], true);
+                    assert_eq!(event["state"]["output"], json!(file));
+                } else {
+                    assert!(event["state"]["error"].is_string());
+                }
+                break;
+            }
+            assert_eq!(event["event"], "conversion_state");
+        }
+    }
+    assert!(!state.exists());
+    helper.send(json!({"id":4,"method":"shutdown"}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.wait();
+}
+
+#[test]
+fn conversion_cancel_shutdown_and_eof_reap_encoder_and_remove_partial_output() {
+    for action in ["cancel_conversion", "shutdown", "eof"] {
+        let dir = tempfile::tempdir().unwrap();
+        let probe = dir.path().join("probe");
+        fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
+        fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut metadata: Value =
+            serde_json::from_str(include_str!("../../yeet-core/tests/fixtures/h264.json")).unwrap();
+        metadata["streams"][0]["codec_name"] = json!("vp9");
+        fs::write(dir.path().join("probe.json"), metadata.to_string()).unwrap();
+        let ffmpeg = dir.path().join("ffmpeg");
+        fs::write(
+            &ffmpeg,
+            r#"#!/bin/sh
+case "$*" in *-encoders*) printf ' V libx264\n A aac\n'; exit 0;; esac
+for last do :; done
+printf 'incomplete' > "$last"
+echo $$ > "$0.pid"
+exec sleep 60
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&ffmpeg, fs::Permissions::from_mode(0o700)).unwrap();
+        let file = dir.path().join("video.mp4");
+        fs::write(&file, "source").unwrap();
+        let state = dir.path().join("state");
+        let mut helper = Helper::with_ffmpeg(Some(&probe), Some(&ffmpeg), &state);
+        helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+        assert_eq!(helper.read()["ok"], true);
+        helper.send(json!({"id":2,"method":"convert","params":{"file":file}}));
+        let ack = helper.read();
+        assert_eq!(ack["id"], 2);
+        assert_eq!(ack["ok"], true);
+        let operation = ack["result"]["operation_id"].clone();
+        let deadline = std::time::Instant::now();
+        let pid_file = dir.path().join("ffmpeg.pid");
+        while !pid_file.exists() {
+            assert!(deadline.elapsed() < Duration::from_secs(3));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let pid = fs::read_to_string(pid_file).unwrap();
+        helper.send(json!({"id":3,"method":"convert","params":{"file":file}}));
+        loop {
+            let reply = helper.read();
+            if reply["id"] == 3 {
+                assert_eq!(reply["error"]["code"], "busy");
+                break;
+            }
+        }
+        if action == "eof" {
+            drop(helper.child.stdin.take());
+        } else {
+            if action == "shutdown" {
+                helper.send(json!({"id":4,"method":action}));
+            } else {
+                helper.send(json!({"id":4,"method":action,"params":{"operation_id":operation}}));
+            }
+            loop {
+                let reply = helper.read();
+                if reply["id"] == 4 {
+                    assert_eq!(reply["ok"], true);
+                    break;
+                }
+            }
+            if action == "cancel_conversion" {
+                let ended = helper.read();
+                assert_eq!(ended["event"], "conversion_ended");
+                assert_eq!(ended["state"]["phase"], "cancelled");
+                helper.send(json!({"id":5,"method":"shutdown"}));
+                assert_eq!(helper.read()["ok"], true);
+            }
+        }
+        helper.wait();
+        assert!(!Path::new(&format!("/proc/{}", pid.trim())).exists());
+        assert_eq!(fs::read_to_string(file).unwrap(), "source");
+        assert!(!state.exists());
+        assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| {
+            let entry = entry.unwrap();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("session-") || name.contains(".yeet-")
+        }));
+    }
 }

@@ -16,7 +16,8 @@ can implement the same versioned message protocol without Rust bindings.
 conversion/cache, Cast sessions, controls, sleep inhibition, and checkpoint storage.
 The CLI owns its configurable device/subtitle automation and automatic resume.
 The UI has independent convenience defaults: the last-used device and suggested
-subtitles. Opening a file never launches playback or conversion.
+subtitles. Opening a file in the regular player never launches playback or conversion.
+The separate convert-only entry starts offline preparation immediately.
 
 CLI configuration uses `[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`.
 The last uses `auto_resume`; saving checkpoints is an independent shared capability.
@@ -53,13 +54,45 @@ exists. Both require a valid selected receiver. There are three separate screens
 3. **Playing:** show pause/play, stop, position, and a seek slider. Space toggles
    pause/play while the window is active, without repeating when held down.
 
-No conversion starts before pressing a Yeet button. Progress is a structured
+In the regular player, no conversion starts before pressing a Yeet button. Progress is a structured
 fraction from the backend; the frontend does not parse FFmpeg or CLI output.
 Disable subtitle selection during preparation and playback. Stop waits for cleanup
 and returns to startup choices. The helper stays available for another session.
 The bottom-row Quit button and Ctrl+Q use the normal window-close cleanup path.
 Ctrl+Q also works during preparation and playback. Closing the UI or losing its input pipe cancels work, releases resources, and
 exits the helper. Helper failure must be visible in the UI.
+
+## Convert-only window
+
+Open a video with **Yeet (convert only)**, or run:
+
+```sh
+./target/kde/yeet-kde --convert-only /path/to/video.mkv
+```
+
+Without a filename this mode opens a file picker. It starts preparation immediately
+and shows the filename, source/target formats, progress, and Cancel. The target is
+the conservative profile: MP4, SDR H.264 up to 1080p30/level 4.1, and optional
+mono/stereo AAC-LC. Compatible streams are copied when possible; an already
+compatible MP4 needs no conversion. Encoded audio is stereo AAC at 192 kbps/48 kHz.
+No receiver is discovered or contacted, and no HTTP listener or resume checkpoint
+is created. The helper acquires the same best-effort sleep inhibitor used by casting.
+CLI preferences and the last-used receiver do not influence this target.
+
+Completed output is validated and kept beside the canonical source, with the
+existing user-cache fallback if the directory is not writable. Existing conversions
+with the same recipe are reused. The original is kept. Subtitles are not copied or
+burned into this offline output: open the original in the player to retain Yeet's
+subtitle selection. The result path is displayed on completion.
+
+Cancel waits for cleanup before becoming Close. Closing the window or Ctrl+Q also
+cancels active work and waits for helper exit. On success, Close is available and
+a visible five-second countdown closes the window automatically. Errors and
+cancellation stay open. An already-compatible source and cache reuse are successes.
+
+The regular player still chooses its recipe for the selected receiver, which may
+be more permissive than this target. Opening the prepared MP4 directly needs no
+conversion; opening the original reuses it only when the player's recipe matches.
 
 ## Transport contract
 
@@ -72,7 +105,7 @@ are bounded. No shell command construction or parsing of CLI prose is involved.
 
 Operations: handshake, inspect (metadata/subtitles/checkpoint), discover, start
 (explicit file/device/subtitle/position), pause, play, seek, stop, and shutdown.
-Only one playback session runs per helper. Commands for expired sessions must not
+Only one playback session or offline conversion runs per helper. Commands for expired sessions must not
 affect a later session. Queries never trigger playback. Seek validation and
 receiver ownership checks belong in the backend. Lifecycle acknowledgements and
 session events distinguish a request being accepted from playback actually starting.
@@ -114,7 +147,7 @@ small Python mock helper.
 For an optional local install, configure with `-DCMAKE_INSTALL_PREFIX="$HOME/.local"`
 and run `cmake --install target/kde`. This installs the frontend under `bin`, the
 helper under the KDE libexec directory (`lib64/libexec/yeet` on this Fedora
-build), and an application/Open With desktop entry. Ensure the
+build), and both application/Open With desktop entries. Ensure the
 install's `bin` directory is in the desktop session's PATH. Installation does not
 change the default association for video files.
 
@@ -133,6 +166,9 @@ checkout, run these commands from the repository root after building:
 desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
   --set-key=Exec --set-value="\"$PWD/target/kde/yeet-kde\" --http-port 8010 %f" \
   apps/yeet-kde/org.yeet.Yeet.desktop
+desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
+  --set-key=Exec --set-value="\"$PWD/target/kde/yeet-kde\" --convert-only %f" \
+  apps/yeet-kde/org.yeet.Yeet.ConvertOnly.desktop
 update-desktop-database "${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 kbuildsycoca6
 ```
@@ -149,9 +185,8 @@ cargo test --locked --workspace -- --include-ignored
 /usr/bin/ctest --test-dir target/kde --output-on-failure
 ```
 
-The initial full suite of 72 Rust tests passed on Fedora. The updated helper
-protocol tests, shared subtitle ranking check, and all three native window test
-cases also pass; the native checks run with both Fusion and KDE Breeze styles. Formatting,
+The Rust suite covers the helper protocol, shared subtitle ranking, conversion,
+and casting. Native window tests cover the player and convert-only lifecycle; the native checks run with both Fusion and KDE Breeze styles. Formatting,
 Clippy, the CMake build, desktop-entry validation, and installation into a temporary
 prefix also passed. The Rust checks include real FFmpeg fixtures and local simulated Cast receivers.
 The new coverage verifies explicit controls, invalid seeks, ownership/cleanup,
@@ -163,7 +198,21 @@ stale events, cancellation, and helper shutdown. Another native check inspects
 through the actual Rust helper. These checks do not cast to a TV.
 
 Set `YEET_UI_SCREENSHOTS` to a local output directory when running CTest to save
-selection, preparation, and playing screenshots from the simulated UI test.
+selection, preparation, and playing screenshots from the simulated UI test, including convert-only progress and completion.
+
+## Convert-only checks
+
+Automated checks use short generated media to exercise remuxing, audio conversion,
+full video conversion, reuse, already-compatible input, and unchanged sources.
+Protocol checks cancel active encoders by explicit cancellation, shutdown, and EOF,
+verify child reaping and partial-output removal, and reject concurrent operations.
+Native tests cover progress, terminal errors, cancellation, early cancellation,
+window close, and the success countdown. None of these tests contacts a TV.
+
+For a manual check, open a video via Dolphin's new entry and confirm the formats,
+progress, output location and auto-close. Cancel a second conversion and confirm
+that it stays open with Close after cleanup. Real listening remains useful for
+subjective dialogue clarity; synthetic channel tests cannot judge a movie's mix.
 
 ## TV checklist
 

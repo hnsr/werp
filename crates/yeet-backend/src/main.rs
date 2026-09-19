@@ -9,7 +9,7 @@ use tokio::{
     task::JoinSet,
 };
 use yeet_core::{
-    CancellationToken, discovery, media, resume,
+    CancellationToken, conversion, discovery, media, resume,
     session::{self, CastRequest, Control, Phase, SessionState, Target},
     subtitles,
 };
@@ -44,6 +44,12 @@ enum Command {
         file: PathBuf,
     },
     Discover,
+    Convert {
+        file: PathBuf,
+    },
+    CancelConversion {
+        operation_id: u64,
+    },
     Start {
         file: PathBuf,
         device_id: String,
@@ -77,6 +83,12 @@ struct Active {
     cancel: CancellationToken,
     controls: session::SessionController,
     updates: watch::Receiver<SessionState>,
+    stops: Vec<u64>,
+}
+struct Converting {
+    id: u64,
+    cancel: CancellationToken,
+    updates: watch::Receiver<conversion::State>,
     stops: Vec<u64>,
 }
 enum QueryResult {
@@ -164,6 +176,8 @@ async fn run(args: Args) -> Result<(), String> {
     });
     let mut queries = JoinSet::new();
     let mut sessions = JoinSet::<(u64, Result<(), yeet_core::YeetError>)>::new();
+    let mut conversions = JoinSet::<u64>::new();
+    let mut converting: Option<Converting> = None;
     let mut pending = std::collections::HashSet::new();
     let mut devices = HashMap::<String, discovery::Device>::new();
     let mut active: Option<Active> = None;
@@ -183,6 +197,23 @@ async fn run(args: Args) -> Result<(), String> {
                     for id in ended.stops { send(&output, ok(id,json!({}))).await?; pending.remove(&id); }
                     let failure = outcome.err().filter(|e| !matches!(e, yeet_core::YeetError::Cancelled)).map(|e| e.to_string());
                     send(&output, json!({"event":"ended","session_id":session_id,"phase":phase,"error":failure})).await?;
+                }
+                completed = conversions.join_next(), if !conversions.is_empty() => {
+                    let operation_id = completed.unwrap().map_err(|e| e.to_string())?;
+                    let ended = converting.take().unwrap();
+                    for id in ended.stops { send(&output,ok(id,json!({}))).await?; pending.remove(&id); }
+                    send(&output,json!({"event":"conversion_ended","operation_id":operation_id,"state":*ended.updates.borrow()})).await?;
+                }
+                changed = async {
+                    match converting.as_mut() {
+                        Some(operation) => operation.updates.changed().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if changed.is_ok() && let Some(operation) = converting.as_mut() {
+                        let state = operation.updates.borrow_and_update().clone();
+                        let _ = output.try_send(json!({"event":"conversion_state","operation_id":operation.id,"state":state}));
+                    }
                 }
                 completed = queries.join_next(), if !queries.is_empty() => {
                     let (id, result) = completed.map(|r| r.map_err(|e| e.to_string())).transpose()?.unwrap();
@@ -277,8 +308,25 @@ async fn run(args: Args) -> Result<(), String> {
                             pending.insert(id); let cancel = lifetime.clone();
                             queries.spawn(async move { (id,discovery::discover(Duration::from_secs(5),&cancel).await.map(QueryResult::Devices).map_err(|e| e.to_string())) });
                         }
+                        Command::Convert { file } => {
+                            if active.is_some() || converting.is_some() { send(&output,error(Some(id),"busy","an operation is already active")).await?; continue; }
+                            let operation_id = next_session; next_session += 1;
+                            let cancel = lifetime.child_token();
+                            let (progress, updates) = watch::channel(conversion::State::default());
+                            let request = conversion::Request { file, probe:probe.clone(), ffmpeg:args.ffmpeg.clone(), inhibit_sleep:!args.no_inhibit_sleep, cache:Default::default() };
+                            converting = Some(Converting { id:operation_id, cancel:cancel.clone(), updates, stops:vec![] });
+                            send(&output,ok(id,json!({"operation_id":operation_id}))).await?;
+                            conversions.spawn(async move { conversion::run(request,progress,&cancel).await; operation_id });
+                        }
+                        Command::CancelConversion { operation_id } => {
+                            let Some(operation) = converting.as_mut().filter(|o| o.id == operation_id) else {
+                                send(&output,error(Some(id),"invalid_operation","conversion is no longer active")).await?; continue;
+                            };
+                            if operation.stops.len() >= 16 { send(&output,error(Some(id),"busy","cancellation is already pending")).await?; continue; }
+                            pending.insert(id); operation.stops.push(id); operation.cancel.cancel();
+                        }
                         Command::Start { file, device_id, subtitles, position } => {
-                            if active.is_some() { send(&output,error(Some(id),"busy","a session is already active")).await?; continue; }
+                            if active.is_some() || converting.is_some() { send(&output,error(Some(id),"busy","a session is already active")).await?; continue; }
                             let Some(device) = devices.get(&device_id).cloned() else {
                                 send(&output,error(Some(id),"invalid_device","select a discovered device")).await?; continue;
                             };
@@ -339,6 +387,7 @@ async fn run(args: Args) -> Result<(), String> {
     lifetime.cancel();
     reader.abort();
     while sessions.join_next().await.is_some() {}
+    while conversions.join_next().await.is_some() {}
     while queries.join_next().await.is_some() {}
     if let Some(id) = shutdown_id {
         let _ = send(&output, ok(id, json!({}))).await;

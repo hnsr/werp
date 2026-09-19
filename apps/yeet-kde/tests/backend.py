@@ -29,6 +29,28 @@ for line in sys.stdin:
         result={"devices":[
             {"id":"speaker","name":"Speaker","model":"Audio receiver","capabilities":4,"addresses":["127.0.0.1"]},
             {"id":"tv","name":"Test TV","model":"Video receiver","capabilities":1,"addresses":["127.0.0.1"]}]}
+    elif method=="convert":
+        session+=1
+        source={"container":"matroska","streams":[{"kind":"video","codec":"hevc","profile":"Main 10","width":1920,"height":1080},{"kind":"audio","codec":"ac3","channels":6}]}
+        conversion_state={"phase":"preparing","source":source,"operation":"Converting to H.264 and stereo AAC in MP4","fraction":0.42,"message":"Converting video and audio","warnings":[]}
+        emit({"id":request["id"],"ok":True,"result":{"operation_id":session}})
+        emit({"event":"conversion_state","operation_id":session,"state":conversion_state})
+        def converted(file=params["file"], operation=session, snapshot=conversion_state):
+            failed="fail" in file
+            final=dict(snapshot,phase="failed" if failed else "completed",fraction=1.0,
+                output="/tmp/test.yeet-prepared.mp4",message="Conversion complete",
+                error="Test conversion failure" if failed else None,
+                target={"container":"mp4","streams":[{"kind":"video","codec":"h264"},{"kind":"audio","codec":"aac","channels":2}]})
+            emit({"event":"conversion_ended","operation_id":operation,"state":final})
+        if "long" not in params["file"]:
+            timer=threading.Timer(0.8,converted); timer.daemon=True; timer.start()
+        continue
+    elif method=="cancel_conversion":
+        if timer: timer.cancel()
+        emit({"id":request["id"],"ok":True,"result":{}})
+        emit({"event":"conversion_ended","operation_id":session,"state":{"phase":"cancelled","message":"Cancelled; cleanup completed"}})
+        emit({"event":"conversion_state","operation_id":session,"state":{"phase":"preparing","fraction":0.9}})
+        continue
     elif method=="start":
         session+=1
         position, phase = params["position"], "playing"

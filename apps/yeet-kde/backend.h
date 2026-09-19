@@ -9,6 +9,7 @@ class Backend : public QObject {
     Q_OBJECT
 public:
     explicit Backend(QString program, QObject *parent = nullptr, const QStringList &arguments = {});
+    ~Backend() override;
     void start();
     void shutdown();
     bool ready() const { return m_ready; }

@@ -17,7 +17,7 @@ add_custom_target(yeet-helper ALL
         "${YEET_ROOT}/target/debug/yeet-backend" "${CMAKE_CURRENT_BINARY_DIR}/yeet-backend"
     WORKING_DIRECTORY "${YEET_ROOT}"
     VERBATIM)
-add_executable(yeet-kde main.cpp backend.cpp backend.h window.cpp window.h)
+add_executable(yeet-kde main.cpp backend.cpp backend.h window.cpp window.h conversionwindow.cpp conversionwindow.h)
 add_dependencies(yeet-kde yeet-helper)
 target_link_libraries(yeet-kde PRIVATE Qt6::Widgets KF6::CoreAddons KF6::I18n)
 target_compile_options(yeet-kde PRIVATE -Wall -Wextra -Wpedantic)
@@ -25,9 +25,9 @@ install(TARGETS yeet-kde DESTINATION ${KDE_INSTALL_BINDIR})
 install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/yeet-backend" DESTINATION ${KDE_INSTALL_LIBEXECDIR}/yeet)
 file(RELATIVE_PATH YEET_HELPER_RELATIVE "${KDE_INSTALL_FULL_BINDIR}" "${KDE_INSTALL_FULL_LIBEXECDIR}/yeet/yeet-backend")
 target_compile_definitions(yeet-kde PRIVATE YEET_HELPER_RELATIVE="${YEET_HELPER_RELATIVE}")
-install(FILES org.yeet.Yeet.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+install(FILES org.yeet.Yeet.desktop org.yeet.Yeet.ConvertOnly.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 enable_testing()
-add_executable(yeet-window-test tests/window-test.cpp backend.cpp backend.h window.cpp window.h)
+add_executable(yeet-window-test tests/window-test.cpp backend.cpp backend.h window.cpp window.h conversionwindow.cpp conversionwindow.h)
 add_dependencies(yeet-window-test yeet-helper)
 target_link_libraries(yeet-window-test PRIVATE Qt6::Widgets Qt6::Test KF6::I18n)
 target_compile_definitions(yeet-window-test PRIVATE

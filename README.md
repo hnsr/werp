@@ -52,6 +52,11 @@ See [build, installation, architecture, and TV checklist](docs/kde-ui.md) and th
 [backend protocol](docs/backend-protocol.md). Automated frontend checks are local;
 the new window's real-TV validation is pending.
 
+Open a file with **Yeet (convert only)** to prepare a broadly compatible MP4
+without a receiver, or run `yeet-kde --convert-only FILE`. The separate window
+shows formats and progress, supports cancellation, and closes five seconds after
+success. Outputs use the shared reusable cache; see the [KDE guide](docs/kde-ui.md#convert-only-window).
+
 ## CLI
 
 ```sh
@@ -158,7 +163,8 @@ a fallback to `$XDG_CACHE_HOME/yeet` or `$HOME/.cache/yeet`.
 The full source stem is preserved unless it exceeds the filename budget; Unicode
 characters are never split. Short tags are backed by full SHA-256 validation and
 no-overwrite publication with collision retries. Older prepared filenames remain
-reusable. See [naming and collision handling](docs/automatic-playback.md#storage-and-reuse).
+reusable when the recipe is unchanged. The updated stereo downmix uses a new
+audio recipe, so older audio encodes are retained but not reused. See [naming and collision handling](docs/automatic-playback.md#storage-and-reuse).
 
 Reuse verifies a full SHA-256 fingerprint of the source, its canonical path,
 the preparation mode/profile/recipe version, the output digest, and output media
