@@ -98,7 +98,7 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     m_prepareLabel = new QLabel(i18n("Preparing playback…")); m_prepareLabel->setTextFormat(Qt::PlainText); m_prepareLabel->setWordWrap(true);
     m_progress = new QProgressBar; m_progress->setObjectName("preparationProgress"); m_progress->setRange(0,0);
     m_cancel = new QPushButton(i18n("Cancel")); m_cancel->setObjectName("cancel");
-    prepareLayout->addStretch(); prepareLayout->addWidget(m_prepareLabel); prepareLayout->addWidget(m_progress); prepareLayout->addWidget(m_cancel); prepareLayout->addStretch(); m_pages->addWidget(preparing);
+    prepareLayout->addStretch(); prepareLayout->addWidget(m_prepareLabel); prepareLayout->addWidget(m_progress); prepareLayout->addWidget(m_cancel); m_pages->addWidget(preparing);
     auto *playing = new QWidget; auto *playerLayout = new QVBoxLayout(playing);
     m_time = new QLabel; m_time->setAlignment(Qt::AlignCenter);
     m_seek = new QSlider(Qt::Horizontal); m_seek->setRange(0,100000); m_seek->setObjectName("seek");
