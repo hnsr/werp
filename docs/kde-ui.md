@@ -117,6 +117,25 @@ build), and an application/Open With desktop entry. Ensure the
 install's `bin` directory is in the desktop session's PATH. Installation does not
 change the default association for video files.
 
+### Register the development build with KDE
+
+A user-local `org.yeet.Yeet.desktop` entry now points directly to the current
+`target/kde/yeet-kde` executable, using HTTP port 8010. Yeet appears in the
+application launcher and Dolphin's **Open With** menu. This does not replace the
+default video player. It advertises MP4/M4V, MKV, WebM, AVI, MOV, MPEG/TS, FLV,
+WMV, and Ogg video; playback remains subject to codec support and preparation.
+
+The development launcher is outside Git. To register it again after moving the
+checkout, run these commands from the repository root after building:
+
+```sh
+desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
+  --set-key=Exec --set-value="\"$PWD/target/kde/yeet-kde\" --http-port 8010 %f" \
+  apps/yeet-kde/org.yeet.Yeet.desktop
+update-desktop-database "${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+kbuildsycoca6
+```
+
 The [version 1 protocol reference](backend-protocol.md) defines the frontend boundary.
 Developer overrides `--backend PATH` and `--no-discovery` allow offline UI checks.
 
