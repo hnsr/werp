@@ -6,7 +6,8 @@ conversion and reuses validated prepared files automatically. Automated checks
 and the consolidated short-clip TV validation passed on the KPN DIW7022 receiver;
 seeking and long-duration checks for the expanded paths are deferred.
 Configuration, automatic embedded subtitles, preferred devices, and playback
-resume are implemented with local verification; their TV checks are pending.
+resume are implemented. Automatic English embedded captions and interrupted
+playback resume are confirmed on the TV; the remaining checks are in the checklist.
 
 ## Development setup
 

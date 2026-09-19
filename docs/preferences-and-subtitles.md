@@ -1,8 +1,9 @@
 # Preferences, subtitles, device selection, and resume
 
 Implemented 2026-09-19. Local and simulated-receiver verification is described
-below; TV checks for these new features are pending. No TV was contacted during
-implementation. Earlier seeking and long-duration checks remain deferred.
+below. The user confirmed automatic English embedded subtitles and interrupted
+playback resume on the TV. The remaining TV checks are listed below. No TV was
+contacted during implementation. Earlier seeking and long-duration checks remain deferred.
 
 ## Configuration
 
@@ -119,6 +120,12 @@ active locks. Invalid records are ignored. A crash can lose up to the last
 checkpoint interval of reported progress. No state is stored in Git or in media.
 
 ## Verification and TV checklist
+
+The user ran the generated embedded-subtitle fixture on the KPN DIW7022 and
+confirmed English captions and successful resume after interruption. Completion
+clearing the checkpoint, Dutch selection, automatic external fallback, subtitles
+off, and image-caption playback remain pending hardware checks. This report does
+not establish subtitle synchronization after arbitrary seeking.
 
 `cargo test --locked --workspace -- --include-ignored` passed all 68 tests,
 including the real FFmpeg fixtures. Formatting, Clippy with warnings denied,

@@ -12,8 +12,9 @@ passed without observed issues. Seeking and long-duration checks are deferred
 at the user's request and do not block further work. Earlier explicit-mode
 hardware evidence remains recorded separately.
 Configuration, automatic subtitle selection/extraction, image-subtitle burn-in,
-preferred receivers, and persistent resume are implemented; their TV checks are
-pending. See [preferences and subtitles](preferences-and-subtitles.md).
+preferred receivers, and persistent resume are implemented. Automatic English
+embedded captions and interrupted playback resume are confirmed on the TV;
+remaining hardware checks are pending. See [preferences and subtitles](preferences-and-subtitles.md).
 Updated: 2026-09-19.
 Requirements: [outline.md](outline.md).
 
@@ -311,7 +312,8 @@ one another. Session takeover ends Procast's ownership cleanly.
 
 ### M4 — Better subtitle and audio selection
 
-**Subtitle implementation complete within the scope below; TV checks pending.**
+**Subtitle implementation complete within the scope below; automatic English
+captions and resume confirmed on TV, remaining checks pending.**
 
 - Extract embedded text to WebVTT, with absolute stream-index selection.
 - Automatically select by ordered English/Dutch preferences, language tags and
@@ -321,7 +323,7 @@ one another. Session takeover ends Procast's ownership cleanly.
 - Explicit file/track/off options override automatic settings in TOML.
 - Burn embedded PGS/DVD/DVB subtitles into full video conversion; key reusable
   output by selected image track. PGS has local rendered-frame verification;
-  DVD/DVB and real receiver subtitle/resume checks remain unverified.
+  DVD/DVB and image-caption playback on the receiver remain unverified.
 - ASS/SSA text conversion is supported with a styling-loss warning. Faithful
   complex ASS rendering, external bitmap files, and OCR remain outside this scope.
 - Report audio tracks in `inspect`; implement explicit audio selection with the
@@ -443,8 +445,9 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Validate the new preferences, embedded/automatic subtitles, and resume using the
-short fixture and checklist in [preferences and subtitles](preferences-and-subtitles.md).
+Continue the remaining checks for Dutch selection, external subtitle fallback,
+subtitles off, completion clearing resume state, and optional image captions using
+the short fixture and checklist in [preferences and subtitles](preferences-and-subtitles.md).
 The earlier M5 hardware batch passed. Seeking and longer playback on the expanded preparation
 paths, especially copied HEVC, are deferred until controls are available or the
 user resumes those checks. They do not block choosing the next development task.
