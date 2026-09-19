@@ -46,10 +46,7 @@ impl Profile {
             Self::Baseline => DirectPlayPolicy::Conservative,
             Self::Extended => DirectPlayPolicy::Extended,
             Self::Experimental => DirectPlayPolicy::Experimental,
-            Self::Auto => match model.map(str::trim) {
-                Some("KPN DIW7022" | "DIW7022") => DirectPlayPolicy::Extended,
-                _ => DirectPlayPolicy::Conservative,
-            },
+            Self::Auto => crate::devices::policy(model),
         }
     }
 }
@@ -140,6 +137,66 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn database_profile_uses_observed_limits_and_preserves_overrides() {
+        use crate::config::CompatibilityPreferences;
+        let preferences = CompatibilityPreferences::default();
+        for model in ["KPN DIW7022", "DIW7022", " kpn diw7022 "] {
+            let policy = Profile::Auto.resolve_with(Some(model), preferences);
+            assert_eq!(policy.h264_max_fps(), 50);
+            for (fps, expected) in [
+                ("50/1", Mode::Direct),
+                ("60000/1001", Mode::Transcode),
+                ("60/1", Mode::Transcode),
+            ] {
+                let source = info(include_str!("../tests/fixtures/h264.json"), |j| {
+                    j["streams"][0]["level"] = 42.into();
+                    j["streams"][0]["r_frame_rate"] = fps.into();
+                })
+                .await;
+                assert_eq!(select(&source, Mode::Auto, policy).unwrap().mode, expected);
+                let opted_in = Profile::Auto.resolve_with(
+                    Some(model),
+                    CompatibilityPreferences {
+                        allow_h264_high_frame_rate: true,
+                        ..preferences
+                    },
+                );
+                assert_eq!(opted_in.h264_max_fps(), 60);
+                assert_eq!(
+                    select(&source, Mode::Auto, opted_in).unwrap().mode,
+                    Mode::Direct
+                );
+                assert_eq!(
+                    select(
+                        &source,
+                        Mode::Auto,
+                        Profile::Baseline.resolve_with(Some(model), preferences)
+                    )
+                    .unwrap()
+                    .mode,
+                    Mode::Transcode
+                );
+                assert_eq!(
+                    select(
+                        &source,
+                        Mode::Auto,
+                        Profile::Auto.resolve_with(Some("Unknown TV"), preferences)
+                    )
+                    .unwrap()
+                    .mode,
+                    Mode::Transcode
+                );
+            }
+            let ac3 = info(include_str!("../tests/fixtures/h264.json"), |j| {
+                j["streams"][1]["codec_name"] = "ac3".into();
+            })
+            .await;
+            assert_eq!(select(&ac3, Mode::Auto, policy).unwrap().mode, Mode::Audio);
+            assert!(select(&ac3, Mode::Direct, policy).is_err());
+        }
     }
 
     #[tokio::test]
@@ -255,7 +312,7 @@ mod tests {
                 );
                 assert_eq!(
                     Profile::Auto.resolve_with(Some("KPN DIW7022"), preferences),
-                    DirectPlayPolicy::Extended
+                    crate::devices::policy(Some("KPN DIW7022"))
                 );
                 for container in ["mp4", "matroska,webm"] {
                     for fixture in [
@@ -374,7 +431,7 @@ mod tests {
         assert!(select(&ambiguous, Mode::Auto, DirectPlayPolicy::Extended).is_err());
         assert_eq!(
             Profile::Auto.resolve(Some("KPN DIW7022")),
-            DirectPlayPolicy::Extended
+            crate::devices::policy(Some("KPN DIW7022"))
         );
         assert_eq!(
             Profile::Auto.resolve(Some("Unknown receiver")),

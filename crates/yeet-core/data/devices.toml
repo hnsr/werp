@@ -1,0 +1,158 @@
+# Bundled receiver knowledge. Model identifiers are public, not personal device names.
+# Policy is actionable; observations record evidence and must not be inferred as rules.
+schema_version = 1
+
+[[devices]]
+id = "KPN DIW7022"
+aliases = ["DIW7022"]
+receiver_app = "Google Cast Default Media Receiver"
+firmware = "Not recorded"
+scope = "Observations on one development receiver and its connected audio/video setup; not certification of every unit or firmware."
+limitations = [
+  "AAC surround trials confirm audible output, not discrete six-channel output.",
+  "Direct-play codec support does not imply original Matroska support.",
+  "Full-duration drift and seeking across every prepared format remain unverified.",
+  "H.264 59.94/60 fps requires a separate opt-in; only 50 fps has been observed above 30 fps.",
+]
+
+[devices.playback]
+allow_hevc = true
+allow_aac_surround = true
+h264_max_level = 42
+h264_max_fps = 50
+
+[[devices.observations]]
+id = "mp4-h264-stereo"
+status = "passed"
+path = "direct"
+format = "MP4; H.264 High, 8-bit 4:2:0; 1920x816/24, 1280x690/24, 1920x800/23.976; stereo AAC-LC"
+result = "User confirmed good picture and sound on three original files."
+evidence = ["docs/media-inventory.md#user-playback-results"]
+
+[[devices.observations]]
+id = "mp4-h264-aac-surround"
+status = "passed"
+path = "direct"
+format = "MP4; H.264 High, 1920x1040/23.976; six-channel AAC-LC"
+result = "User reported successful playback; no discrete-surround or full-duration measurements."
+evidence = ["docs/media-inventory.md#user-playback-results", "docs/automatic-playback.md#hardware-batch-result"]
+
+[[devices.observations]]
+id = "mp4-hevc-main10-aac-surround"
+status = "passed"
+path = "direct"
+format = "MP4; HEVC Main 10 Level 4.0, 10-bit 4:2:0 SDR, 1920x1080/23.976; six-channel AAC-LC"
+result = "User reported successful original-file playback and subsequently passed the short-clip batch."
+evidence = ["docs/media-inventory.md#user-playback-results", "docs/automatic-playback.md#hardware-batch-result"]
+
+[[devices.observations]]
+id = "mp4-h264-level42-50fps"
+status = "passed"
+path = "direct"
+format = "MP4; H.264 High Level 4.2, 1920x1080/50, yuv420p, BT.709; stereo AAC-LC at 48 kHz; JPEG cover art"
+result = "User reported successful direct playback after enabling high-frame-rate admission. Local selection required no FFmpeg. Full-duration, seeking and subtitle checks were not separately reported."
+evidence = ["docs/automatic-playback.md#h264-1080p50-direct-play-result"]
+
+[[devices.observations]]
+id = "mp4-h264-ac3"
+status = "failed"
+path = "direct"
+format = "MP4; H.264 High, 1920x804/24; six-channel AC-3 at 48 kHz"
+result = "Picture played but audio was silent. Cause may depend on receiver decoding or connected output setup. Convert AC-3 audio for automatic playback."
+evidence = ["docs/media-inventory.md#user-playback-results"]
+
+[[devices.observations]]
+id = "mkv-compatible-streams"
+status = "passed"
+path = "remux"
+format = "MKV to MP4; H.264/stereo AAC-LC, HEVC Main/six-channel AAC-LC, HEVC Main 10/six-channel AAC-LC"
+result = "Initial H.264 trial and consolidated short-clip hardware batch passed with video/audio copied into MP4. This does not validate original MKV delivery."
+evidence = ["docs/remux-validation.md#hardware-playback-result", "docs/automatic-playback.md#hardware-batch-result"]
+
+[[devices.observations]]
+id = "audio-to-stereo-aac"
+status = "passed"
+path = "audio_conversion"
+format = "Copied H.264 with AC-3 or E-AC-3 input; copied HEVC Main 10 with HE-AAC or E-AC-3 input; output stereo AAC-LC in MP4"
+result = "Short-clip hardware batch passed. A separate integrated H.264/AC-3 conversion had good sound, Ctrl+C exit 130, empty temporary directory and closed HTTP port."
+evidence = ["docs/automatic-playback.md#hardware-batch-result", "docs/media-inventory.md#user-playback-results"]
+
+[[devices.observations]]
+id = "full-video-conversion"
+status = "passed"
+path = "transcode"
+format = "Output MP4; H.264 High Level 4.1, at most 1080p30/yuv420p SDR; stereo AAC-LC at 48 kHz"
+result = "Forced-conversion playback and phone pause/play/seek/stop were confirmed. Consolidated hardware batch also passed full conversion, including AV1/E-AC-3 input."
+evidence = ["docs/transcode-validation.md#hardware-feedback-and-remaining-checks", "docs/automatic-playback.md#hardware-batch-result"]
+
+[[devices.observations]]
+id = "external-text-subtitles"
+status = "passed"
+path = "subtitles"
+format = "External SRT converted to WebVTT; external WebVTT served as a text track"
+result = "User confirmed visible video and captions, including the consolidated hardware batch."
+evidence = ["docs/m2-validation.md#user-confirmed-hardware-checks", "docs/automatic-playback.md#hardware-batch-result"]
+
+[[devices.observations]]
+id = "embedded-text-subtitles"
+status = "passed"
+path = "subtitles"
+format = "Embedded text extracted to WebVTT; English automatic selection and explicit Dutch selection"
+result = "User confirmed English and Dutch captions, resume, and subtitle-off behavior. Every individual text codec/track and synchronization after arbitrary seeking are not separately validated."
+evidence = ["docs/preferences-and-subtitles.md#verification-and-tv-checklist"]
+
+[[devices.observations]]
+id = "pgs-burn-in"
+status = "passed"
+path = "subtitles"
+format = "Embedded PGS rendered into H.264 video during full conversion"
+result = "User confirmed visible burned-in captions on a short fixture. This is not native PGS-track support."
+evidence = ["docs/preferences-and-subtitles.md#verification-and-tv-checklist"]
+
+[[devices.observations]]
+id = "playback-lifecycle"
+status = "passed"
+path = "controls"
+format = "Natural completion, interruption/resume, restart, SIGINT/SIGTERM, receiver stop and prepared-output reuse"
+result = "User-confirmed lifecycle checks include cleanup, resume checkpoints and the short-clip batch. Coverage differs by path; see linked evidence."
+evidence = ["docs/m2-validation.md#user-confirmed-hardware-checks", "docs/preferences-and-subtitles.md#verification-and-tv-checklist", "docs/automatic-playback.md#hardware-batch-result", "docs/transcode-validation.md#hardware-feedback-and-remaining-checks"]
+
+[[devices.observations]]
+id = "intermittent-startup-exit"
+status = "intermittent"
+path = "playback"
+format = "An audio-converted file briefly played, then receiver returned to home screen"
+result = "A retry and subsequent integrated test passed. User reports similar intermittent startup pauses/exits on this receiver. Root cause is unresolved; not proof of format incompatibility."
+evidence = ["docs/media-inventory.md#user-playback-results"]
+
+[[devices.observations]]
+id = "phone-controls"
+status = "intermittent"
+path = "controls"
+format = "Phone-based Cast playback controls"
+result = "Earlier pause/play/seek/stop checks worked; controls later stopped appearing. Broader seeking and long-duration checks were deferred."
+evidence = ["docs/automatic-playback.md#reproduce-the-guided-hardware-batch", "docs/transcode-validation.md#hardware-feedback-and-remaining-checks"]
+
+[[devices.observations]]
+id = "h264-5994-60fps"
+status = "untested"
+path = "direct"
+format = "H.264 Level 4.2 at 1080p59.94/60"
+result = "Permitted only by the global high-frame-rate opt-in, not by this model's observed 50 fps policy."
+evidence = ["docs/automatic-playback.md#h264-1080p50-direct-play-result"]
+
+[[devices.observations]]
+id = "other-native-formats"
+status = "untested"
+path = "direct"
+format = "Original MKV, native AV1, HE-AAC/E-AC-3 passthrough, 4K, HDR/Dolby Vision, native image subtitle tracks"
+result = "Inventory or successful preparation is not native receiver evidence. These paths remain outside automatic direct-play admission; HDR conversion is not implemented."
+evidence = ["docs/media-inventory.md#receiver-evidence-and-limits", "docs/automatic-playback.md#hardware-batch-result"]
+
+[[devices.observations]]
+id = "long-session-interruption"
+status = "intermittent"
+path = "playback"
+format = "Longer playback interrupted after approximately five to ten minutes"
+result = "User suspected laptop standby; cause was not confirmed. Host sleep inhibition was subsequently implemented and checked locally, but no long-video or actual-suspend validation established that it resolves this interruption."
+evidence = ["docs/sleep-inhibition.md", "docs/automatic-playback.md#reproduce-the-guided-hardware-batch"]

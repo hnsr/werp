@@ -220,12 +220,19 @@ pub enum DirectPlayPolicy {
     H264HighFrameRate {
         allow_hevc: bool,
         allow_aac_surround: bool,
+        max_fps: u16,
     },
     /// Additionally allow multichannel AAC-LC, bounded HEVC, and H.264/AC-3 trials.
     Experimental,
 }
 
 impl DirectPlayPolicy {
+    pub fn h264_max_fps(self) -> u16 {
+        match self {
+            Self::H264HighFrameRate { max_fps, .. } => max_fps,
+            _ => 30,
+        }
+    }
     pub fn allows_h264_high_frame_rate(self) -> bool {
         matches!(self, Self::H264HighFrameRate { .. })
     }
@@ -369,8 +376,8 @@ fn assess_input(
             rate.is_finite()
                 && rate > 0.0
                 && rate
-                    <= if h264 && policy.allows_h264_high_frame_rate() {
-                        60.01
+                    <= if h264 {
+                        f64::from(policy.h264_max_fps()) + 0.01
                     } else {
                         30.01
                     }

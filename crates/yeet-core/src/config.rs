@@ -34,6 +34,11 @@ impl CompatibilityPreferences {
         }
         if self.allow_h264_high_frame_rate || base.allows_h264_high_frame_rate() {
             return Policy::H264HighFrameRate {
+                max_fps: if self.allow_h264_high_frame_rate {
+                    60
+                } else {
+                    base.h264_max_fps()
+                },
                 allow_hevc: self.allow_hevc || base.allows_hevc(),
                 allow_aac_surround: self.allow_aac_surround || base.allows_aac_surround(),
             };

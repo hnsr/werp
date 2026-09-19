@@ -139,13 +139,14 @@ automatically detect silent audio or incorrect colours on the TV.
 | `--mode remux` | Require stream-copy MP4 preparation; no encoding |
 | `--mode audio` | Require copied video and stereo AAC audio conversion |
 | `--mode transcode` | Require full SDR H.264/stereo AAC preparation |
-| `--profile auto` | Default: Extended for the observed KPN DIW7022 model; Baseline for unknown models or `--host` |
+| `--profile auto` | Default: bundled device database (KPN DIW7022 includes observed 1080p50/Level 4.2); Baseline for unknown models or `--host` |
 | `--profile baseline` | MP4 H.264 up to 1080p30/level 4.1, 8-bit 4:2:0, optional mono/stereo AAC-LC |
 | `--profile extended` | Also allow HEVC Main/Main 10 up to level 4.0/1080p30 and AAC-LC through six channels |
 | `--profile experimental` | Additionally allow H.264/AC-3 trials; audible output is not guaranteed |
 | `--no-cache` | Prepare afresh and delete the session output afterward |
 | `--cache-dir PATH` | Store prepared files in this directory instead of beside the source |
 
+Device rules and their evidence live in the bundled [compatibility database](docs/device-compatibility.md).
 Extended support is based on observations on the development receiver, not full
 capability negotiation or a guarantee for every file/device. Baseline can be
 selected explicitly on a receiver whose audio or video support differs. Dolby

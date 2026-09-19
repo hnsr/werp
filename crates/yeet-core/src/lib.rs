@@ -4,6 +4,7 @@ pub mod cache;
 pub mod cast;
 pub mod config;
 pub mod conversion;
+pub mod devices;
 pub mod discovery;
 mod error;
 pub mod media;

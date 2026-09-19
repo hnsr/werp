@@ -27,8 +27,10 @@ cannot meet its constraints. `--mode auto` is the default. There is no automatic
 retry or escalation after a network/receiver failure: a successful Cast status
 does not establish that audio was audible.
 
-`--profile auto` chooses Extended for the observed KPN DIW7022 model and Baseline
-for unknown models, then adds the shared `[compatibility]` permissions.
+`--profile auto` uses the bundled [device database](device-compatibility.md).
+KPN DIW7022 starts with Extended support plus the observed H.264 Level 4.2/1080p50
+limit; unknown models start with Baseline. Shared `[compatibility]` permissions
+are added afterward.
 `--host` bypasses discovery, so it starts with Baseline plus those permissions.
 An explicit `--profile baseline`, `extended`, or `experimental` overrides config. This is an observation-based model mapping, not
 receiver capability negotiation or a guarantee for every device of that model.
@@ -226,9 +228,9 @@ is recorded here.
 This establishes a successful 1080p50/Level 4.2 trial on this receiver. The setting
 admits up to 1080p60, but 59.94/60 fps has not yet been hardware-validated. This
 report does not establish full-duration playback, seeking, or subtitle behavior
-for this sample. The option remains off by default and is separate from the
-model's automatic Extended profile; it is enabled in the development user's
-personal configuration.
+for this sample. The generic 60 fps option remains off by default and is enabled in the
+development user's personal configuration. The bundled device database now admits
+the observed 50 fps/Level 4.2 case automatically for KPN DIW7022.
 
 ## Reproduce the guided hardware batch
 
