@@ -32,6 +32,6 @@ private:
     QLabel *m_fileLabel, *m_error, *m_prepareLabel, *m_time;
     QComboBox *m_devices, *m_subtitles;
     QPushButton *m_open, *m_refresh, *m_browse, *m_start, *m_resumeButton, *m_pause, *m_stop, *m_cancel, *m_retry;
-    QProgressBar *m_progress;
+    QProgressBar *m_progress, *m_discoveryProgress;
     QSlider *m_seek;
 };

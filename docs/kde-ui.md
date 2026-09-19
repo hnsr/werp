@@ -2,7 +2,8 @@
 
 The first implementation is available in `apps/yeet-kde` and
 `crates/yeet-backend`. Local automated checks cover the native window, protocol,
-and controlled sessions. TV validation of the new frontend remains pending.
+and controlled sessions. The user confirmed the initial frontend test worked;
+the full TV checklist remains pending.
 
 ## Design
 

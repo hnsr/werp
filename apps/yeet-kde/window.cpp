@@ -1,4 +1,5 @@
 #include "window.h"
+#include <QAbstractItemView>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QFileDialog>
@@ -10,6 +11,7 @@
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScreen>
 #include <QSlider>
 #include <QStackedWidget>
 #include <QStandardItemModel>
@@ -19,6 +21,29 @@
 #include <algorithm>
 #include <cmath>
 
+// Keep the field within the window, but let the popup fit long track names.
+class SubtitleComboBox : public QComboBox {
+public:
+    SubtitleComboBox() {
+        setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+        setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        setMinimumContentsLength(30);
+        view()->setTextElideMode(Qt::ElideNone);
+        view()->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        connect(this,&QComboBox::currentTextChanged,this,&QWidget::setToolTip);
+    }
+    void showPopup() override {
+        int contentWidth=width();
+        for (int i=0; i<count(); ++i)
+            contentWidth=qMax(contentWidth,fontMetrics().horizontalAdvance(itemText(i))+48);
+        view()->setMinimumWidth(qMin(contentWidth,screen()->availableGeometry().width()-32));
+        QComboBox::showPopup();
+    }
+};
+static void addSubtitle(QComboBox *combo,const QString &text,const QString &data) {
+    combo->addItem(text,data);
+    combo->setItemData(combo->count()-1,text,Qt::ToolTipRole);
+}
 static QString timestamp(double seconds) {
     const auto n = qMax(0, static_cast<int>(seconds));
     return QString("%1:%2:%3").arg(n/3600).arg((n/60)%60,2,10,QChar('0')).arg(n%60,2,10,QChar('0'));
@@ -26,7 +51,7 @@ static QString timestamp(double seconds) {
 static QString payload(const QJsonObject &value) { return QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)); }
 Window::Window(const QString &backend, const QString &file, bool discoverOnStart, const QStringList &backendArguments)
     : m_backend(backend,this,backendArguments), m_autoDiscover(discoverOnStart) {
-    setWindowTitle(i18n("Yeet")); resize(560,360);
+    setWindowTitle(i18n("Yeet")); resize(640,360);
     auto *central = new QWidget(this); auto *layout = new QVBoxLayout(central);
     layout->setContentsMargins(24,20,24,20); layout->setSpacing(16); setCentralWidget(central);
     auto *header = new QHBoxLayout;
@@ -36,17 +61,24 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     m_error = new QLabel(this); m_error->setTextFormat(Qt::PlainText); m_error->setWordWrap(true); m_error->setObjectName("message"); layout->addWidget(m_error);
     m_retry = new QPushButton(i18n("Reconnect backend"),this); m_retry->hide(); layout->addWidget(m_retry);
     m_pages = new QStackedWidget(this); m_pages->setObjectName("pages"); layout->addWidget(m_pages,1);
-    auto *startup = new QWidget; auto *form = new QFormLayout(startup);
+    auto *startup = new QWidget; auto *startupLayout = new QVBoxLayout(startup);
+    auto *form = new QFormLayout; form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    startupLayout->addLayout(form);
     m_devices = new QComboBox; m_devices->setObjectName("devices"); m_devices->addItem(i18n("Choose a device…"),"");
     m_refresh = new QPushButton(QIcon::fromTheme("view-refresh"),i18n("Refresh"));
     auto *deviceRow = new QHBoxLayout; deviceRow->addWidget(m_devices,1); deviceRow->addWidget(m_refresh); form->addRow(i18n("Device:"),deviceRow);
-    m_subtitles = new QComboBox; m_subtitles->setObjectName("subtitles"); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
+    m_discoveryProgress = new QProgressBar; m_discoveryProgress->setObjectName("discoveryProgress");
+    m_discoveryProgress->setRange(0,0); m_discoveryProgress->setTextVisible(false); m_discoveryProgress->setFixedHeight(6);
+    m_discoveryProgress->setAccessibleName(i18n("Searching for devices"));
+    auto discoveryPolicy=m_discoveryProgress->sizePolicy(); discoveryPolicy.setRetainSizeWhenHidden(true); m_discoveryProgress->setSizePolicy(discoveryPolicy);
+    form->addRow("",m_discoveryProgress);
+    m_subtitles = new SubtitleComboBox; m_subtitles->setObjectName("subtitles"); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
     form->addRow(i18n("Subtitles:"),m_subtitles);
     m_browse = new QPushButton(i18n("Choose subtitle file…")); form->addRow("",m_browse);
     auto *buttons = new QHBoxLayout;
     m_start = new QPushButton(i18n("Yeet")); m_start->setObjectName("yeet"); m_start->setDefault(true);
     m_resumeButton = new QPushButton(i18n("Yeet from last position")); m_resumeButton->setObjectName("resume");
-    buttons->addWidget(m_start); buttons->addWidget(m_resumeButton); form->addRow(buttons); m_pages->addWidget(startup);
+    buttons->addWidget(m_start); buttons->addWidget(m_resumeButton); startupLayout->addStretch(); startupLayout->addLayout(buttons); m_pages->addWidget(startup);
     auto *preparing = new QWidget; auto *prepareLayout = new QVBoxLayout(preparing);
     m_prepareLabel = new QLabel(i18n("Preparing playback…")); m_prepareLabel->setTextFormat(Qt::PlainText); m_prepareLabel->setWordWrap(true);
     m_progress = new QProgressBar; m_progress->setObjectName("preparationProgress"); m_progress->setRange(0,0);
@@ -66,7 +98,7 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     connect(m_browse,&QPushButton::clicked,this,[this] {
         const auto path = QFileDialog::getOpenFileName(this,i18n("Choose subtitles"),m_directory,i18n("Subtitles (*.srt *.vtt *.ass *.ssa);;All files (*)"));
         if (path.isEmpty()) return;
-        m_subtitles->addItem(i18n("External: %1",QFileInfo(path).fileName()),payload({{"kind","external"},{"path",path}}));
+        addSubtitle(m_subtitles,i18n("External: %1",QFileInfo(path).fileName()),payload({{"kind","external"},{"path",path}}));
         m_subtitles->setCurrentIndex(m_subtitles->count()-1);
     });
     connect(m_refresh,&QPushButton::clicked,this,&Window::discover);
@@ -87,7 +119,7 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     });
     connect(&m_backend,&Backend::event,this,&Window::handleEvent);
     connect(&m_backend,&Backend::failed,this,[this](const QString &message) {
-        m_busy=false; m_session=0; m_pages->setCurrentIndex(0); showError(message); m_retry->show(); refreshActions();
+        m_busy=false; m_session=0; m_discovering=false; m_pages->setCurrentIndex(0); showError(message); m_retry->show(); refreshActions();
     });
     connect(&m_backend,&Backend::exited,this,[this] { if (m_closing) { m_canClose=true; QTimer::singleShot(0,this,&Window::close); } });
     if (!file.isEmpty()) openFile(file);
@@ -96,7 +128,7 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
 void Window::openFile(const QString &file) {
     if (m_busy) { showError(i18n("Stop playback before opening another video.")); return; }
     ++m_generation; m_file=QFileInfo(file).absoluteFilePath(); m_directory=QFileInfo(m_file).absolutePath();
-    m_fileLabel->setText(QFileInfo(m_file).fileName()); m_fileLabel->setToolTip(m_file);
+    m_fileLabel->setText(i18n("Selected video: %1",QFileInfo(m_file).fileName())); m_fileLabel->setToolTip(m_file);
     m_inspected=false; m_resume=-1; m_duration=0; m_error->clear();
     m_subtitles->clear(); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
     if (m_backend.ready()) inspect();
@@ -130,7 +162,7 @@ void Window::inspect() {
                 data={{"kind","external"},{"path",choice["path"]}};
                 text=i18n("External: %1",QFileInfo(choice["path"].toString()).fileName());
             }
-            m_subtitles->addItem(text,payload(data));
+            addSubtitle(m_subtitles,text,payload(data));
             if (!choice["supported"].toBool()) {
                 if (auto *model=qobject_cast<QStandardItemModel *>(m_subtitles->model())) model->item(m_subtitles->count()-1)->setEnabled(false);
             }
@@ -140,7 +172,7 @@ void Window::inspect() {
         else {
             const auto previousChoice=QJsonDocument::fromJson(selected.toUtf8()).object();
             if (previousChoice["kind"]=="external") {
-                m_subtitles->addItem(i18n("External: %1",QFileInfo(previousChoice["path"].toString()).fileName()),selected);
+                addSubtitle(m_subtitles,i18n("External: %1",QFileInfo(previousChoice["path"].toString()).fileName()),selected);
                 m_subtitles->setCurrentIndex(m_subtitles->count()-1);
             }
         }
@@ -151,10 +183,10 @@ void Window::inspect() {
 }
 void Window::discover() {
     m_discovering=true;
-    m_refresh->setEnabled(false);
+    refreshActions();
     m_backend.request("discover",{},[this](const QJsonObject &reply) {
         m_discovering=false;
-        m_refresh->setEnabled(!m_busy && m_backend.ready()); if (!check(reply)) return;
+        refreshActions(); if (!check(reply)) return;
         const auto previous=m_devices->currentData().toString();
         m_devices->clear(); m_devices->addItem(i18n("Choose a device…"),"");
         for (const auto value : reply["result"].toObject()["devices"].toArray()) {
@@ -173,9 +205,11 @@ void Window::discover() {
 }
 void Window::refreshActions() {
     const bool idle=!m_busy && m_backend.ready();
-    m_open->setEnabled(!m_busy); m_devices->setEnabled(idle); m_subtitles->setEnabled(idle && m_inspected);
+    m_discoveryProgress->setVisible(m_discovering);
+    m_devices->setItemText(0,m_discovering ? i18n("Searching for devices…") : i18n("Choose a device…"));
+    m_open->setEnabled(!m_busy); m_devices->setEnabled(idle && !m_discovering); m_subtitles->setEnabled(idle && m_inspected);
     m_browse->setEnabled(idle && m_inspected);
-    const bool canStart=idle && m_inspected && !m_devices->currentData().toString().isEmpty();
+    const bool canStart=idle && !m_discovering && m_inspected && !m_devices->currentData().toString().isEmpty();
     m_start->setEnabled(canStart); m_resumeButton->setVisible(m_resume>=0); m_resumeButton->setEnabled(canStart && m_resume>=0);
     m_resumeButton->setToolTip(i18n("Resume at %1",timestamp(m_resume)));
     m_refresh->setEnabled(idle && !m_discovering); m_seek->setEnabled(m_busy && m_duration>0);
