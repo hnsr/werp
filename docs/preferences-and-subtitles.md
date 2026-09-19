@@ -91,6 +91,8 @@ Embedded text (including SubRip, MP4 `mov_text`, ASS/SSA, and WebVTT) is extract
 from the original source and served as a temporary WebVTT track. Video need not
 be re-encoded. External SRT, WebVTT, ASS, and SSA are supported in UTF-8 or
 BOM-marked UTF-16. Conversion/extraction needs FFmpeg; external WebVTT does not.
+Empty timed cues are skipped during preparation without modifying the original
+file. Invalid timestamps and files with no non-empty cues still produce an error.
 ASS/SSA conversion warns that advanced fonts, positioning, and effects are lost;
 this is readable caption support, not faithful ASS rendering.
 

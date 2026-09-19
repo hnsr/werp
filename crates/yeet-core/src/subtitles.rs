@@ -335,7 +335,7 @@ async fn save_webvtt(
     output: &str,
     cancel: &CancellationToken,
 ) -> Result<PreparedSubtitles, YeetError> {
-    validate(output, false)?;
+    let output = sanitize_timed_cues(output, false)?;
     if cancel.is_cancelled() {
         return Err(YeetError::Cancelled);
     }
@@ -440,13 +440,14 @@ pub async fn prepare(
             ));
         }
     };
-    if input_format != "ass" {
-        validate(&text, input_format == "srt")?;
+    let text = if input_format != "ass" {
+        sanitize_timed_cues(&text, input_format == "srt")?
     } else {
         tracing::warn!(
             "ASS/SSA converted to WebVTT; advanced positioning, fonts and effects are not preserved"
         );
-    }
+        text
+    };
     let directory = tempfile::Builder::new()
         .prefix("yeet-subtitles-")
         .tempdir()
@@ -466,7 +467,7 @@ pub async fn prepare(
     } else {
         text
     };
-    validate(&output, false)?;
+    let output = sanitize_timed_cues(&output, false)?;
     if cancel.is_cancelled() {
         return Err(YeetError::Cancelled);
     }
@@ -481,13 +482,17 @@ fn invalid(reason: impl Into<String>) -> YeetError {
     YeetError::Subtitles(reason.into())
 }
 
-/// Validate timed cues, not styling semantics. Cue identifiers/settings and
+/// Validate timing and omit empty cues. Cue identifiers/settings and
 /// NOTE/STYLE/REGION blocks are preserved for the WebVTT receiver to interpret.
-fn validate(text: &str, srt: bool) -> Result<(), YeetError> {
+fn sanitize_timed_cues(text: &str, srt: bool) -> Result<String, YeetError> {
     if text.contains('\0') {
         return Err(invalid("NUL characters are not allowed"));
     }
-    let mut blocks = text.split("\n\n").filter(|block| !block.trim().is_empty());
+    let mut retained = Vec::new();
+    let mut blocks = text
+        .split("\n\n")
+        .map(|block| block.trim_matches('\n'))
+        .filter(|block| !block.trim().is_empty());
     if !srt {
         let header = blocks.next().ok_or_else(|| invalid("empty WebVTT file"))?;
         let first = header.lines().next().unwrap_or("");
@@ -498,6 +503,7 @@ fn validate(text: &str, srt: bool) -> Result<(), YeetError> {
                 "WebVTT requires a WEBVTT header followed by a blank line",
             ));
         }
+        retained.push(header);
     }
     let mut cues = 0;
     let mut previous = 0;
@@ -511,6 +517,7 @@ fn validate(text: &str, srt: bool) -> Result<(), YeetError> {
                 || first == "STYLE"
                 || first == "REGION")
         {
+            retained.push(block);
             continue;
         }
         let timing = if first.contains("-->") {
@@ -535,15 +542,17 @@ fn validate(text: &str, srt: bool) -> Result<(), YeetError> {
             return Err(invalid("cue times must be ordered, with end after start"));
         }
         if !lines.any(|line| !line.trim().is_empty()) {
-            return Err(invalid("cue has no text"));
+            // Empty placeholders add no captions and must not prevent playback.
+            continue;
         }
+        retained.push(block);
         previous = start;
         cues += 1;
     }
     if cues == 0 {
         return Err(invalid("file contains no timed subtitle cues"));
     }
-    Ok(())
+    Ok(retained.join("\n\n") + "\n")
 }
 
 fn timestamp(text: &str, srt: bool) -> Option<u64> {
@@ -719,13 +728,13 @@ mod tests {
     #[test]
     fn validates_cues_and_rejects_silent_or_broken_subtitles() {
         assert!(
-            validate(
+            sanitize_timed_cues(
                 "WEBVTT\n\ncue-id\n00:00.000 --> 00:01.000 align:start\nHello\n",
                 false
             )
             .is_ok()
         );
-        assert!(validate("1\n00:00:00,000 --> 00:00:01,000\nHello\n", true).is_ok());
+        assert!(sanitize_timed_cues("1\n00:00:00,000 --> 00:00:01,000\nHello\n", true).is_ok());
         for text in [
             "WEBVTT\n",
             "WEBVTT\n00:00.000 --> 00:01.000\nHello",
@@ -733,7 +742,7 @@ mod tests {
             "WEBVTT\n\n00:00.000 --> 00:01.000\n",
             "WEBVTT\n\n00:99.000 --> 01:00.000\nHello",
         ] {
-            assert!(validate(text, false).is_err(), "{text}");
+            assert!(sanitize_timed_cues(text, false).is_err(), "{text}");
         }
     }
     #[tokio::test]
@@ -742,7 +751,7 @@ mod tests {
         let original = dir.path().join("captions.vtt");
         tokio::fs::write(
             &original,
-            "\u{feff}WEBVTT\r\n\r\n00:00.000 --> 00:01.000\r\nHello\r\n",
+            "\u{feff}WEBVTT\r\n\r\n00:00.000 --> 00:00.500\r\n \t\r\n\r\n00:00.500 --> 00:01.000\r\nHello\r\n",
         )
         .await
         .unwrap();
@@ -755,8 +764,36 @@ mod tests {
         .unwrap();
         let artifact = prepared.path.clone();
         assert!(artifact.exists());
+        assert_eq!(
+            tokio::fs::read_to_string(&artifact).await.unwrap(),
+            "WEBVTT\n\n00:00.500 --> 00:01.000\nHello\n"
+        );
         prepared.close().unwrap();
         assert!(!artifact.exists());
         assert!(original.exists());
+    }
+
+    #[test]
+    fn empty_cues_are_removed_without_changing_other_blocks() {
+        for srt in [true, false] {
+            let header = if srt {
+                ""
+            } else {
+                "WEBVTT\n\nNOTE keep this comment\n\nSTYLE\n::cue { color: lime; }\n\nREGION\nid:bottom\n\n"
+            };
+            let text = format!(
+                "{header}1\n00:00:00.000 --> 00:00:01.000\n\n2\n00:00:01.000 --> 00:00:02.000\nFirst\nline two\n\n3\n00:00:02.000 --> 00:00:03.000\n \t\n\n4\n00:00:03.000 --> 00:00:04.000\nLast\n\n5\n00:00:04.000 --> 00:00:05.000\n"
+            );
+            let expected = format!(
+                "{header}2\n00:00:01.000 --> 00:00:02.000\nFirst\nline two\n\n4\n00:00:03.000 --> 00:00:04.000\nLast\n"
+            );
+            let (text, expected) = if srt {
+                (text.replace('.', ","), expected.replace('.', ","))
+            } else {
+                (text, expected)
+            };
+            assert_eq!(sanitize_timed_cues(&text, srt).unwrap(), expected);
+        }
+        assert!(sanitize_timed_cues("1\n00:00:00,000 --> 00:00:01,000\n", true).is_err());
     }
 }

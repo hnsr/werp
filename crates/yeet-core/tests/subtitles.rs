@@ -4,6 +4,24 @@ use std::{fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
 use yeet_core::{CancellationToken, YeetError, subtitles};
 
 #[tokio::test]
+#[ignore = "requires real ffmpeg with subtitle codecs"]
+async fn srt_empty_cues_do_not_drop_following_captions() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("captions.srt");
+    let original = "1\r\n00:00:00,000 --> 00:00:01,000\r\n\r\n2\r\n00:00:01,000 --> 00:00:02,000\r\n \t\r\n\r\n3\r\n00:00:02,000 --> 00:00:03,000\r\nFirst caption\r\n\r\n4\r\n00:00:03,000 --> 00:00:04,000\r\n\r\n5\r\n00:00:04,000 --> 00:00:05,000\r\nLast caption\r\n\r\n6\r\n00:00:05,000 --> 00:00:06,000\r\n";
+    fs::write(&path, original).unwrap();
+    let prepared = subtitles::prepare(&path, Path::new("ffmpeg"), &CancellationToken::new())
+        .await
+        .unwrap();
+    let output = fs::read_to_string(&prepared.path).unwrap();
+    assert_eq!(output.matches("-->").count(), 2);
+    assert!(output.contains("00:02.000 --> 00:03.000\nFirst caption"));
+    assert!(output.contains("00:04.000 --> 00:05.000\nLast caption"));
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    prepared.close().unwrap();
+}
+
+#[tokio::test]
 async fn rejects_missing_converter_non_utf8_and_invalid_cues() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("captions.srt");
