@@ -29,6 +29,18 @@ from `config.toml`. It records the device when a start request is accepted and
 restores it after discovery only if it is still an available video-capable target.
 Changing a selection without starting playback does not overwrite the last device.
 
+The same GUI-only INI file stores conversion window preferences:
+
+```ini
+[conversion]
+autoClose=true
+```
+
+`autoClose` defaults to true and closes successful conversions after five seconds.
+Set it to false to leave completed conversions open. It is read when a conversion
+window opens. This setting is independent of the shared/CLI TOML file and has no
+effect on CLI operation. The remembered device remains in the INI's General group.
+
 ## Interaction
 
 On startup, inspect the file and discover receivers asynchronously. Show a device
@@ -73,7 +85,9 @@ Open a video with **Yeet (convert only)**, or run:
 
 Without a filename this mode opens a file picker. It starts preparation immediately
 and shows the filename, separate Source and Target sections, progress, and Cancel.
-Both sections use fixed Container, Video, Resolution and Audio rows. The target
+Source and Target headings are bold and left-aligned. Both sections use fixed
+Container, Video, Resolution and Audio rows, with bold labels and regular-weight
+values. Selected video and Available file captions are bold too. The target
 shows the planned format before cache lookup, then fills in probed output details
 without changing the layout. Container aliases are normalized (for example, MP4).
 The default target is the conservative profile: MP4, SDR H.264 up to 1080p30/level 4.1, and optional
@@ -94,9 +108,10 @@ subtitle selection. The result path is displayed on completion.
 
 Cancel waits for cleanup before becoming Close. Closing the window or Ctrl+Q also
 cancels active work and waits for helper exit. On success, Close is available.
-Auto-close is temporarily disabled for testing;
-the retained footer label says **Auto-close disabled** on one line. Completed
-conversions, errors and cancellation all stay open until explicitly closed.
+With the default GUI setting, a one-line five-second countdown closes successful
+conversions. With `conversion/autoClose=false` in the GUI INI file, the footer
+says **Auto-close disabled**, and successful conversions stay open. Errors and
+cancellation always stay open until explicitly closed.
 An already-compatible source and cache reuse are successes.
 
 The regular player still chooses its recipe for the selected receiver, which may
@@ -217,7 +232,8 @@ Protocol checks cancel active encoders by explicit cancellation, shutdown, and E
 verify child reaping and partial-output removal, and reject concurrent operations.
 Native tests cover progress, terminal errors, cancellation, early cancellation,
 window close, consistent cached-output format rows, and successful completion
-remaining open beyond the former countdown. None of these tests contacts a TV.
+remaining open with auto-close disabled, plus default auto-close and countdown
+layout. None of these tests contacts a TV.
 
 For a manual check, open a video via Dolphin's new entry and confirm the formats,
 progress, output location and that it remains open after success. Cancel a second conversion and confirm

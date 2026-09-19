@@ -55,8 +55,9 @@ the new window's real-TV validation is pending.
 Open a file with **Yeet (convert only)** to prepare a broadly compatible MP4
 without a receiver, or run `yeet-kde --convert-only FILE`. Shared `[compatibility]`
 settings can allow HEVC and AAC surround to avoid unnecessary transcoding. The separate window
-shows formats and progress and supports cancellation. Auto-close is currently
-disabled for testing; use Close after completion. Outputs use the shared reusable cache; see the [KDE guide](docs/kde-ui.md#convert-only-window).
+shows formats and progress and supports cancellation. Successful conversions
+auto-close after five seconds by default; set `[conversion] autoClose=false` in
+`~/.config/yeet/kde-ui.ini` to keep them open. Outputs use the shared reusable cache; see the [KDE guide](docs/kde-ui.md#convert-only-window).
 
 ## CLI
 

@@ -9,9 +9,14 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QShortcut>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QVBoxLayout>
 
 namespace {
+void bold(QWidget *widget) {
+    auto font=widget->font(); font.setBold(true); widget->setFont(font);
+}
 QString containerName(const QString &container) {
     const auto names=container.split(',');
     if (names.contains("mp4")) return QStringLiteral("MP4");
@@ -32,19 +37,28 @@ QLabel *label(QWidget *parent, const char *name, const QString &text={}) {
     return result;
 }
 }
-ConversionWindow::ConversionWindow(const QString &backend,const QString &file,const QStringList &arguments) {
+ConversionWindow::ConversionWindow(const QString &backend,const QString &file,const QStringList &arguments,const QString &settingsFile) {
+    QSettings settings(settingsFile.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/yeet/kde-ui.ini" : settingsFile,QSettings::IniFormat);
+    m_autoClose=settings.value("conversion/autoClose",true).toBool();
     setWindowTitle(i18n("Convert only")); resize(740,480);
     auto *central=new QWidget(this); setCentralWidget(central);
     auto *layout=new QVBoxLayout(central); layout->setSpacing(12);
-    auto *filename=label(central,"conversionFile",i18n("Selected video: %1",QFileInfo(file).fileName()));
-    filename->setToolTip(file); layout->addWidget(filename);
+    auto *selected=new QHBoxLayout;
+    auto *selectedCaption=label(central,"conversionFileLabel",i18n("Selected video:"));
+    bold(selectedCaption); selectedCaption->setWordWrap(false);
+    selected->addWidget(selectedCaption,0,Qt::AlignTop);
+    auto *filename=label(central,"conversionFile",QFileInfo(file).fileName());
+    filename->setToolTip(file); selected->addWidget(filename,1); layout->addLayout(selected);
     auto *formats=new QHBoxLayout;
     formats->setSpacing(16);
     formats->addWidget(createFormatSection(i18n("Source"),"conversionSource",m_source),1);
     formats->addWidget(createFormatSection(i18n("Target"),"conversionTarget",m_target),1);
     layout->addLayout(formats);
     layout->addWidget(label(central,"conversionNote",i18n("Compatible streams are copied. The original file is kept; subtitles remain with the original.")));
-    m_output=label(central,"conversionOutput"); layout->addWidget(m_output);
+    auto *outputLayout=new QVBoxLayout; outputLayout->setSpacing(2);
+    m_outputCaption=label(central,"conversionOutputLabel",i18n("Available file:"));
+    bold(m_outputCaption); m_outputCaption->hide(); outputLayout->addWidget(m_outputCaption);
+    m_output=label(central,"conversionOutput"); outputLayout->addWidget(m_output); layout->addLayout(outputLayout);
     m_warnings=label(central,"conversionWarnings"); layout->addWidget(m_warnings);
     layout->addStretch();
     m_status=label(central,"conversionStatus",i18n("Starting backend…")); layout->addWidget(m_status);
@@ -57,6 +71,12 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     m_button=new QPushButton(i18n("Cancel"),central); m_button->setObjectName("conversionButton"); bottom->addWidget(m_button); layout->addLayout(bottom);
     auto *quit=new QShortcut(QKeySequence::Quit,this); connect(quit,&QShortcut::activated,this,&QWidget::close);
     connect(m_button,&QPushButton::clicked,this,[this] { if (m_finished) close(); else cancel(); });
+    m_autoCloseTimer.setInterval(1000);
+    m_autoCloseTimer.setTimerType(Qt::PreciseTimer);
+    connect(&m_autoCloseTimer,&QTimer::timeout,this,[this] {
+        if (--m_seconds<=0) { m_autoCloseTimer.stop(); close(); }
+        else m_countdown->setText(i18np("Closing in %1 second…","Closing in %1 seconds…",m_seconds));
+    });
     m_backend=new Backend(backend,this,arguments);
     connect(m_backend,&Backend::connected,this,[this,file] {
         if (m_closing || m_finished || m_cancelling) return;
@@ -80,13 +100,23 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     m_backend->start();
 }
 QGroupBox *ConversionWindow::createFormatSection(const QString &title,const QString &name,FormatFields &fields) {
-    auto *section=new QGroupBox(title,centralWidget()); section->setObjectName(name);
-    auto *form=new QFormLayout(section);
+    auto *section=new QGroupBox(centralWidget()); section->setObjectName(name);
+    auto *sectionLayout=new QVBoxLayout(section);
+    // Breeze centres native group-box titles regardless of their alignment.
+    // A heading inside the frame gives all styles the same left alignment.
+    auto *heading=label(section,qPrintable(name+"Heading"),title);
+    heading->setAlignment(Qt::AlignLeft|Qt::AlignVCenter); bold(heading);
+    sectionLayout->addWidget(heading);
+    auto *form=new QFormLayout; sectionLayout->addLayout(form);
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     form->setLabelAlignment(Qt::AlignLeft|Qt::AlignTop);
     auto row=[&](const QString &caption,const char *suffix) {
         auto *value=label(section,qPrintable(name+suffix),i18n("Determining…"));
-        form->addRow(caption,value); return value;
+        auto valueFont=font(); valueFont.setBold(false); value->setFont(valueFont);
+        // Keep data at regular weight, independently of heading styling.
+        auto *captionLabel=label(section,qPrintable(name+suffix+"Label"),caption);
+        bold(captionLabel); captionLabel->setWordWrap(false);
+        form->addRow(captionLabel,value); return value;
     };
     fields.container=row(i18n("Container:"),"Container");
     fields.video=row(i18n("Video:"),"Video");
@@ -134,11 +164,16 @@ void ConversionWindow::finish(const QJsonObject &state) {
     if (state["error"].isString()) m_status->setText(state["error"].toString());
     if (state["phase"].toString()=="completed") {
         m_progress->setValue(100);
-        m_output->setText(i18n("Available file:\n%1",state["output"].toString()));
-        m_countdown->setText(i18n("Auto-close disabled"));
+        m_outputCaption->show(); m_output->setText(state["output"].toString());
+        if (m_autoClose) {
+            m_seconds=5;
+            m_countdown->setText(i18np("Closing in %1 second…","Closing in %1 seconds…",m_seconds));
+            m_autoCloseTimer.start();
+        } else m_countdown->setText(i18n("Auto-close disabled"));
     }
 }
 void ConversionWindow::fail(const QString &message) {
+    m_autoCloseTimer.stop();
     m_countdown->clear();
     finish({{"phase","failed"},{"error",message}});
     m_backend->shutdown(); // Also cleans up if the error was a protocol failure.
@@ -163,6 +198,6 @@ void ConversionWindow::closeEvent(QCloseEvent *event) {
     if (m_canClose) { event->accept(); return; }
     event->ignore();
     if (m_closing) return;
-    m_closing=true; m_button->setEnabled(false);
+    m_closing=true; m_autoCloseTimer.stop(); m_button->setEnabled(false);
     m_status->setText(i18n("Closing and cleaning up…")); m_backend->shutdown();
 }

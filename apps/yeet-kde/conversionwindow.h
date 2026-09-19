@@ -10,7 +10,7 @@ class QGroupBox;
 class ConversionWindow : public QMainWindow {
     Q_OBJECT
 public:
-    explicit ConversionWindow(const QString &backend, const QString &file, const QStringList &backendArguments = {});
+    explicit ConversionWindow(const QString &backend, const QString &file, const QStringList &backendArguments = {}, const QString &settingsFile = {});
 protected:
     void closeEvent(QCloseEvent *event) override;
 private:
@@ -23,9 +23,12 @@ private:
     QGroupBox *createFormatSection(const QString &title, const QString &name, FormatFields &fields);
     void showFormat(const QJsonObject &media, const FormatFields &fields);
     FormatFields m_source, m_target;
-    QLabel *m_status, *m_output, *m_warnings, *m_countdown;
+    QLabel *m_status, *m_output, *m_outputCaption, *m_warnings, *m_countdown;
     QProgressBar *m_progress;
     QPushButton *m_button;
+    QTimer m_autoCloseTimer;
+    bool m_autoClose = true;
+    int m_seconds = 5;
     qint64 m_operation = 0;
     bool m_finished = false, m_cancelling = false, m_closing = false, m_canClose = false;
 };
