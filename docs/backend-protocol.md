@@ -153,8 +153,15 @@ Snapshots contain `phase` (`inspecting`, `preparing`, `completed`, `cancelled`,
 `target_description` and `operation`, nullable `fraction` in 0..1, display-text `message`, nullable `output`
 path, booleans `reused`/`already_compatible`, `warnings` (strings), and nullable
 `error`. `target_description` reports the accepted target formats while inspecting,
-including any configured permissions; `target` becomes actual probed output
-metadata on success. Frontends should use these instead of hardcoding H.264. Fraction may reset to indeterminate
+including any configured permissions. Nullable `planned_target` contains
+`container` and `streams` after selecting a plan, before cache lookup. Its stream
+fields use the media schema for format display: copied streams retain source
+metadata; encoded streams describe the selected codec/profile/channels, leaving
+unmeasured resolution/frame rate null. These are projected format fields, not
+probed output or selectable track indices. `target` becomes actual probed output
+metadata on success. Render `target` when available, otherwise `planned_target`,
+in the same rows. The KDE UI starts with placeholders while inspecting and does
+not parse `target_description` prose or hardcode the target codec. Fraction may reset to indeterminate
 for cache validation; it reaches 1 only on successful completion.
 
 Progress snapshots can coalesce. A reliable `conversion_ended` event carries

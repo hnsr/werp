@@ -95,6 +95,24 @@ async fn offline_conversion_copies_encodes_reuses_and_skips_compatible_sources()
         let original = std::fs::read(&file).unwrap();
         let first = convert(&file).await;
         assert!(!first.reused && !first.already_compatible);
+        let planned = first.planned_target.as_ref().unwrap();
+        assert_eq!(planned.container, "mp4");
+        let target = first.target.as_ref().unwrap();
+        for kind in ["video", "audio"] {
+            let before = planned
+                .streams
+                .iter()
+                .find(|stream| stream.kind == kind)
+                .unwrap();
+            let after = target
+                .streams
+                .iter()
+                .find(|stream| stream.kind == kind)
+                .unwrap();
+            assert_eq!(before.codec, after.codec);
+            assert_eq!(before.profile, after.profile);
+            assert_eq!(before.channels, after.channels);
+        }
         assert_eq!(first.operation.as_deref(), Some(operation));
         assert_eq!(first.fraction, Some(1.0));
         let output = first.output.unwrap();

@@ -6,7 +6,7 @@ use tokio::sync::watch;
 
 use crate::{
     CancellationToken, YeetError, cache,
-    media::{self, DirectPlayPolicy, MediaInfo, ProbeOptions},
+    media::{self, DirectPlayPolicy, MediaInfo, ProbeOptions, StreamInfo},
     playback::{self, Mode},
     transcode::TranscodeOptions,
 };
@@ -31,11 +31,51 @@ pub enum Phase {
     Failed,
 }
 
+/// Planned output fields, excluding paths and metadata only known after probing.
+#[derive(Clone, Serialize)]
+pub struct PlannedFormat {
+    pub container: String,
+    pub streams: Vec<StreamInfo>,
+}
+
+impl PlannedFormat {
+    fn for_plan(info: &MediaInfo, mode: Mode) -> Self {
+        let streams = info
+            .streams
+            .iter()
+            .filter(|s| matches!(s.kind.as_str(), "video" | "audio") && !s.attached_picture)
+            .map(|stream| match (stream.kind.as_str(), mode) {
+                ("video", Mode::Transcode) => StreamInfo {
+                    kind: "video".into(),
+                    codec: Some("h264".into()),
+                    profile: Some("High".into()),
+                    pixel_format: Some("yuv420p".into()),
+                    ..Default::default()
+                },
+                ("audio", Mode::Audio | Mode::Transcode) => StreamInfo {
+                    kind: "audio".into(),
+                    codec: Some("aac".into()),
+                    profile: Some("LC".into()),
+                    channels: Some(2),
+                    sample_rate_hz: Some(48000),
+                    ..Default::default()
+                },
+                _ => stream.clone(),
+            })
+            .collect();
+        Self {
+            container: "mp4".into(),
+            streams,
+        }
+    }
+}
+
 #[derive(Clone, Default, Serialize)]
 pub struct State {
     pub phase: Phase,
     pub source: Option<MediaInfo>,
     pub target: Option<MediaInfo>,
+    pub planned_target: Option<PlannedFormat>,
     pub target_description: Option<String>,
     pub operation: Option<String>,
     pub fraction: Option<f64>,
@@ -121,6 +161,8 @@ async fn prepare(
         Mode::Auto,
         request.compatibility.relax(DirectPlayPolicy::Conservative),
     )?;
+    state.planned_target = Some(PlannedFormat::for_plan(&info, plan.mode));
+    updates.send_replace(state.clone());
     let Some(mode) = plan.preparation() else {
         state.already_compatible = true;
         state.output = Some(info.path.clone());

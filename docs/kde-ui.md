@@ -72,8 +72,11 @@ Open a video with **Yeet (convert only)**, or run:
 ```
 
 Without a filename this mode opens a file picker. It starts preparation immediately
-and shows the filename, source/target formats, progress, and Cancel. The default
-target is the conservative profile: MP4, SDR H.264 up to 1080p30/level 4.1, and optional
+and shows the filename, separate Source and Target sections, progress, and Cancel.
+Both sections use fixed Container, Video, Resolution and Audio rows. The target
+shows the planned format before cache lookup, then fills in probed output details
+without changing the layout. Container aliases are normalized (for example, MP4).
+The default target is the conservative profile: MP4, SDR H.264 up to 1080p30/level 4.1, and optional
 mono/stereo AAC-LC. Compatible streams are copied when possible; an already
 compatible MP4 needs no conversion. Encoded audio is stereo AAC at 192 kbps/48 kHz.
 No receiver is discovered or contacted, and no HTTP listener or resume checkpoint
@@ -90,9 +93,11 @@ burned into this offline output: open the original in the player to retain Yeet'
 subtitle selection. The result path is displayed on completion.
 
 Cancel waits for cleanup before becoming Close. Closing the window or Ctrl+Q also
-cancels active work and waits for helper exit. On success, Close is available and
-a visible five-second countdown closes the window automatically. Errors and
-cancellation stay open. An already-compatible source and cache reuse are successes.
+cancels active work and waits for helper exit. On success, Close is available.
+Auto-close is temporarily disabled for testing;
+the retained footer label says **Auto-close disabled** on one line. Completed
+conversions, errors and cancellation all stay open until explicitly closed.
+An already-compatible source and cache reuse are successes.
 
 The regular player still chooses its recipe for the selected receiver, which may
 be different from the convert-only target. Opening the prepared MP4 directly needs no
@@ -211,10 +216,11 @@ full video conversion, reuse, already-compatible input, and unchanged sources.
 Protocol checks cancel active encoders by explicit cancellation, shutdown, and EOF,
 verify child reaping and partial-output removal, and reject concurrent operations.
 Native tests cover progress, terminal errors, cancellation, early cancellation,
-window close, and the success countdown. None of these tests contacts a TV.
+window close, consistent cached-output format rows, and successful completion
+remaining open beyond the former countdown. None of these tests contacts a TV.
 
 For a manual check, open a video via Dolphin's new entry and confirm the formats,
-progress, output location and auto-close. Cancel a second conversion and confirm
+progress, output location and that it remains open after success. Cancel a second conversion and confirm
 that it stays open with Close after cleanup. Real listening remains useful for
 subjective dialogue clarity; synthetic channel tests cannot judge a movie's mix.
 

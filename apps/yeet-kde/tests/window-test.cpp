@@ -1,6 +1,7 @@
 #include "../window.h"
 #include "../conversionwindow.h"
 #include <QLabel>
+#include <QGroupBox>
 #include <QRegularExpression>
 #include <QComboBox>
 #include <QFile>
@@ -45,7 +46,7 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg,QRegularExpression("QProcess: Destroyed while process .* is still running."));
         backend.reset(); // Emergency destruction, as when a test assertion exits early.
     }
-    void conversion_progress_completion_and_countdown() {
+    void conversion_progress_completion_stays_open() {
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
@@ -54,20 +55,49 @@ private slots:
         const auto progress=window.findChild<QProgressBar *>("conversionProgress");
         QTRY_COMPARE(progress->value(),42);
         QCOMPARE(button->text(),QString("Cancel"));
-        QVERIFY(window.findChild<QLabel *>("conversionSource")->text().contains("HEVC"));
-        QVERIFY(window.findChild<QLabel *>("conversionTarget")->text().contains("HEVC"));
-        QVERIFY(window.findChild<QLabel *>("conversionTarget")->text().contains("6 channels"));
+        QCOMPARE(window.windowTitle(),QString("Convert only"));
+        QCOMPARE(window.findChild<QGroupBox *>("conversionSource")->title(),QString("Source"));
+        QCOMPARE(window.findChild<QGroupBox *>("conversionTarget")->title(),QString("Target"));
+        QVERIFY(window.findChild<QLabel *>("conversionSourceVideo")->text().contains("HEVC"));
+        QVERIFY(window.findChild<QLabel *>("conversionTargetVideo")->text().contains("H.264"));
+        QVERIFY(window.findChild<QLabel *>("conversionTargetAudio")->text().contains("2 channels"));
         screenshot(window,"conversion-progress");
         QTRY_COMPARE(button->text(),QString("Close"));
         QCOMPARE(progress->value(),100);
         QVERIFY(window.findChild<QLabel *>("conversionOutput")->text().contains("test.yeet-prepared.mp4"));
-        QVERIFY(window.findChild<QLabel *>("conversionTarget")->text().contains("AAC"));
+        QVERIFY(window.findChild<QLabel *>("conversionTargetAudio")->text().contains("AAC"));
         QVERIFY(window.isVisible()); screenshot(window,"conversion-complete");
-        QTest::qWait(1000); QVERIFY(window.isVisible());
-        QTRY_VERIFY_WITH_TIMEOUT(!window.isVisible(),6000);
+        const auto countdown=window.findChild<QLabel *>("conversionCountdown");
+        QCOMPARE(countdown->text(),QString("Auto-close disabled")); QVERIFY(!countdown->wordWrap());
+        QTest::qWait(5500); QVERIFY(window.isVisible());
+        QTest::mouseClick(button,Qt::LeftButton); QTRY_VERIFY(!window.isVisible());
         for (const auto &call : calls(helper+".log")) {
             QVERIFY(call["method"]!="discover"); QVERIFY(call["method"]!="start"); QVERIFY(call["method"]!="inspect");
         }
+    }
+    void conversion_reuse_keeps_the_same_format_rows() {
+        QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        ConversionWindow window(helper,dir.filePath("reuse video.mkv")); window.show();
+        QTRY_COMPARE(window.findChild<QProgressBar *>("conversionProgress")->value(),42);
+        QStringList before;
+        for (const auto *name : {"conversionTargetContainer","conversionTargetVideo","conversionTargetResolution","conversionTargetAudio"})
+            before << window.findChild<QLabel *>(name)->text();
+        screenshot(window,"conversion-reuse-checking");
+        QTRY_COMPARE(window.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
+        QStringList after;
+        for (const auto *name : {"conversionTargetContainer","conversionTargetVideo","conversionTargetResolution","conversionTargetAudio"})
+            after << window.findChild<QLabel *>(name)->text();
+        QCOMPARE(before,after);
+        QCOMPARE(after[0],QString("MP4")); QVERIFY(after[1].contains("HEVC")); QVERIFY(after[3].contains("6 channels"));
+        QCOMPARE(window.findChild<QLabel *>("conversionStatus")->text(),QString("Existing conversion reused"));
+        screenshot(window,"conversion-reused");
+        window.resize(500,480); QTest::qWait(50);
+        auto *countdown=window.findChild<QLabel *>("conversionCountdown");
+        QVERIFY(!countdown->wordWrap());
+        QVERIFY(countdown->width()>=countdown->fontMetrics().horizontalAdvance(countdown->text()));
+        window.close(); QTRY_VERIFY(!window.isVisible());
     }
     void conversion_cancel_failure_and_window_close() {
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");

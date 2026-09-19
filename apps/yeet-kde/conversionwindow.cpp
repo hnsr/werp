@@ -3,6 +3,8 @@
 #include <QCloseEvent>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QGroupBox>
+#include <QFormLayout>
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
@@ -10,22 +12,18 @@
 #include <QVBoxLayout>
 
 namespace {
-QString format(const QJsonObject &media) {
-    QStringList parts{media["container"].toString()};
-    for (const auto &value : media["streams"].toArray()) {
-        const auto stream=value.toObject();
-        const auto kind=stream["kind"].toString();
-        if (kind!="video" && kind!="audio") continue;
-        if (stream["attached_picture"].toBool()) continue;
-        QString description=stream["codec"].toString(i18n("Unknown codec")).toUpper();
-        if (kind=="video") {
-            if (stream["profile"].isString()) description += " "+stream["profile"].toString();
-            if (stream["width"].toInt()>0) description += QString(" · %1×%2").arg(stream["width"].toInt()).arg(stream["height"].toInt());
-            if (stream["pixel_format"].isString()) description += " · "+stream["pixel_format"].toString();
-        } else if (stream["channels"].toInt()>0) description += i18np(" · %1 channel"," · %1 channels",stream["channels"].toInt());
-        parts << description;
-    }
-    return parts.join("\n");
+QString containerName(const QString &container) {
+    const auto names=container.split(',');
+    if (names.contains("mp4")) return QStringLiteral("MP4");
+    if (names.contains("matroska")) return QStringLiteral("Matroska (MKV)");
+    return container.toUpper();
+}
+QString codecName(const QJsonObject &stream) {
+    auto codec=stream["codec"].toString(i18n("Unknown codec")).toUpper();
+    if (codec=="H264") codec="H.264";
+    const auto profile=stream["profile"].toString();
+    if (!profile.isEmpty()) codec += " · "+profile;
+    return codec;
 }
 QLabel *label(QWidget *parent, const char *name, const QString &text={}) {
     auto *result=new QLabel(text,parent); result->setObjectName(name);
@@ -35,13 +33,16 @@ QLabel *label(QWidget *parent, const char *name, const QString &text={}) {
 }
 }
 ConversionWindow::ConversionWindow(const QString &backend,const QString &file,const QStringList &arguments) {
-    setWindowTitle(i18n("Yeet — Convert only")); resize(620,460);
+    setWindowTitle(i18n("Convert only")); resize(740,480);
     auto *central=new QWidget(this); setCentralWidget(central);
     auto *layout=new QVBoxLayout(central); layout->setSpacing(12);
     auto *filename=label(central,"conversionFile",i18n("Selected video: %1",QFileInfo(file).fileName()));
     filename->setToolTip(file); layout->addWidget(filename);
-    m_source=label(central,"conversionSource",i18n("Source: Inspecting…")); layout->addWidget(m_source);
-    m_target=label(central,"conversionTarget",i18n("Target: Determining…")); layout->addWidget(m_target);
+    auto *formats=new QHBoxLayout;
+    formats->setSpacing(16);
+    formats->addWidget(createFormatSection(i18n("Source"),"conversionSource",m_source),1);
+    formats->addWidget(createFormatSection(i18n("Target"),"conversionTarget",m_target),1);
+    layout->addLayout(formats);
     layout->addWidget(label(central,"conversionNote",i18n("Compatible streams are copied. The original file is kept; subtitles remain with the original.")));
     m_output=label(central,"conversionOutput"); layout->addWidget(m_output);
     m_warnings=label(central,"conversionWarnings"); layout->addWidget(m_warnings);
@@ -49,15 +50,13 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     m_status=label(central,"conversionStatus",i18n("Starting backend…")); layout->addWidget(m_status);
     m_progress=new QProgressBar(central); m_progress->setObjectName("conversionProgress"); m_progress->setRange(0,0); layout->addWidget(m_progress);
     auto *bottom=new QHBoxLayout;
-    m_countdown=label(central,"conversionCountdown"); bottom->addWidget(m_countdown); bottom->addStretch();
+    m_countdown=label(central,"conversionCountdown");
+    m_countdown->setWordWrap(false);
+    m_countdown->setSizePolicy(QSizePolicy::MinimumExpanding,QSizePolicy::Preferred);
+    bottom->addWidget(m_countdown,1);
     m_button=new QPushButton(i18n("Cancel"),central); m_button->setObjectName("conversionButton"); bottom->addWidget(m_button); layout->addLayout(bottom);
     auto *quit=new QShortcut(QKeySequence::Quit,this); connect(quit,&QShortcut::activated,this,&QWidget::close);
     connect(m_button,&QPushButton::clicked,this,[this] { if (m_finished) close(); else cancel(); });
-    m_timer.setInterval(1000);
-    connect(&m_timer,&QTimer::timeout,this,[this] {
-        if (--m_seconds<=0) { m_timer.stop(); close(); }
-        else m_countdown->setText(i18np("Closing in %1 second…","Closing in %1 seconds…",m_seconds));
-    });
     m_backend=new Backend(backend,this,arguments);
     connect(m_backend,&Backend::connected,this,[this,file] {
         if (m_closing || m_finished || m_cancelling) return;
@@ -80,10 +79,49 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     });
     m_backend->start();
 }
+QGroupBox *ConversionWindow::createFormatSection(const QString &title,const QString &name,FormatFields &fields) {
+    auto *section=new QGroupBox(title,centralWidget()); section->setObjectName(name);
+    auto *form=new QFormLayout(section);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    form->setLabelAlignment(Qt::AlignLeft|Qt::AlignTop);
+    auto row=[&](const QString &caption,const char *suffix) {
+        auto *value=label(section,qPrintable(name+suffix),i18n("Determining…"));
+        form->addRow(caption,value); return value;
+    };
+    fields.container=row(i18n("Container:"),"Container");
+    fields.video=row(i18n("Video:"),"Video");
+    fields.resolution=row(i18n("Resolution:"),"Resolution");
+    fields.audio=row(i18n("Audio:"),"Audio");
+    return section;
+}
+void ConversionWindow::showFormat(const QJsonObject &media,const FormatFields &fields) {
+    fields.container->setText(containerName(media["container"].toString()));
+    QStringList videos,audio,resolutions;
+    for (const auto &value : media["streams"].toArray()) {
+        const auto stream=value.toObject();
+        if (stream["attached_picture"].toBool()) continue;
+        if (stream["kind"]=="video") {
+            videos << codecName(stream);
+            QString resolution=i18n("Determining…");
+            if (stream["width"].toInt()>0 && stream["height"].toInt()>0) {
+                resolution=QString("%1 × %2").arg(stream["width"].toInt()).arg(stream["height"].toInt());
+                if (stream["frame_rate"].isDouble()) resolution += i18n(" · %1 fps",QString::number(stream["frame_rate"].toDouble(),'g',4));
+            }
+            resolutions << resolution;
+        } else if (stream["kind"]=="audio") {
+            auto description=codecName(stream);
+            if (stream["channels"].toInt()>0) description += i18np(" · %1 channel"," · %1 channels",stream["channels"].toInt());
+            audio << description;
+        }
+    }
+    fields.video->setText(videos.isEmpty()?i18n("None"):videos.join("\n"));
+    fields.resolution->setText(resolutions.isEmpty()?QStringLiteral("—"):resolutions.join("\n"));
+    fields.audio->setText(audio.isEmpty()?i18n("None"):audio.join("\n"));
+}
 void ConversionWindow::updateState(const QJsonObject &state) {
-    if (state["source"].isObject()) m_source->setText(i18n("Source:\n%1",format(state["source"].toObject())));
-    if (state["target_description"].isString()) m_target->setText(i18n("Target: %1",state["target_description"].toString()));
-    if (state["target"].isObject()) m_target->setText(i18n("Target:\n%1",format(state["target"].toObject())));
+    if (state["source"].isObject()) showFormat(state["source"].toObject(),m_source);
+    if (state["target"].isObject()) showFormat(state["target"].toObject(),m_target);
+    else if (state["planned_target"].isObject()) showFormat(state["planned_target"].toObject(),m_target);
     if (!m_cancelling) m_status->setText(state["message"].toString());
     if (state["fraction"].isDouble()) { m_progress->setRange(0,100); m_progress->setValue(qBound(0,qRound(state["fraction"].toDouble()*100),100)); }
     else m_progress->setRange(0,0);
@@ -97,11 +135,11 @@ void ConversionWindow::finish(const QJsonObject &state) {
     if (state["phase"].toString()=="completed") {
         m_progress->setValue(100);
         m_output->setText(i18n("Available file:\n%1",state["output"].toString()));
-        m_countdown->setText(i18np("Closing in %1 second…","Closing in %1 seconds…",m_seconds)); m_timer.start();
+        m_countdown->setText(i18n("Auto-close disabled"));
     }
 }
 void ConversionWindow::fail(const QString &message) {
-    m_timer.stop(); m_countdown->clear();
+    m_countdown->clear();
     finish({{"phase","failed"},{"error",message}});
     m_backend->shutdown(); // Also cleans up if the error was a protocol failure.
 }
@@ -125,6 +163,6 @@ void ConversionWindow::closeEvent(QCloseEvent *event) {
     if (m_canClose) { event->accept(); return; }
     event->ignore();
     if (m_closing) return;
-    m_closing=true; m_timer.stop(); m_button->setEnabled(false);
+    m_closing=true; m_button->setEnabled(false);
     m_status->setText(i18n("Closing and cleaning up…")); m_backend->shutdown();
 }

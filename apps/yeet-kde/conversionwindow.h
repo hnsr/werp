@@ -5,6 +5,7 @@
 class QLabel;
 class QProgressBar;
 class QPushButton;
+class QGroupBox;
 
 class ConversionWindow : public QMainWindow {
     Q_OBJECT
@@ -18,11 +19,13 @@ private:
     void fail(const QString &message);
     void cancel();
     Backend *m_backend;
-    QLabel *m_source, *m_target, *m_status, *m_output, *m_warnings, *m_countdown;
+    struct FormatFields { QLabel *container, *video, *resolution, *audio; };
+    QGroupBox *createFormatSection(const QString &title, const QString &name, FormatFields &fields);
+    void showFormat(const QJsonObject &media, const FormatFields &fields);
+    FormatFields m_source, m_target;
+    QLabel *m_status, *m_output, *m_warnings, *m_countdown;
     QProgressBar *m_progress;
     QPushButton *m_button;
-    QTimer m_timer;
     qint64 m_operation = 0;
-    int m_seconds = 5;
     bool m_finished = false, m_cancelling = false, m_closing = false, m_canClose = false;
 };

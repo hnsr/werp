@@ -32,15 +32,24 @@ for line in sys.stdin:
     elif method=="convert":
         session+=1
         source={"container":"matroska","streams":[{"kind":"video","codec":"hevc","profile":"Main 10","width":1920,"height":1080},{"kind":"audio","codec":"ac3","channels":6}]}
-        conversion_state={"phase":"preparing","source":source,"target_description":"MP4 · H.264 / HEVC SDR · AAC-LC (up to 6 channels)","operation":"Converting to H.264 and stereo AAC in MP4","fraction":0.42,"message":"Converting video and audio","warnings":[]}
+        planned={"container":"mp4","streams":[{"kind":"video","codec":"h264","profile":"High"},{"kind":"audio","codec":"aac","profile":"LC","channels":2}]}
+        if "reuse" in params["file"]:
+            source["streams"][1]={"kind":"audio","codec":"aac","profile":"LC","channels":6}
+            planned={"container":"mp4","streams":source["streams"]}
+        conversion_state={"phase":"preparing","source":source,"planned_target":planned,"target_description":"MP4 · H.264 / HEVC SDR · AAC-LC (up to 6 channels)","operation":"Converting to H.264 and stereo AAC in MP4","fraction":0.42,"message":"Converting video and audio","warnings":[]}
         emit({"id":request["id"],"ok":True,"result":{"operation_id":session}})
         emit({"event":"conversion_state","operation_id":session,"state":conversion_state})
-        def converted(file=params["file"], operation=session, snapshot=conversion_state):
+        def converted(file=params["file"], operation=session, snapshot=conversion_state, output_format=planned):
             failed="fail" in file
+            actual=json.loads(json.dumps(output_format))
+            actual["container"]="mov,mp4,m4a,3gp,3g2,mj2"
+            for stream in actual["streams"]:
+                if stream["kind"]=="video":
+                    stream.setdefault("width",1920); stream.setdefault("height",1080)
             final=dict(snapshot,phase="failed" if failed else "completed",fraction=1.0,
-                output="/tmp/test.yeet-prepared.mp4",message="Conversion complete",
+                output="/tmp/test.yeet-prepared.mp4",message="Existing conversion reused" if "reuse" in file else "Conversion complete",reused="reuse" in file,
                 error="Test conversion failure" if failed else None,
-                target={"container":"mp4","streams":[{"kind":"video","codec":"h264"},{"kind":"audio","codec":"aac","channels":2}]})
+                target=actual)
             emit({"event":"conversion_ended","operation_id":operation,"state":final})
         if "long" not in params["file"]:
             timer=threading.Timer(0.8,converted); timer.daemon=True; timer.start()
