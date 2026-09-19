@@ -41,7 +41,7 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     auto *filename=label(central,"conversionFile",i18n("Selected video: %1",QFileInfo(file).fileName()));
     filename->setToolTip(file); layout->addWidget(filename);
     m_source=label(central,"conversionSource",i18n("Source: Inspecting…")); layout->addWidget(m_source);
-    m_target=label(central,"conversionTarget",i18n("Target: MP4 · H.264 · AAC (up to stereo)")); layout->addWidget(m_target);
+    m_target=label(central,"conversionTarget",i18n("Target: Determining…")); layout->addWidget(m_target);
     layout->addWidget(label(central,"conversionNote",i18n("Compatible streams are copied. The original file is kept; subtitles remain with the original.")));
     m_output=label(central,"conversionOutput"); layout->addWidget(m_output);
     m_warnings=label(central,"conversionWarnings"); layout->addWidget(m_warnings);
@@ -82,6 +82,7 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
 }
 void ConversionWindow::updateState(const QJsonObject &state) {
     if (state["source"].isObject()) m_source->setText(i18n("Source:\n%1",format(state["source"].toObject())));
+    if (state["target_description"].isString()) m_target->setText(i18n("Target: %1",state["target_description"].toString()));
     if (state["target"].isObject()) m_target->setText(i18n("Target:\n%1",format(state["target"].toObject())));
     if (!m_cancelling) m_status->setText(state["message"].toString());
     if (state["fraction"].isDouble()) { m_progress->setRange(0,100); m_progress->setValue(qBound(0,qRound(state["fraction"].toDouble()*100),100)); }

@@ -55,6 +55,8 @@ private slots:
         QTRY_COMPARE(progress->value(),42);
         QCOMPARE(button->text(),QString("Cancel"));
         QVERIFY(window.findChild<QLabel *>("conversionSource")->text().contains("HEVC"));
+        QVERIFY(window.findChild<QLabel *>("conversionTarget")->text().contains("HEVC"));
+        QVERIFY(window.findChild<QLabel *>("conversionTarget")->text().contains("6 channels"));
         screenshot(window,"conversion-progress");
         QTRY_COMPARE(button->text(),QString("Close"));
         QCOMPARE(progress->value(),100);

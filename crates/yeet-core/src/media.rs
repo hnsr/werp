@@ -210,10 +210,26 @@ fn parse_rate(rate: &str) -> Option<f64> {
 pub enum DirectPlayPolicy {
     #[default]
     Conservative,
+    /// Bounded HEVC Main/Main 10 SDR, with mono/stereo AAC only.
+    Hevc,
+    /// H.264 with up to six-channel AAC-LC, without HEVC admission.
+    AacSurround,
     /// HEVC and AAC-LC surround, with Dolby audio requiring conversion.
     Extended,
     /// Additionally allow multichannel AAC-LC, bounded HEVC, and H.264/AC-3 trials.
     Experimental,
+}
+
+impl DirectPlayPolicy {
+    pub fn allows_hevc(self) -> bool {
+        matches!(self, Self::Hevc | Self::Extended | Self::Experimental)
+    }
+    pub fn allows_aac_surround(self) -> bool {
+        matches!(
+            self,
+            Self::AacSurround | Self::Extended | Self::Experimental
+        )
+    }
 }
 
 /// An assessment of metadata, not a promise of successful receiver playback.
@@ -332,9 +348,9 @@ fn assess_input(
             video.index
         )));
     }
-    if hevc && policy == DirectPlayPolicy::Conservative {
+    if hevc && !policy.allows_hevc() {
         return Err(unsupported(
-            "HEVC requires --profile extended for copying or original-file playback",
+            "HEVC requires --profile extended or compatibility.allow_hevc for copying or original-file playback",
         ));
     }
     let audio: Vec<_> = info.streams.iter().filter(|s| s.kind == "audio").collect();
@@ -372,7 +388,10 @@ fn assess_input(
         }
         if ac3 {
             return match policy {
-                DirectPlayPolicy::Conservative | DirectPlayPolicy::Extended => Err(unsupported(
+                DirectPlayPolicy::Conservative
+                | DirectPlayPolicy::Hevc
+                | DirectPlayPolicy::AacSurround
+                | DirectPlayPolicy::Extended => Err(unsupported(
                     "AC-3 passthrough requires --profile experimental; audio output depends on the receiver and connected equipment",
                 )),
                 DirectPlayPolicy::Experimental => Ok(DirectPlayAssessment::ExperimentalAc3 {
@@ -382,20 +401,20 @@ fn assess_input(
         }
     }
     let audio_channels = audio.first().and_then(|audio| audio.channels);
+    // Check audio independently of video: enabling HEVC alone must not silently
+    // admit surround AAC on the early HEVC assessment return.
+    if audio_channels.is_some_and(|channels| channels > 2) && !policy.allows_aac_surround() {
+        return Err(unsupported(
+            "multichannel AAC-LC requires --profile extended or compatibility.allow_aac_surround for copying or original-file playback; check audible audio/downmix on your receiver",
+        ));
+    }
     if hevc {
         return Ok(DirectPlayAssessment::ExperimentalHevc { audio_channels });
     }
     if let Some(channels) = audio_channels
         && channels > 2
     {
-        return match policy {
-            DirectPlayPolicy::Conservative => Err(unsupported(
-                "multichannel AAC-LC requires --profile extended for copying or original-file playback; check audible audio/downmix on your receiver",
-            )),
-            DirectPlayPolicy::Experimental | DirectPlayPolicy::Extended => {
-                Ok(DirectPlayAssessment::ExperimentalAacSurround { channels })
-            }
-        };
+        return Ok(DirectPlayAssessment::ExperimentalAacSurround { channels });
     }
     Ok(DirectPlayAssessment::ConservativeProfile)
 }

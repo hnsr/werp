@@ -135,7 +135,7 @@ to 32. Large libraries are not sent wholesale: inspection covers one file.
 ## Offline conversion
 
 `convert` starts receiver-independent preparation targeting the conservative
-H.264/AAC MP4 profile. Its acknowledgement precedes events. `start` and `convert`
+H.264/AAC MP4 profile plus shared `[compatibility]` permissions. Its acknowledgement precedes events. `start` and `convert`
 reject overlapping work with `busy`; IDs share the helper's monotonic sequence.
 No CLI preferences, discovery, subtitle selection, HTTP server or resume state
 are involved. Completed output uses the shared retained cache. An already
@@ -150,10 +150,11 @@ compatible input completes without invoking FFmpeg or creating a duplicate.
 
 Snapshots contain `phase` (`inspecting`, `preparing`, `completed`, `cancelled`,
 `failed`), nullable `source`/`target` media objects, nullable display-text
-`operation`, nullable `fraction` in 0..1, display-text `message`, nullable `output`
+`target_description` and `operation`, nullable `fraction` in 0..1, display-text `message`, nullable `output`
 path, booleans `reused`/`already_compatible`, `warnings` (strings), and nullable
-`error`. The initial target is the fixed conservative profile; `target` becomes
-actual probed output metadata on success. Fraction may reset to indeterminate
+`error`. `target_description` reports the accepted target formats while inspecting,
+including any configured permissions; `target` becomes actual probed output
+metadata on success. Frontends should use these instead of hardcoding H.264. Fraction may reset to indeterminate
 for cache validation; it reaches 1 only on successful completion.
 
 Progress snapshots can coalesce. A reliable `conversion_ended` event carries
@@ -164,3 +165,11 @@ still finish successfully. A stale cancellation receives `invalid_operation`.
 At most 16 cancellation acknowledgements may be pending. Shutdown, EOF and
 output failure cancel and join conversions as well as playback/query tasks.
 Auto-close timing belongs to the frontend, not the core or protocol.
+
+Before accepting `start` or `convert`, the helper reads shared `[compatibility]`
+settings from the default user config. It does not apply or validate CLI-only
+preferences. Invalid shared settings or malformed TOML produce `operation_failed`
+without starting the operation. No config file means conservative defaults (plus
+existing model support for casting). Settings are captured per operation; changes
+do not alter an active job. Inspect/discovery remain read-only and config-independent.
+The core receives typed preferences and never reads frontend config itself.

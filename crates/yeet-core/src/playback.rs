@@ -26,6 +26,21 @@ pub enum Profile {
 }
 
 impl Profile {
+    /// Explicit profiles override shared preferences; automatic mode adds them
+    /// to the existing receiver-model recommendation.
+    pub fn resolve_with(
+        self,
+        model: Option<&str>,
+        preferences: crate::config::CompatibilityPreferences,
+    ) -> DirectPlayPolicy {
+        let base = self.resolve(model);
+        if self == Self::Auto {
+            preferences.relax(base)
+        } else {
+            base
+        }
+    }
+
     pub fn resolve(self, model: Option<&str>) -> DirectPlayPolicy {
         match self {
             Self::Baseline => DirectPlayPolicy::Conservative,
@@ -125,6 +140,73 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn independent_compatibility_flags_and_explicit_profile_precedence() {
+        use crate::config::CompatibilityPreferences as Preferences;
+        for allow_hevc in [false, true] {
+            for allow_aac_surround in [false, true] {
+                let preferences = Preferences {
+                    allow_hevc,
+                    allow_aac_surround,
+                };
+                let policy = Profile::Auto.resolve_with(None, preferences);
+                assert_eq!(policy.allows_hevc(), allow_hevc);
+                assert_eq!(policy.allows_aac_surround(), allow_aac_surround);
+                assert_eq!(
+                    Profile::Baseline.resolve_with(None, preferences),
+                    DirectPlayPolicy::Conservative
+                );
+                assert_eq!(
+                    Profile::Extended.resolve_with(None, preferences),
+                    DirectPlayPolicy::Extended
+                );
+                assert_eq!(
+                    Profile::Auto.resolve_with(Some("KPN DIW7022"), preferences),
+                    DirectPlayPolicy::Extended
+                );
+                for container in ["mp4", "matroska,webm"] {
+                    for fixture in [
+                        include_str!("../tests/fixtures/hevc.json"),
+                        include_str!("../tests/fixtures/h264.json"),
+                    ] {
+                        for audio in ["aac", "ac3", "eac3"] {
+                            let source = info(fixture, |j| {
+                                j["format"]["format_name"] = container.into();
+                                j["streams"][1]["codec_name"] = audio.into();
+                                j["streams"][1]["channels"] = 6.into();
+                            })
+                            .await;
+                            let is_hevc = source.streams[0].codec.as_deref() == Some("hevc");
+                            let expected = if is_hevc && !allow_hevc {
+                                Mode::Transcode
+                            } else if audio != "aac" || !allow_aac_surround {
+                                Mode::Audio
+                            } else if container == "mp4" {
+                                Mode::Direct
+                            } else {
+                                Mode::Remux
+                            };
+                            assert_eq!(select(&source, Mode::Auto, policy).unwrap().mode, expected);
+                            assert_eq!(
+                                select(&source, Mode::Transcode, policy).unwrap().policy,
+                                DirectPlayPolicy::Conservative
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        let both = Preferences {
+            allow_hevc: true,
+            allow_aac_surround: true,
+        };
+        assert_eq!(
+            both.relax(DirectPlayPolicy::Conservative),
+            DirectPlayPolicy::Extended,
+            "same admission policy uses the existing Extended cache recipe"
+        );
     }
 
     #[cfg(unix)]

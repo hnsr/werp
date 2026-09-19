@@ -20,6 +20,10 @@ change behavior. CLI overrides take precedence over file preferences.
 See [the example TOML](config.example.toml). Supported settings:
 
 ```toml
+[compatibility]
+allow_hevc = false
+allow_aac_surround = false
+
 [cli.subtitles]
 auto_load = true
 languages = ["en", "nl"]
@@ -33,6 +37,24 @@ auto_resume = true
 
 The built-in device preference list is empty. Personal device names belong in
 the user's configuration, never in tracked examples or commits.
+
+`[compatibility]` is shared by the CLI and KDE helper. Both flags default to
+false. `allow_hevc` admits SDR HEVC Main/Main 10 up to level 4.0/1080p30;
+`allow_aac_surround` admits AAC-LC with up to six channels. The flags are
+independent: HEVC alone still converts multichannel audio to stereo. They do not
+admit HDR, larger dimensions/frame rates, unsupported profiles, or ambiguous
+tracks. Dolby/HE-AAC audio still converts to AAC-LC. Enable only formats known to
+work on the intended receiver; these are global preferences, not device negotiation.
+
+Convert-only adds these permissions to its conservative target. Automatic casting
+adds them to the existing receiver-model profile. Existing known-model support
+is preserved when flags are false. Explicit CLI `--profile baseline`, `extended`,
+or `experimental` overrides these preferences; `--mode transcode` still forces
+H.264/stereo AAC. CLI `--no-config` disables file preferences, while model detection
+still applies. The helper reads the shared section for each new conversion or
+cast; it ignores CLI-only values and validates the shared section. Malformed TOML
+or invalid shared fields fail the new operation visibly. Inspect/discovery remain
+independent of configuration. No settings change an operation already in progress.
 
 ## Subtitle selection and rendering
 

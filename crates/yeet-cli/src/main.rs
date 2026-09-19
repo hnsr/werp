@@ -157,7 +157,7 @@ struct PlaybackArgs {
     /// Select automatically, or require one preparation path
     #[arg(long, value_enum, default_value_t = ModeArg::Auto)]
     mode: ModeArg,
-    /// Receiver compatibility profile (auto uses discovered model; unknown/--host uses baseline)
+    /// Receiver compatibility profile (auto uses model plus shared preferences; explicit profiles override config)
     #[arg(long, value_enum, default_value_t = ProfileArg::Auto)]
     profile: ProfileArg,
     /// Do not reuse or retain prepared files; remove them after this session
@@ -384,6 +384,7 @@ async fn execute(
             };
             request.mode = mode.into();
             request.profile = profile.into();
+            request.compatibility = preferences.compatibility;
             request.cache.enabled = !no_cache;
             request.inhibit_sleep = false;
             let _ = no_inhibit_sleep; // The CLI owns inhibition across preflight and playback.

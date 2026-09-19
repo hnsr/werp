@@ -53,7 +53,8 @@ See [build, installation, architecture, and TV checklist](docs/kde-ui.md) and th
 the new window's real-TV validation is pending.
 
 Open a file with **Yeet (convert only)** to prepare a broadly compatible MP4
-without a receiver, or run `yeet-kde --convert-only FILE`. The separate window
+without a receiver, or run `yeet-kde --convert-only FILE`. Shared `[compatibility]`
+settings can allow HEVC and AAC surround to avoid unnecessary transcoding. The separate window
 shows formats and progress, supports cancellation, and closes five seconds after
 success. Outputs use the shared reusable cache; see the [KDE guide](docs/kde-ui.md#convert-only-window).
 
@@ -95,7 +96,10 @@ Defaults enable automatic subtitles, prefer English then Dutch, and save playbac
 position. Configure `[cli.devices] preferred` with ordered exact names or stable IDs.
 Explicit `--device`/`--host` overrides preferences. `--config PATH` selects another
 file; `--no-config` uses built-in defaults. All automatic preferences are under
-`[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`; the UI does not load them.
+`[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`; the UI does not apply them.
+Shared `[compatibility]` settings `allow_hevc` and `allow_aac_surround` default to
+false and relax convert-only and automatic casting. Explicit CLI `--profile`
+values other than `auto` override those settings. See the example TOML for limits.
 `[cli.playback] auto_resume = false` disables automatic resume while still saving
 progress for explicit resume later.
 

@@ -28,8 +28,9 @@ retry or escalation after a network/receiver failure: a successful Cast status
 does not establish that audio was audible.
 
 `--profile auto` chooses Extended for the observed KPN DIW7022 model and Baseline
-for unknown models. `--host` bypasses discovery, so it uses Baseline unless a
-profile is supplied explicitly. This is an observation-based model mapping, not
+for unknown models, then adds the shared `[compatibility]` permissions.
+`--host` bypasses discovery, so it starts with Baseline plus those permissions.
+An explicit `--profile baseline`, `extended`, or `experimental` overrides config. This is an observation-based model mapping, not
 receiver capability negotiation or a guarantee for every device of that model.
 
 | Profile | Supported video for direct/copy paths | Supported copied audio |
@@ -53,6 +54,33 @@ Unselected tracks, attachments, titles, and chapters are omitted during preparat
 The CLI exposes preparation through `--mode`, compatibility through `--profile`,
 and storage through `--cache-dir`/`--no-cache`. Legacy flags and aliases have been
 removed; backward compatibility is not maintained at this stage.
+
+## Configurable compatibility
+
+Both shared flags default to false:
+
+```toml
+[compatibility]
+allow_hevc = false
+allow_aac_surround = false
+```
+
+They independently admit the HEVC and AAC-LC surround portions of Extended.
+With HEVC enabled and AAC surround disabled, HEVC video can be copied while
+surround audio is encoded to stereo. With both enabled, the effective policy is
+exactly Extended, including its cache recipe. Neither admits AC-3/E-AC-3 or
+HE-AAC passthrough, HDR, higher resolutions/frame rates, or ambiguous tracks.
+The documented hardware batch establishes these HEVC/AAC permissions on the
+observed receiver; it does not establish universal support.
+
+Convert-only reads these shared settings too. A supported HEVC/AAC MP4 may need
+no preparation; a matching MKV needs only remuxing. Unknown audio can still
+require audio-only conversion while HEVC video is preserved. Full video
+transcoding always produces the existing conservative H.264/stereo AAC target.
+Original files and existing prepared files are kept. Reuse still requires the
+same resolved recipe; enabling both shares existing Extended-profile outputs,
+while either partial combination has its own distinct recipe. No cache format
+or version migration is needed.
 
 ## Storage and reuse
 

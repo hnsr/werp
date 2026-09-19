@@ -1,5 +1,12 @@
 # Copy to ~/.config/yeet/config.toml (or $XDG_CONFIG_HOME/yeet/config.toml).
-# CLI overrides take precedence; omitted fields use these defaults.
+# Omitted fields use these defaults. Explicit CLI --profile overrides compatibility.
+# Shared by convert-only and automatic casting in both CLI and KDE.
+[compatibility]
+# Permit SDR HEVC Main/Main 10 through level 4.0, up to 1080p30.
+allow_hevc = false
+# Permit AAC-LC with 3–6 channels; Dolby and HE-AAC still require conversion.
+allow_aac_surround = false
+
 [cli.subtitles]
 auto_load = true
 languages = ["en", "nl"]

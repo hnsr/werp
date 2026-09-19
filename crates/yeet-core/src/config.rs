@@ -1,4 +1,4 @@
-//! Configuration for frontend policies. The backend helper never loads CLI settings.
+//! Shared compatibility preferences and separate frontend policies.
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -12,6 +12,34 @@ use crate::YeetError;
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub cli: CliPreferences,
+    pub compatibility: CompatibilityPreferences,
+}
+
+/// Opt-in additions to the default target, never permission to accept HDR or
+/// relax the existing resolution, frame-rate, codec-profile or track limits.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CompatibilityPreferences {
+    pub allow_hevc: bool,
+    pub allow_aac_surround: bool,
+}
+
+impl CompatibilityPreferences {
+    pub fn relax(self, base: crate::media::DirectPlayPolicy) -> crate::media::DirectPlayPolicy {
+        use crate::media::DirectPlayPolicy as Policy;
+        if base == Policy::Experimental {
+            return base;
+        }
+        match (
+            self.allow_hevc || base.allows_hevc(),
+            self.allow_aac_surround || base.allows_aac_surround(),
+        ) {
+            (false, false) => Policy::Conservative,
+            (true, false) => Policy::Hevc,
+            (false, true) => Policy::AacSurround,
+            (true, true) => Policy::Extended,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -119,14 +147,39 @@ pub fn normalize_preference(value: &str) -> Option<&'static str> {
 }
 
 pub fn load(explicit: Option<&Path>) -> Result<Config, YeetError> {
+    load_with(explicit, parse)
+}
+
+/// Frontends consume only the shared section. Syntactically valid CLI settings
+/// are ignored here, including CLI-only validation and preference selection.
+pub fn load_compatibility(explicit: Option<&Path>) -> Result<CompatibilityPreferences, YeetError> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Shared {
+        #[serde(default)]
+        compatibility: CompatibilityPreferences,
+        #[serde(default, rename = "cli")]
+        _cli: Option<serde::de::IgnoredAny>,
+    }
+    load_with(explicit, |text| {
+        toml::from_str::<Shared>(text)
+            .map(|config| config.compatibility)
+            .map_err(|e| YeetError::Config(e.to_string()))
+    })
+}
+
+fn load_with<T: Default>(
+    explicit: Option<&Path>,
+    parse: impl FnOnce(&str) -> Result<T, YeetError>,
+) -> Result<T, YeetError> {
     let default = default_path();
     let Some(path) = explicit.or(default.as_deref()) else {
-        return Ok(Config::default());
+        return Ok(T::default());
     };
     let file = match std::fs::File::open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound && explicit.is_none() => {
-            return Ok(Config::default());
+            return Ok(T::default());
         }
         Err(e) => return Err(YeetError::Config(format!("cannot read {path:?}: {e}"))),
     };
@@ -150,6 +203,38 @@ pub fn load(explicit: Option<&Path>) -> Result<Config, YeetError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_compatibility_defaults_validation_and_cli_isolation() {
+        let defaults = parse("").unwrap().compatibility;
+        assert!(!defaults.allow_hevc && !defaults.allow_aac_surround);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let valid = "[compatibility]\nallow_hevc=true\nallow_aac_surround=true\n";
+        fs_write(&path, valid);
+        let shared = load_compatibility(Some(&path)).unwrap();
+        assert!(shared.allow_hevc && shared.allow_aac_surround);
+        assert!(load(Some(&path)).unwrap().compatibility.allow_hevc);
+        fs_write(
+            &path,
+            &format!(
+                "{valid}[cli.subtitles]\nlanguages=['unavailable language']\nauto_load='not a boolean'\n"
+            ),
+        );
+        assert!(load(Some(&path)).is_err());
+        assert!(load_compatibility(Some(&path)).unwrap().allow_hevc);
+        for invalid in [
+            "allow_hevc='yes'",
+            "allow_av1=true",
+            "allow_aac_suround=true",
+        ] {
+            fs_write(&path, &format!("[compatibility]\n{invalid}\n"));
+            assert!(load(Some(&path)).is_err());
+            assert!(load_compatibility(Some(&path)).is_err());
+        }
+        fn fs_write(path: &Path, text: &str) {
+            std::fs::write(path, text).unwrap();
+        }
+    }
     #[test]
     fn defaults_aliases_and_invalid_preferences() {
         let config = parse("").unwrap();
