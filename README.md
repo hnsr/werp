@@ -152,6 +152,12 @@ selected explicitly on a receiver whose audio or video support differs. Dolby
 and HE-AAC audio convert to AAC-LC under the normal profiles. Full encoding uses
 libx264 veryfast/CRF 20, up to 1080p30, and stereo AAC 192 kbps/48 kHz.
 
+Original MP4 H.264 High Level 4.2 at 1080p50 with stereo AAC-LC also passed a
+user playback check on the development KPN receiver with
+`allow_h264_high_frame_rate` enabled.
+See the [compatibility notes](docs/automatic-playback.md#h264-1080p50-direct-play-result);
+59.94/60 fps remains unverified on hardware.
+
 Known PQ/HLG/Dolby Vision, ambiguous multiple audio/video tracks, and missing
 required duration/frame-rate information produce clear errors. HDR tone mapping,
 hardware acceleration, on-the-fly conversion, and track selection remain deferred.

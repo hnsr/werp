@@ -74,7 +74,9 @@ exactly Extended, including its cache recipe. The separate `allow_h264_high_fram
 Level 4.2 at up to 1080p60, without changing HEVC limits. These settings do not
 admit AC-3/E-AC-3 or HE-AAC passthrough, HDR, higher resolutions, or ambiguous tracks.
 The documented hardware batch establishes these HEVC/AAC permissions on the
-observed receiver; it does not establish universal support.
+observed receiver. A subsequent [H.264 1080p50 trial](#h264-1080p50-direct-play-result)
+also passed with the high-frame-rate opt-in; these observations do not establish
+universal support.
 
 Convert-only reads these shared settings too. A supported HEVC/AAC MP4 may need
 no preparation; a matching MKV needs only remuxing. Unknown audio can still
@@ -206,6 +208,27 @@ The batch used generated clips and adjacent prepared outputs under ignored
 `samples/`. Read-only-folder fallback remains covered by automated tests, not a
 separate hardware scenario. These results do not establish long-duration drift,
 seek behavior on the expanded paths, or compatibility with other receivers.
+
+## H.264 1080p50 direct-play result
+
+The user reported successful original-file playback on the development KPN receiver after
+enabling `compatibility.allow_h264_high_frame_rate`. The tested MP4 contains
+1920×1080 H.264 High Level 4.2, 50 fps, 8-bit 4:2:0 (`yuv420p`), BT.709 transfer,
+and stereo AAC-LC at 48 kHz. An attached JPEG cover image is ignored when
+assessing the video stream.
+
+Previously, the 30 fps/Level 4.1 policy selected full transcoding. Local
+verification with the opt-in enabled returned “Already compatible; no conversion
+needed” with FFmpeg unavailable; the subsequent receiver playback confirmation
+comes from the user's report. No source filename or personal device identifier
+is recorded here.
+
+This establishes a successful 1080p50/Level 4.2 trial on this receiver. The setting
+admits up to 1080p60, but 59.94/60 fps has not yet been hardware-validated. This
+report does not establish full-duration playback, seeking, or subtitle behavior
+for this sample. The option remains off by default and is separate from the
+model's automatic Extended profile; it is enabled in the development user's
+personal configuration.
 
 ## Reproduce the guided hardware batch
 
