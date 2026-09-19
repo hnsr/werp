@@ -23,6 +23,8 @@ See [the example TOML](config.example.toml). Supported settings:
 [compatibility]
 allow_hevc = false
 allow_aac_surround = false
+# Permit SDR H.264 through Level 4.2, up to 1080p60.
+allow_h264_high_frame_rate = false
 
 [cli.subtitles]
 auto_load = true
@@ -38,13 +40,15 @@ auto_resume = true
 The built-in device preference list is empty. Personal device names belong in
 the user's configuration, never in tracked examples or commits.
 
-`[compatibility]` is shared by the CLI and KDE helper. Both flags default to
+`[compatibility]` is shared by the CLI and KDE helper. All flags default to
 false. `allow_hevc` admits SDR HEVC Main/Main 10 up to level 4.0/1080p30;
 `allow_aac_surround` admits AAC-LC with up to six channels. The flags are
-independent: HEVC alone still converts multichannel audio to stereo. They do not
-admit HDR, larger dimensions/frame rates, unsupported profiles, or ambiguous
-tracks. Dolby/HE-AAC audio still converts to AAC-LC. Enable only formats known to
-work on the intended receiver; these are global preferences, not device negotiation.
+independent: HEVC alone still converts multichannel audio to stereo.
+`allow_h264_high_frame_rate` admits SDR H.264 through Level 4.2 at up to 1080p60;
+it does not raise HEVC limits. HDR, larger dimensions, unsupported pixel formats
+or codec profiles, and ambiguous tracks remain excluded. Dolby/HE-AAC audio still
+converts to AAC-LC. Enable only formats known to work on the intended receiver;
+these are global preferences, not device negotiation.
 
 Convert-only adds these permissions to its conservative target. Automatic casting
 adds them to the existing receiver-model profile. Existing known-model support

@@ -216,18 +216,41 @@ pub enum DirectPlayPolicy {
     AacSurround,
     /// HEVC and AAC-LC surround, with Dolby audio requiring conversion.
     Extended,
+    /// H.264 through Level 4.2/1080p60, with independent codec/audio opt-ins.
+    H264HighFrameRate {
+        allow_hevc: bool,
+        allow_aac_surround: bool,
+    },
     /// Additionally allow multichannel AAC-LC, bounded HEVC, and H.264/AC-3 trials.
     Experimental,
 }
 
 impl DirectPlayPolicy {
+    pub fn allows_h264_high_frame_rate(self) -> bool {
+        matches!(self, Self::H264HighFrameRate { .. })
+    }
     pub fn allows_hevc(self) -> bool {
-        matches!(self, Self::Hevc | Self::Extended | Self::Experimental)
+        matches!(
+            self,
+            Self::Hevc
+                | Self::Extended
+                | Self::Experimental
+                | Self::H264HighFrameRate {
+                    allow_hevc: true,
+                    ..
+                }
+        )
     }
     pub fn allows_aac_surround(self) -> bool {
         matches!(
             self,
-            Self::AacSurround | Self::Extended | Self::Experimental
+            Self::AacSurround
+                | Self::Extended
+                | Self::Experimental
+                | Self::H264HighFrameRate {
+                    allow_aac_surround: true,
+                    ..
+                }
         )
     }
 }
@@ -236,6 +259,7 @@ impl DirectPlayPolicy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DirectPlayAssessment {
     ConservativeProfile,
+    ExtendedH264,
     ExperimentalAacSurround { channels: u32 },
     ExperimentalHevc { audio_channels: Option<u32> },
     ExperimentalAc3 { channels: u32 },
@@ -285,7 +309,7 @@ fn assess_input(
 ) -> Result<DirectPlayAssessment, YeetError> {
     let unsupported = |reason: &str| {
         YeetError::UnsupportedMedia(format!(
-            "{reason}. The baseline profile requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without known HDR signalling. Use automatic mode to select conversion, or --mode transcode to force SDR H.264/AAC output"
+            "{reason}. The baseline profile requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without known HDR signalling. Opt in to H.264 Level 4.2/1080p60 with compatibility.allow_h264_high_frame_rate. Use automatic mode to select conversion, or --mode transcode to force SDR H.264/AAC output"
         ))
     };
     if !info
@@ -320,7 +344,14 @@ fn assess_input(
             video.profile.as_deref(),
             Some("Constrained Baseline" | "Baseline" | "Main" | "High")
         )
-        && video.level.is_some_and(|level| (9..=41).contains(&level))
+        && video.level.is_some_and(|level| {
+            (9..=if policy.allows_h264_high_frame_rate() {
+                42
+            } else {
+                41
+            })
+                .contains(&level)
+        })
         && video.pixel_format.as_deref() == Some("yuv420p");
     // ffprobe reports HEVC levels in units of 30 (120 means level 4.0).
     let hevc = video.codec.as_deref() == Some("hevc")
@@ -334,9 +365,16 @@ fn assess_input(
         || !video
             .height
             .is_some_and(|height| (1..=1080).contains(&height))
-        || !video
-            .frame_rate
-            .is_some_and(|rate| rate.is_finite() && rate > 0.0 && rate <= 30.01)
+        || !video.frame_rate.is_some_and(|rate| {
+            rate.is_finite()
+                && rate > 0.0
+                && rate
+                    <= if h264 && policy.allows_h264_high_frame_rate() {
+                        60.01
+                    } else {
+                        30.01
+                    }
+        })
         || matches!(
             video.color_transfer.as_deref(),
             Some("smpte2084" | "arib-std-b67")
@@ -391,7 +429,8 @@ fn assess_input(
                 DirectPlayPolicy::Conservative
                 | DirectPlayPolicy::Hevc
                 | DirectPlayPolicy::AacSurround
-                | DirectPlayPolicy::Extended => Err(unsupported(
+                | DirectPlayPolicy::Extended
+                | DirectPlayPolicy::H264HighFrameRate { .. } => Err(unsupported(
                     "AC-3 passthrough requires --profile experimental; audio output depends on the receiver and connected equipment",
                 )),
                 DirectPlayPolicy::Experimental => Ok(DirectPlayAssessment::ExperimentalAc3 {
@@ -415,6 +454,11 @@ fn assess_input(
         && channels > 2
     {
         return Ok(DirectPlayAssessment::ExperimentalAacSurround { channels });
+    }
+    if video.level.is_some_and(|level| level > 41)
+        || video.frame_rate.is_some_and(|rate| rate > 30.01)
+    {
+        return Ok(DirectPlayAssessment::ExtendedH264);
     }
     Ok(DirectPlayAssessment::ConservativeProfile)
 }

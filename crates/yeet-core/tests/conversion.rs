@@ -214,6 +214,7 @@ async fn relaxed_offline_target_preserves_hevc_and_shares_extended_cache() {
         CompatibilityPreferences {
             allow_hevc: true,
             allow_aac_surround: false,
+            ..Default::default()
         },
     )
     .await;
@@ -227,6 +228,7 @@ async fn relaxed_offline_target_preserves_hevc_and_shares_extended_cache() {
     let both = CompatibilityPreferences {
         allow_hevc: true,
         allow_aac_surround: true,
+        ..Default::default()
     };
     let relaxed = convert_with(&file, both).await;
     assert_eq!(

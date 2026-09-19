@@ -143,6 +143,96 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn high_frame_rate_h264_is_opt_in_and_keeps_other_limits() {
+        use crate::config::CompatibilityPreferences;
+        let preferences = CompatibilityPreferences {
+            allow_h264_high_frame_rate: true,
+            ..Default::default()
+        };
+        let policy = Profile::Auto.resolve_with(None, preferences);
+        assert!(policy.allows_h264_high_frame_rate());
+        assert!(!policy.allows_hevc());
+        assert!(!policy.allows_aac_surround());
+        for fps in ["25/1", "50/1", "60000/1001", "60/1"] {
+            let source = info(include_str!("../tests/fixtures/h264.json"), |j| {
+                j["streams"][0]["level"] = 42.into();
+                j["streams"][0]["r_frame_rate"] = fps.into();
+            })
+            .await;
+            assert_eq!(
+                select(&source, Mode::Auto, policy).unwrap().mode,
+                Mode::Direct
+            );
+            for explicit in [Profile::Baseline, Profile::Extended, Profile::Experimental] {
+                assert_eq!(
+                    select(
+                        &source,
+                        Mode::Auto,
+                        explicit.resolve_with(None, preferences)
+                    )
+                    .unwrap()
+                    .mode,
+                    Mode::Transcode
+                );
+            }
+            assert_eq!(
+                select(&source, Mode::Transcode, policy).unwrap().policy,
+                DirectPlayPolicy::Conservative
+            );
+        }
+        for (container, audio, expected) in [
+            ("matroska", "aac", Mode::Remux),
+            ("mp4", "ac3", Mode::Audio),
+            ("matroska", "eac3", Mode::Audio),
+        ] {
+            let source = info(include_str!("../tests/fixtures/h264.json"), |j| {
+                j["format"]["format_name"] = container.into();
+                j["streams"][0]["level"] = 42.into();
+                j["streams"][0]["r_frame_rate"] = "50/1".into();
+                j["streams"][1]["codec_name"] = audio.into();
+            })
+            .await;
+            assert_eq!(select(&source, Mode::Auto, policy).unwrap().mode, expected);
+        }
+        for (pointer, value) in [
+            ("/streams/0/level", serde_json::json!(50)),
+            ("/streams/0/r_frame_rate", serde_json::json!("120/1")),
+            ("/streams/0/pix_fmt", serde_json::json!("yuv420p10le")),
+            ("/streams/0/width", serde_json::json!(3840)),
+            ("/streams/0/profile", serde_json::json!("High 10")),
+            ("/streams/0/level", serde_json::Value::Null),
+        ] {
+            let source = info(include_str!("../tests/fixtures/h264.json"), |j| {
+                *j.pointer_mut(pointer).unwrap() = value;
+            })
+            .await;
+            assert_eq!(
+                select(&source, Mode::Auto, policy).unwrap().mode,
+                Mode::Transcode
+            );
+        }
+        let relaxed = CompatibilityPreferences {
+            allow_hevc: true,
+            allow_aac_surround: true,
+            ..preferences
+        }
+        .relax(policy);
+        assert!(
+            relaxed.allows_hevc()
+                && relaxed.allows_aac_surround()
+                && relaxed.allows_h264_high_frame_rate()
+        );
+        let hevc = info(include_str!("../tests/fixtures/hevc.json"), |j| {
+            j["streams"][0]["r_frame_rate"] = "50/1".into();
+        })
+        .await;
+        assert_eq!(
+            select(&hevc, Mode::Auto, relaxed).unwrap().mode,
+            Mode::Transcode
+        );
+    }
+
+    #[tokio::test]
     async fn independent_compatibility_flags_and_explicit_profile_precedence() {
         use crate::config::CompatibilityPreferences as Preferences;
         for allow_hevc in [false, true] {
@@ -150,6 +240,7 @@ mod tests {
                 let preferences = Preferences {
                     allow_hevc,
                     allow_aac_surround,
+                    ..Default::default()
                 };
                 let policy = Profile::Auto.resolve_with(None, preferences);
                 assert_eq!(policy.allows_hevc(), allow_hevc);
@@ -201,6 +292,7 @@ mod tests {
         let both = Preferences {
             allow_hevc: true,
             allow_aac_surround: true,
+            ..Default::default()
         };
         assert_eq!(
             both.relax(DirectPlayPolicy::Conservative),

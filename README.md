@@ -98,8 +98,8 @@ position. Configure `[cli.devices] preferred` with ordered exact names or stable
 Explicit `--device`/`--host` overrides preferences. `--config PATH` selects another
 file; `--no-config` uses built-in defaults. All automatic preferences are under
 `[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`; the UI does not apply them.
-Shared `[compatibility]` settings `allow_hevc` and `allow_aac_surround` default to
-false and relax convert-only and automatic casting. Explicit CLI `--profile`
+Shared `[compatibility]` settings `allow_hevc`, `allow_aac_surround`, and
+`allow_h264_high_frame_rate` (H.264 up to Level 4.2/1080p60) default to false and relax convert-only and automatic casting. Explicit CLI `--profile`
 values other than `auto` override those settings. See the example TOML for limits.
 `[cli.playback] auto_resume = false` disables automatic resume while still saving
 progress for explicit resume later.

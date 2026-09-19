@@ -57,19 +57,22 @@ removed; backward compatibility is not maintained at this stage.
 
 ## Configurable compatibility
 
-Both shared flags default to false:
+All shared flags default to false:
 
 ```toml
 [compatibility]
 allow_hevc = false
 allow_aac_surround = false
+# Permit SDR H.264 through Level 4.2, up to 1080p60.
+allow_h264_high_frame_rate = false
 ```
 
 They independently admit the HEVC and AAC-LC surround portions of Extended.
 With HEVC enabled and AAC surround disabled, HEVC video can be copied while
-surround audio is encoded to stereo. With both enabled, the effective policy is
-exactly Extended, including its cache recipe. Neither admits AC-3/E-AC-3 or
-HE-AAC passthrough, HDR, higher resolutions/frame rates, or ambiguous tracks.
+surround audio is encoded to stereo. With both enabled and high-frame-rate H.264 disabled, the effective policy is
+exactly Extended, including its cache recipe. The separate `allow_h264_high_frame_rate` flag permits SDR H.264 through
+Level 4.2 at up to 1080p60, without changing HEVC limits. These settings do not
+admit AC-3/E-AC-3 or HE-AAC passthrough, HDR, higher resolutions, or ambiguous tracks.
 The documented hardware batch establishes these HEVC/AAC permissions on the
 observed receiver; it does not establish universal support.
 
