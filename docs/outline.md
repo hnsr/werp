@@ -1,11 +1,11 @@
-# Procast outline
+# Yeet outline
 
 Status: agreed direction and input for detailed planning.
 Last updated: 2026-09-19.
 
 ## Purpose
 
-Procast casts downloaded local videos and subtitles to Chromecast devices on the
+Yeet casts downloaded local videos and subtitles to Chromecast devices on the
 local network. It should make this reliable and simple, preparing media only
 when the selected device cannot play it directly.
 
@@ -51,8 +51,8 @@ selected oxicast 0.0.3 after testing on the user's KPN DIW7022 receiver.
 Implemented M2 commands (visible SRT/WebVTT playback and Ctrl+C verified on hardware):
 
 ```sh
-procast devices
-procast cast movie.mp4 --device "Living Room" --subtitles movie.srt
+yeet devices
+yeet movie.mp4 --device "Living Room" --subtitles movie.srt
 ```
 
 The first version implements:
@@ -92,7 +92,7 @@ The CLI owns argument parsing, terminal presentation, and mapping user actions
 onto backend operations. Future frontends own windows, controls, file pickers,
 notifications, file associations, and desktop-specific integration.
 
-Expose a small command/event interface using Procast's own types. Keep the chosen
+Expose a small command/event interface using Yeet's own types. Keep the chosen
 Cast dependency behind an internal adapter so its types and assumptions do not
 spread through the application. Keep terminal output out of backend logic.
 
@@ -117,13 +117,13 @@ The initial research identified:
 The initial findings came from documentation and API inspection. M1 subsequently
 selected oxicast 0.0.3 and verified video, external subtitles, playback controls,
 and cleanup on the KPN DIW7022. Its typed media API lacks subtitle-track fields;
-Procast supplies these through the library's raw-message API. No dependency patch
+Yeet supplies these through the library's raw-message API. No dependency patch
 was needed. See the [M1 decision](decisions/001-cast-library.md) for evidence and
 limitations, including the trusted-LAN TLS model.
 
 The Cast layer must handle TLS, message framing/serialization, heartbeats,
 request/response handling, timeouts, receiver state, and disconnects, whether
-through a library or Procast code. Google's Default Media Receiver is the initial
+through a library or Yeet code. Google's Default Media Receiver is the initial
 receiver candidate; a custom TV application is not currently required.
 
 ## Media delivery and compatibility

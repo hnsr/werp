@@ -1,4 +1,4 @@
-# Copy to ~/.config/procast/config.toml (or $XDG_CONFIG_HOME/procast/config.toml).
+# Copy to ~/.config/yeet/config.toml (or $XDG_CONFIG_HOME/yeet/config.toml).
 # CLI overrides take precedence; omitted fields use these defaults.
 [subtitles]
 auto_load = true

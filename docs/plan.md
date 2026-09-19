@@ -1,4 +1,4 @@
-# Procast implementation plan
+# Yeet implementation plan
 
 Status: M0 and M1 verified; M2 implemented with automated checks passed and
 user-confirmed SRT/WebVTT playback, Ctrl+C shutdown, and SIGTERM cleanup with exit
@@ -63,8 +63,8 @@ Use a Cargo workspace with two crates:
 Cargo.toml
 Cargo.lock
 crates/
-  procast-core/       # reusable backend library
-  procast-cli/        # binary named procast
+  yeet-core/       # reusable backend library
+  yeet-cli/        # binary named yeet
 docs/
   outline.md
   plan.md
@@ -75,7 +75,7 @@ Create modules as functionality arrives rather than scaffolding empty layers.
 | Backend area | Responsibility |
 | --- | --- |
 | `discovery` | Discover and resolve devices; select by identity |
-| `cast` | Adapt the chosen library to Procast commands and state |
+| `cast` | Adapt the chosen library to Yeet commands and state |
 | `media` | Probe files and decide direct play/remux/transcode |
 | `serve` | Serve explicitly registered video/subtitle resources |
 | `subtitles` | Prepare text tracks and their metadata |
@@ -105,8 +105,8 @@ in research. No FFmpeg C library bindings are needed.
 
 ### Backend interface and concurrency
 
-Expose Procast types such as `Device`, `MediaInfo`, `CastRequest`,
-`PlaybackSnapshot`, and `ProcastError`. M2 exposes `session::run(CastRequest, ... )`,
+Expose Yeet types such as `Device`, `MediaInfo`, `CastRequest`,
+`PlaybackSnapshot`, and `YeetError`. M2 exposes `session::run(CastRequest, ... )`,
 a cancellation token, and a Tokio watch channel of `SessionState`. M3 adds a
 command interface. Keep third-party Cast types private.
 
@@ -131,10 +131,10 @@ Avoid scattering blocking calls through Tokio tasks.
 Initial commands:
 
 ```sh
-procast devices
-procast cast movie.mp4 --device "Living Room" --subtitles movie.srt
-procast cast movie.mp4 --device <device-uuid>
-procast cast movie.mp4 --host 192.168.1.50
+yeet devices
+yeet movie.mp4 --device "Living Room" --subtitles movie.srt
+yeet movie.mp4 --device <device-uuid>
+yeet movie.mp4 --host 192.168.1.50
 ```
 
 - `devices` performs a bounded scan (proposed default: five seconds), lists names,
@@ -145,7 +145,7 @@ procast cast movie.mp4 --host 192.168.1.50
 - Without a selector, cast automatically only when exactly one eligible video
   receiver is found; otherwise show the choices and ask for an explicit selector.
 - Filter known audio-only devices. Treat unknown capabilities conservatively.
-- `cast` remains in the foreground while serving. Show preparation, connection,
+- `yeet FILE` remains in the foreground while serving. Show preparation, connection,
   playback, and failure states without flooding the terminal.
 - Return nonzero on failure; distinguish argument errors and interruption.
   Logs/progress go to stderr; command results go to stdout.
@@ -161,7 +161,7 @@ unreachable receivers, media rejection, and unavailable conversion capabilities.
 
 ### M0 — Minimal workspace and media inspection
 
-**Complete.** The Cargo workspace, `procast inspect`, optional JSON output,
+**Complete.** The Cargo workspace, `yeet inspect`, optional JSON output,
 logging, typed errors, and subprocess lifecycle handling are implemented. See
 [README.md](../README.md) for setup, commands, and checks.
 
@@ -179,7 +179,7 @@ Verified with Rust 1.96.0 and FFmpeg/ffprobe 8.1.2:
 Implemented scope:
 
 - Create the workspace, basic help, shared error types, and logging.
-- Add `procast inspect <file>` as a useful diagnostic for container, stream codecs,
+- Add `yeet inspect <file>` as a useful diagnostic for container, stream codecs,
   duration, and audio/subtitle tracks, using ffprobe JSON.
 - Manage subprocesses asynchronously with argument arrays and no shell. Keep
   paths as filesystem paths, not shell snippets; handle spaces and Unicode.
@@ -200,7 +200,7 @@ directions; subsequent SIGINT/SIGTERM runs stopped playback and closed the serve
 within 100 ms. Automated tests cover connection failure, cancellation, partial
 frames, correlation, ownership, HTTP serving, and cleanup.
 
-Selected oxicast 0.0.3 without a dependency patch; Procast supplies subtitle
+Selected oxicast 0.0.3 without a dependency patch; Yeet supplies subtitle
 messages through its raw request API. See the [decision and evidence](decisions/001-cast-library.md)
 and [reproduction commands](../README.md#cast-feasibility-example-m1).
 
@@ -234,7 +234,7 @@ stack. Do not proceed on the assumption that either candidate already passes.
 ### M2 — First usable CLI: local video and external subtitles
 
 **Implemented; core hardware playback confirmed, remaining checks pending.**
-The `devices` and `cast` commands,
+The `yeet devices` command and `yeet FILE` playback action,
 reusable session coordinator, direct-play validation, external subtitle
 preparation, and cleanup are in place. The original M2 direct-play policy accepted
 MP4-family H.264 up to 1080p30, level 4.1, 8-bit 4:2:0 with zero or one mono/stereo
@@ -260,7 +260,7 @@ regression brings it to 31. See
 
 Implemented scope:
 
-- Turn the successful prototype into the core session and the `devices`/`cast`
+- Turn the successful prototype into the core session and the `yeet devices`/`yeet FILE`
   commands. Verify media prerequisites before changing playback on the receiver.
 - Start the HTTP server before LOAD and keep it alive for the entire session.
 - Choose the local address from routing to the selected receiver; never advertise
@@ -297,7 +297,7 @@ Unsupported files must fail clearly without modifying the source.
 **Parked while M5 compatibility work takes priority.** Existing signal handling,
 session ownership, and cleanup remain requirements for the expanded media paths.
 
-- Add a simple optional line-oriented control input to the running `cast` process:
+- Add a simple optional line-oriented control input to the running `yeet` process:
   `pause`, `resume`, `seek 120`, `volume 0.5`, `status`, and `stop`.
 - Enable it only for an interactive terminal. Noninteractive runs remain alive
   without reading commands; stdin EOF must not accidentally terminate playback.
@@ -310,7 +310,7 @@ session ownership, and cleanup remain requirements for the expanded media paths.
 
 Acceptance: repeated pause/resume and forward/backward seeks preserve timing and
 subtitles; volume matches the receiver; terminal input and networking do not block
-one another. Session takeover ends Procast's ownership cleanly.
+one another. Session takeover ends Yeet's ownership cleanly.
 
 ### M4 — Better subtitle and audio selection
 
@@ -350,7 +350,7 @@ retain the historical evidence from explicit modes.
 
 #### Selection and CLI
 
-- `cast FILE` chooses original MP4, stream-copy MP4 preparation, copied video with
+- `yeet FILE` chooses original MP4, stream-copy MP4 preparation, copied video with
   stereo AAC conversion, or full SDR H.264/stereo AAC conversion, in that order.
 - A pure backend decision module owns selection; the CLI only maps `--mode` and
   `--profile`. Mode overrides require their requested path or return a clear error.
@@ -448,6 +448,14 @@ than mistaken for passing coverage. Select a CI provider when a repository host
 exists; this workspace now has a local Git repository.
 
 ## Immediate next step
+
+The project and executable are named `yeet`; playback is the default action
+(`yeet FILE`), with `yeet devices` and `yeet inspect FILE` retained as subcommands.
+Configuration, state, cache, prepared output names, crates, scripts, and docs use
+the new name. Existing local user directories and prepared video/metadata pairs
+were renamed directly; no compatibility fallback was added. All 69 tests,
+including real FFmpeg fixtures, passed after the rename, along with formatting,
+Clippy, and reuse of a renamed prepared video with FFmpeg unavailable.
 
 The current subtitle scope is accepted as complete for the provided sample set.
 Further subtitle expansion and optional checks are parked. The short fixture and

@@ -108,7 +108,7 @@ This supports trying compatible streams before encoding; it does not establish
 Default Media Receiver compatibility or AV1 support.
 [KPN TV+ Box specifications](https://community.kpn.com/kennisbank-kpn-tv-box-149/specificaties-kpn-tv-box-573098).
 
-Procast's current M2 guard is intentionally narrower: MP4-family H.264 with
+Yeet's current M2 guard is intentionally narrower: MP4-family H.264 with
 mono/stereo AAC-LC and conservative video limits. Only **6** library files fit
 that apparent format envelope; three now have user-confirmed picture and sound.
 Inventory

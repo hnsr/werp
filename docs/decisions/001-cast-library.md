@@ -5,11 +5,11 @@ Status: accepted for M1; hardware and failure-path validation passed.
 
 ## Decision
 
-Use **oxicast 0.0.3**, pinned exactly, behind `procast-core::cast`. Use its TLS,
-framing, heartbeat, and request-correlation implementation. Procast owns receiver
+Use **oxicast 0.0.3**, pinned exactly, behind `yeet-core::cast`. Use its TLS,
+framing, heartbeat, and request-correlation implementation. Yeet owns receiver
 launch, media/track payloads, playback state, and session ownership. No dependency
 fork or patch was needed. The library remains replaceable and its types are not
-part of Procast's public API.
+part of Yeet's public API.
 
 The published `rust_cast` 0.21.0 source was evaluated first. It uses blocking I/O,
 hides the socket inside `CastDevice`, and reads frame headers/payloads using local
@@ -20,10 +20,10 @@ blocking reads or expose transport cancellation. Making this fit the desired
 lifecycle would require more transport changes than the alternative.
 
 oxicast already separates a persistent async reader from outgoing commands.
-Cancelling a Procast request does not restart that reader or lose partial bytes.
+Cancelling a Yeet request does not restart that reader or lose partial bytes.
 Shutdown cancels and joins its tasks. Its media types also lack text tracks, but
 `send_raw` supports correlated JSON requests, including LOAD and EDIT_TRACKS_INFO.
-Procast explicitly supplies WebVTT track metadata and activates track ID 1.
+Yeet explicitly supplies WebVTT track metadata and activates track ID 1.
 
 ## Adapter constraints
 
@@ -31,16 +31,16 @@ Procast explicitly supplies WebVTT track metadata and activates track ID 1.
   is never silently restarted.
 - Connect and requests have ten-second bounds and cooperative cancellation.
   Callers cancel and await, then explicitly close the session.
-- Procast stores its original receiver transport/session, media ID, and unique
+- Yeet stores its original receiver transport/session, media ID, and unique
   content URL. Cleanup checks those before STOP, with a two-second remote deadline.
   Local shutdown runs even if the receiver cannot be reached.
 - oxicast's high-level `disconnect()` stops its internally tracked current media
-  session. Procast therefore uses raw LAUNCH/CONNECT and never populates its
+  session. Yeet therefore uses raw LAUNCH/CONNECT and never populates its
   high-level application handle. This leaves disconnect as transport cleanup;
-  Procast sends STOP itself for the owned session. Re-evaluate this assumption
+  Yeet sends STOP itself for the owned session. Re-evaluate this assumption
   before upgrading oxicast. A transport-only close API would be a useful upstream
   improvement; no upstream message or PR has been sent.
-- HTTP serving uses axum routing and tower-http file/range handling. Procast owns
+- HTTP serving uses axum routing and tower-http file/range handling. Yeet owns
   the HTTP connection tasks and joins/aborts them during shutdown, including
   stalled clients. Only registered media and subtitle URLs are available.
 - Discovery uses mdns-sd 0.21.3 directly and currently selects IPv4 addresses.
@@ -55,7 +55,7 @@ encrypted, and handshake signatures are verified, but the device certificate
 identity is not authenticated. Cast device-auth is not implemented by oxicast.
 This is a trusted-LAN prototype, not an authenticated remote-control service.
 
-The dependency graph enables both rustls ring and aws-lc providers. Procast selects
+The dependency graph enables both rustls ring and aws-lc providers. Yeet selects
 ring only when the embedding application has not already installed a provider,
 avoiding rustls's ambiguous-provider panic. Both native dependency trees currently
 build; simplifying the upstream feature selection is later dependency cleanup.

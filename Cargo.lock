@@ -865,11 +865,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "procast-cli"
+name = "yeet-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "procast-core",
+ "yeet-core",
  "serde_json",
  "tempfile",
  "tokio",
@@ -877,7 +877,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "procast-core"
+name = "yeet-core"
 version = "0.1.0"
 dependencies = [
  "axum",

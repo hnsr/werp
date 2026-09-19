@@ -10,8 +10,8 @@ was contacted during implementation. Earlier seeking and long-duration checks re
 
 ## Configuration
 
-Procast reads `$XDG_CONFIG_HOME/procast/config.toml`, falling back to
-`~/.config/procast/config.toml` when XDG_CONFIG_HOME is unset or not absolute.
+Yeet reads `$XDG_CONFIG_HOME/yeet/config.toml`, falling back to
+`~/.config/yeet/config.toml` when XDG_CONFIG_HOME is unset or not absolute.
 A missing default file uses built-in defaults. `--config PATH` selects an explicit
 file; a missing explicit file is an error. `--no-config` uses built-in defaults.
 Malformed values and unknown keys are errors, so spelling mistakes do not silently
@@ -36,7 +36,7 @@ the user's configuration, never in tracked examples or commits.
 
 ## Subtitle selection and rendering
 
-With automatic loading enabled, Procast first looks for a supported embedded
+With automatic loading enabled, Yeet first looks for a supported embedded
 track matching the ordered language preferences, then an exact-basename `.srt`
 beside the real source file. If necessary it also checks beside a supplied alias.
 The extension is case-insensitive; the basename must match exactly. Multiple
@@ -97,7 +97,7 @@ subtitle stream has been played through on the receiver.
 
 ## Device selection
 
-Explicit `--device NAME/ID` or `--host IP` wins. Otherwise, Procast tries the
+Explicit `--device NAME/ID` or `--host IP` wins. Otherwise, Yeet tries the
 configured preferred list in order among reachable confirmed video receivers,
 skipping absent and audio-only devices. If no preference matches, it selects the
 sole eligible video receiver. Multiple candidates require a preference or explicit
@@ -119,8 +119,8 @@ it does not automatically reconnect or relaunch after a network failure.
 reads nor writes position state for that run. `--resume` enables it even if config
 disables it. These flags are mutually exclusive.
 
-Checkpoints live under `$XDG_STATE_HOME/procast/resume` or
-`~/.local/state/procast/resume`. Keys hash the canonical source path, size, and
+Checkpoints live under `$XDG_STATE_HOME/yeet/resume` or
+`~/.local/state/yeet/resume`. Keys hash the canonical source path, size, and
 modification time; moving/replacing a source starts fresh. Records contain only
 version, duration, and position, with private file permissions. Atomic replacement
 avoids partial JSON. Per-source locks prevent competing sessions from overwriting
@@ -167,7 +167,7 @@ case and an alternate Dutch-first config. On the development machine these files
 have already been generated. Run these checks when ready, substituting a selected
 receiver where an explicit device is needed:
 
-1. `cargo run --locked -- cast samples/preferences/embedded.mkv`: the configured
+1. `cargo run --locked -- samples/preferences/embedded.mkv`: the configured
    preferred receiver should play full English captions, not the forced track.
    Interrupt after at least 20 seconds, then repeat the same command. Confirm the
    resume notice and TV starting near that point with correctly timed captions.
@@ -178,7 +178,7 @@ receiver where an explicit device is needed:
 3. Cast `samples/preferences/external.mp4 --no-resume`: the same-name external SRT
    should be selected automatically. Repeat with `--no-subtitles` to confirm none.
 4. Optional image-caption check on the local prepared fixture:
-   `cargo run --locked -- cast samples/subtitle-check/embedded-pgs-cues.mkv --subtitle-track 4 --no-resume`.
+   `cargo run --locked -- samples/subtitle-check/embedded-pgs-cues.mkv --subtitle-track 4 --no-resume`.
    The CLI should select burn-in and reuse its prepared output; confirm visible
    captions during the short clip. This fixture is local-only.
 

@@ -9,7 +9,7 @@ recorded in [transcode-validation.md](transcode-validation.md) and
 
 ## Default behavior and overrides
 
-`procast cast FILE --device "Living Room"` inspects the file and discovers the
+`yeet FILE --device "Living Room"` inspects the file and discovers the
 receiver, then selects the first suitable path:
 
 1. Serve the original MP4.
@@ -60,8 +60,8 @@ By default, preparation places an MP4 and `.mp4.json` completion record beside t
 canonical source, following symlinks. A name has this form:
 
 ```text
-movie.mkv.procast-<recipe-key>-<generation>.mp4
-movie.mkv.procast-<recipe-key>-<generation>.mp4.json
+movie.mkv.yeet-<recipe-key>-<generation>.mp4
+movie.mkv.yeet-<recipe-key>-<generation>.mp4.json
 ```
 
 The readable source-name prefix is truncated when necessary. The key includes
@@ -76,8 +76,8 @@ from disk, but does not encode or require FFmpeg for media preparation. ffprobe
 remains required. Missing, corrupt, or mismatched entries are ignored; new outputs
 get new names without replacing them.
 
-If the source folder is unwritable, Procast announces a fallback to
-`$XDG_CACHE_HOME/procast` or `$HOME/.cache/procast`. Valid adjacent output can still
+If the source folder is unwritable, Yeet announces a fallback to
+`$XDG_CACHE_HOME/yeet` or `$HOME/.cache/yeet`. Valid adjacent output can still
 be reused from a read-only directory. `--cache-dir PATH` explicitly chooses a
 storage directory and reports an error if it cannot be used. `--no-cache` bypasses
 reuse and retention, preparing temporary output under the user cache or explicit

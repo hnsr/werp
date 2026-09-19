@@ -12,7 +12,7 @@ was added later; see [remux validation](remux-validation.md).
 
 ## Behaviour
 
-`cast --mode transcode` always encodes the selected video and any audio before
+`yeet FILE --mode transcode` always encodes the selected video and any audio before
 receiver discovery/connection. The first version accepts one video and at most
 one audio track, with known positive duration and frame rate. It rejects known
 PQ/HLG and Dolby Vision metadata; it does not implement HDR tone mapping.
@@ -156,7 +156,7 @@ the preparation/playback path. Subsequent focused checks are recorded below.
 The equivalent command using the current CLI is:
 
 ```sh
-cargo run --locked -- cast samples/short/test.mp4 \
+cargo run --locked -- samples/short/test.mp4 \
   --device "Living Room" --mode transcode --no-cache \
   --subtitles samples/short/subtitles.vtt --http-port 8010
 ```
@@ -172,7 +172,7 @@ This sample contains H.264 video and six-channel AAC-LC, so the run establishes
 audible output from the forced stereo conversion. Detailed channel balance and
 A/V synchronization were not separately assessed. Phone controls demonstrate
 receiver-side control of the prepared file; M3 CLI controls remain parked.
-This first real-file run did not separately report Procast's exit status or cache
+This first real-file run did not separately report Yeet's exit status or cache
 cleanup after the phone-issued stop, and does not establish natural completion.
 
 On 2026-09-18, the user reported success after following the separate SRT and

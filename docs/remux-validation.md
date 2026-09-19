@@ -11,7 +11,7 @@ trial succeeded; detailed evidence and limits are recorded below.
 
 ## Behavior and limits
 
-`cast --mode remux` prepares a complete MP4 from Matroska/MKV or MP4 before contacting
+`yeet FILE --mode remux` prepares a complete MP4 from Matroska/MKV or MP4 before contacting
 the receiver. It copies one H.264 stream and zero or one mono/stereo AAC-LC stream
 without encoding. The conservative video profile remains 8-bit 4:2:0, up to
 1920×1080/30 fps and level 4.1; known HDR and missing required metadata are rejected.
@@ -56,7 +56,7 @@ Choose one preparation path using `--mode`.
 ## Hardware playback result
 
 ```sh
-cargo run --locked -- cast \
+cargo run --locked -- \
   samples/library/no-transcode-candidates/sample-006_h264-high-8bit_720x480_23.976fps_aac-lc-2ch.mkv \
   --device "Living Room" --mode remux --profile baseline --no-cache --http-port 8010
 ```

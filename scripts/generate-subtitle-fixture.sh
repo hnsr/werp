@@ -14,7 +14,7 @@ for language in english dutch forced; do
     index=1
     for ((start=0; start<seconds; start+=10)); do
         end=$((start+10)); (( end <= seconds )) || end=$seconds
-        printf '%d\n00:%02d:%02d,000 --> 00:%02d:%02d,000\nPROCAST %s: %d-%d seconds\n\n' \
+        printf '%d\n00:%02d:%02d,000 --> 00:%02d:%02d,000\nYEET %s: %d-%d seconds\n\n' \
             "$index" "$((start/60))" "$((start%60))" "$((end/60))" "$((end%60))" \
             "$language" "$start" "$end" >> "$output/$language.srt"
         index=$((index+1))

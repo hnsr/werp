@@ -13,7 +13,7 @@ port=${2:-8010}
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 cargo build --locked
-binary="$root/target/debug/procast"
+binary="$root/target/debug/yeet"
 work=$(mktemp -d "$root/samples/m5-batch.XXXXXX")
 echo "Clips, retained outputs, and logs: $work"
 pid=
@@ -47,19 +47,19 @@ cat > "$work/subtitles.vtt" <<'EOF'
 WEBVTT
 
 00:00.000 --> 00:15.000
-PROCAST: first 15 seconds
+YEET: first 15 seconds
 
 00:15.000 --> 00:29.000
-PROCAST: second half
+YEET: second half
 EOF
 cat > "$work/subtitles.srt" <<'EOF'
 1
 00:00:00,000 --> 00:00:15,000
-PROCAST: first 15 seconds
+YEET: first 15 seconds
 
 2
 00:00:15,000 --> 00:00:29,000
-PROCAST: second half
+YEET: second half
 EOF
 
 if $prepare_only; then
@@ -87,7 +87,7 @@ run_case() {
     local label="$id-$expected" log="$work/$id-$expected.log"
     check_port
     echo "Testing sample $id: expect $expected; allow the short clip to finish."
-    "$binary" cast "$clip" --device "$device" --http-port "$port" \
+    "$binary" "$clip" --device "$device" --http-port "$port" \
         --subtitles "$work/subtitles.$subtitle" "$@" 2>&1 | tee "$log"
     grep -qF "Selected $expected" "$log"
     grep -qF 'Playback completed.' "$log"
@@ -95,7 +95,7 @@ run_case() {
     check_visual
     if [[ "$expected" != Direct ]]; then
         echo "Repeating $label with FFmpeg unavailable to prove persistent reuse."
-        "$binary" cast "$clip" --device "$device" --http-port "$port" \
+        "$binary" "$clip" --device "$device" --http-port "$port" \
             --subtitles "$work/subtitles.vtt" --ffmpeg "$work/ffmpeg-intentionally-missing" "$@" \
             2>&1 | tee "$work/$label-reuse.log"
         grep -qF 'Reusing prepared file:' "$work/$label-reuse.log"
@@ -123,7 +123,7 @@ run_case 005 Transcode vtt --profile baseline
 # Cancellation with caching disabled must remove its own temporary preparation.
 check_port
 mkdir "$work/temporary"
-"$binary" cast "$work/sample-041.mp4" --device "$device" --http-port "$port" \
+"$binary" "$work/sample-041.mp4" --device "$device" --http-port "$port" \
     --no-cache --cache-dir "$work/temporary" > "$work/cancel.log" 2>&1 &
 pid=$!
 started=$SECONDS

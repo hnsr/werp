@@ -13,20 +13,20 @@ tested the production CLI on the KPN DIW7022 and reported the results below.
 
 ## Implemented boundary
 
-- `procast devices` lists names, IDs, models, IPv4 endpoints, and advertised
+- `yeet devices` lists names, IDs, models, IPv4 endpoints, and advertised
   capabilities, with optional JSON output. Exact selectors resolve duplicate
   names safely. Automatic selection requires one confirmed video receiver.
-- `procast cast` validates media and prepares optional external subtitles before
+- `yeet` validates media and prepares optional external subtitles before
   receiver connection. It starts the HTTP server before LOAD and stays in the
   foreground until completion, failure, or a signal.
-- `session::run` owns resources and emits Procast state through a watch channel.
+- `session::run` owns resources and emits Yeet state through a watch channel.
   Its result reliably reports completion/error even if a frontend misses an
   intermediate state. Callers cancel the token and await the operation; dropping
   an in-progress future is not the supported cleanup contract.
 - Only an owned positive media session with explicit `IDLE/FINISHED` completes
   successfully, whether reported in a poll reply or an unsolicited status event.
   Empty status and session-zero IDLE are transitional. A different
-  session ends Procast without stopping the new sender. No automatic reconnect
+  session ends Yeet without stopping the new sender. No automatic reconnect
   or replay is attempted.
 - Requested subtitles must have valid timed cues, convert successfully if SRT,
   activate on the receiver, and receive an HTTP GET. These checks cannot verify
@@ -38,11 +38,11 @@ The media policy is deliberately narrow: MP4-family, H.264 Baseline/Main/High
 up to level 4.1, 8-bit 4:2:0, at most 1920×1080/30 fps, no HDR, optional one
 AAC-LC mono/stereo track at 8–48 kHz. ffprobe's format family also includes MOV
 and related variants; acceptance is not proof of receiver compatibility. Missing
-required metadata is an error. This is a Procast policy informed by
+required metadata is an error. This is a Yeet policy informed by
 [Google's receiver-format documentation](https://developers.google.com/cast/docs/media),
 not per-device capability negotiation. Video decoding and subtitle rendering
 remain receiver-dependent. See [WebVTT's format specification](https://www.w3.org/TR/webvtt1/)
-for cue syntax; Procast validates timed cues rather than implementing the full
+for cue syntax; Yeet validates timed cues rather than implementing the full
 styling parser.
 
 ## Checks completed
@@ -112,10 +112,10 @@ The issue reproduced in JSON output: two of three initial read-only scans had
 no IPv4 address for the video receiver. It was not a display-formatting bug.
 `mdns-sd` 0.21.3 treats a service with only an IPv6/AAAA address as resolved. Its
 normal service-resolution path skips the hostname address query once any address
-record is cached. Procast filtered out IPv6 for its IPv4-only transport, leaving
+record is cached. Yeet filtered out IPv6 for its IPv4-only transport, leaving
 an empty list unless an IPv4/A record arrived separately.
 
-Procast now explicitly resolves the hostname when a service snapshot lacks IPv4.
+Yeet now explicitly resolves the hostname when a service snapshot lacks IPv4.
 New address records produce updated service snapshots through the existing
 browse channel. Lookups are deduplicated per hostname, stay within the original
 scan deadline, and have their reply consumers joined on timeout or cancellation.
@@ -136,7 +136,7 @@ two FFmpeg tests passed previously and were not rerun for this discovery-only fi
 
 The user let the new 30-second WebVTT fixture finish. Video and subtitles looked
 correct, and the TV returned to its Cast logo, but the CLI displayed `Loading`
-and failed roughly 30 seconds later. This was a Procast state-handling bug.
+and failed roughly 30 seconds later. This was a Yeet state-handling bug.
 
 A reproduction trace showed a single unsolicited media status with `requestId: 0`,
 the owned positive session ID, `playerState: IDLE`, and `idleReason: FINISHED`.
@@ -175,16 +175,16 @@ Both have silent audio and changing subtitle cues.
 
 ```sh
 cargo run --locked -- devices
-cargo run --locked -- cast samples/short/test.mp4 \
+cargo run --locked -- samples/short/test.mp4 \
   --device "Living Room" --subtitles samples/short/subtitles.vtt --http-port 8010
-cargo run --locked -- cast samples/short/test.mp4 \
+cargo run --locked -- samples/short/test.mp4 \
   --device "Living Room" --subtitles samples/short/subtitles.srt --http-port 8010
 ```
 
 Replace `Living Room` with the selected receiver's name or ID from `devices`.
 The generator now creates both subtitle formats and refuses to overwrite existing
 fixtures. For SIGTERM, start another casting run, then identify its PID with
-`pgrep -a -x procast` in a second terminal and use `kill -TERM PID`. This exercises
+`pgrep -a -x yeet` in a second terminal and use `kill -TERM PID`. This exercises
 the termination-signal path separately from Ctrl+C's SIGINT path. Expect playback
 to stop, cleanup to complete, and exit code 143 in the casting terminal.
 

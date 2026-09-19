@@ -1,7 +1,7 @@
-# Procast
+# Yeet
 
 A Rust CLI and reusable backend for casting local videos and subtitles
-to Chromecast. `cast FILE` selects direct play, remuxing, audio conversion, or full
+to Chromecast. `yeet FILE` selects direct play, remuxing, audio conversion, or full
 conversion and reuses validated prepared files automatically. Automated checks
 and the consolidated short-clip TV validation passed on the KPN DIW7022 receiver;
 seeking and long-duration checks for the expanded paths are deferred.
@@ -23,7 +23,7 @@ subtitles off, and embedded PGS burn-in. Optional remaining checks are in the ch
 - Network access for the initial Cargo dependency download.
 - On Linux, `systemd-inhibit` for automatic sleep prevention during casting
   (already present on the Fedora KDE development machine). If unavailable or
-  denied, Procast warns and continues.
+  denied, Yeet warns and continues.
 
 No FFmpeg development headers, Qt, or KDE libraries are needed. Cargo resolves
 the Rust dependencies; `Cargo.lock` records tested versions.
@@ -35,7 +35,7 @@ depends on the installed FFmpeg build, not just its version.
 ```sh
 cargo run --locked -- devices
 cargo run --locked -- devices --json
-cargo run --locked -- cast /path/to/movie.mp4 --device "Living Room" --subtitles /path/to/movie.srt
+cargo run --locked -- /path/to/movie.mp4 --device "Living Room" --subtitles /path/to/movie.srt
 cargo run --locked -- inspect /path/to/video.mkv
 cargo run --locked -- inspect /path/to/video.mkv --json
 cargo run --locked -- --verbose inspect /path/to/video.mkv
@@ -49,16 +49,20 @@ exactly one discovered receiver advertises video support. Known audio-only devic
 capabilities require explicit selection. `--host 192.168.1.50` bypasses discovery;
 use `--cast-port` only with `--host`. Discovery and casting currently use IPv4.
 
-`cast` stays in the foreground until natural completion or interruption. It
-replaces playback on the selected receiver. Ctrl+C or SIGTERM stops Procast's
+`yeet FILE` stays in the foreground until natural completion or interruption. It
+replaces playback on the selected receiver. Ctrl+C or SIGTERM stops Yeet's
 owned media, closes its server and transport, reaps subprocesses, and removes
-temporary media and subtitles. Completed reusable outputs are retained. If another sender takes over, Procast exits without stopping
+temporary media and subtitles. Completed reusable outputs are retained. If another sender takes over, Yeet exits without stopping
 their session. Interactive playback controls are planned for M3.
+
+Casting is the default action: `yeet FILE`. Use `yeet devices` to list receivers
+and `yeet inspect FILE` to inspect media. For a file named `devices`, `inspect`,
+or `help`, use a path such as `./devices` or put `--` before the filename.
 
 ### Preferences and resume
 
-Preferences are read from `~/.config/procast/config.toml` (or
-`$XDG_CONFIG_HOME/procast/config.toml`). See [the example](docs/config.example.toml)
+Preferences are read from `~/.config/yeet/config.toml` (or
+`$XDG_CONFIG_HOME/yeet/config.toml`). See [the example](docs/config.example.toml)
 and [configuration, subtitles, and resume](docs/preferences-and-subtitles.md).
 Defaults enable automatic subtitles, prefer English then Dutch, and save playback
 position. Configure `[devices] preferred` with ordered exact names or stable IDs.
@@ -74,11 +78,11 @@ library. This does not automatically reconnect a failed session.
 ### Automatic playback and overrides
 
 ```sh
-procast cast /path/to/movie.mkv --device "Living Room"
-procast cast /path/to/movie.mkv --device "Living Room" --subtitles /path/to/movie.srt
+yeet /path/to/movie.mkv --device "Living Room"
+yeet /path/to/movie.mkv --device "Living Room" --subtitles /path/to/movie.srt
 ```
 
-Procast inspects the source, discovers/selects the receiver, and explains its
+Yeet inspects the source, discovers/selects the receiver, and explains its
 choice before preparing anything or launching the Cast application:
 
 1. Serve the original MP4 if its streams fit the receiver profile.
@@ -89,7 +93,7 @@ choice before preparing anything or launching the Cast application:
 Selected image subtitles require burn-in and therefore full video conversion.
 
 All preparation finishes before playback; seeking uses the existing HTTP range
-server. Selection is based on metadata and a receiver profile. Procast does not
+server. Selection is based on metadata and a receiver profile. Yeet does not
 blindly retry a failing cast or network connection with more encoding, and cannot
 automatically detect silent audio or incorrect colours on the TV.
 
@@ -122,10 +126,10 @@ valid cache hit does not require FFmpeg for media preparation.
 ### Persistent prepared files
 
 Prepared files are stored beside the **canonical original file**, following
-symlinks. Names look like `movie.mkv.procast-<key>-<generation>.mp4`, with a small
+symlinks. Names look like `movie.mkv.yeet-<key>-<generation>.mp4`, with a small
 `.mp4.json` completion record. Only registered media/subtitles are served; the
-sidecar is not exposed. If the source directory is not writable, Procast announces
-a fallback to `$XDG_CACHE_HOME/procast` or `$HOME/.cache/procast`.
+sidecar is not exposed. If the source directory is not writable, Yeet announces
+a fallback to `$XDG_CACHE_HOME/yeet` or `$HOME/.cache/yeet`.
 
 Reuse verifies a full SHA-256 fingerprint of the source, its canonical path,
 the preparation mode/profile/recipe version, the output digest, and output media
@@ -176,7 +180,7 @@ See [automatic playback and reuse validation](docs/automatic-playback.md).
 ### Network and session behaviour
 
 The host must stay awake, and the receiver must be able to fetch files from it.
-On Linux, `cast` holds a `systemd-inhibit` sleep lock during preparation, playback
+On Linux, `yeet FILE` holds a `systemd-inhibit` sleep lock during preparation, playback
 (including pauses), and cleanup. KDE PowerDevil honours this lock. Screen dimming
 and locking remain enabled. The lock is released when the session ends; acquisition
 failure produces a warning rather than preventing playback. `--no-inhibit-sleep`
@@ -184,19 +188,19 @@ disables it for a session. This is a small initial Linux adapter; broader deskto
 integration will be revisited with UI work. See [sleep inhibition](docs/sleep-inhibition.md)
 for verification and limits.
 
-Procast chooses a local address using the route to the receiver and an OS-assigned
+Yeet chooses a local address using the route to the receiver and an OS-assigned
 HTTP port. `--bind-address LOCAL_IP --http-port 8010` provides a fixed interface
 and port for troubleshooting. Check firewall rules, VPN routing, mDNS, and Wi-Fi
-client isolation if discovery or downloads fail. Procast does not edit firewall
+client isolation if discovery or downloads fail. Yeet does not edit firewall
 rules. Only the selected video and optional prepared subtitles are served, under
 random session URLs, with range requests and subtitle CORS support.
 
 Cast connections use TLS without receiver identity verification, and media is
 served over HTTP. Use a trusted LAN; see the [transport decision](docs/decisions/001-cast-library.md).
-Procast consumes terminal broadcasts alongside status polls, so a one-time
+Yeet consumes terminal broadcasts alongside status polls, so a one-time
 FINISHED notification completes the session even if later polls would be empty.
 An owned CANCELLED status or confirmed termination of the receiver application
-ends the session normally with `Playback stopped on receiver.`; Procast does not
+ends the session normally with `Playback stopped on receiver.`; Yeet does not
 send a redundant STOP. An app-channel close or failed media request is checked
 against receiver status, so transport loss alone is not reported as a normal stop.
 Transient empty/IDLE statuses are not completion. A lost connection fails without
@@ -210,7 +214,7 @@ the HTTP server shuts down. Remote STOP cannot be guaranteed after a network los
 Inspection reports the container, duration, stream codecs, video dimensions,
 audio channels/sample rates, and subtitle languages/titles where available.
 Unknown metadata remains unknown; inspection does not determine Cast compatibility.
-JSON is normalized Procast metadata, not raw ffprobe output; its schema is not
+JSON is normalized Yeet metadata, not raw ffprobe output; its schema is not
 yet a stable public API.
 
 The input must be a regular local file. Paths containing spaces, Unicode, or shell
@@ -231,7 +235,7 @@ For a standalone binary:
 
 ```sh
 cargo build --release --locked
-./target/release/procast inspect /path/to/video.mkv
+./target/release/yeet inspect /path/to/video.mkv
 ```
 
 ## Checks
@@ -262,7 +266,7 @@ pattern with silent audio and matching WebVTT/SRT cues every five seconds:
 
 ```sh
 bash scripts/generate-m1-fixture.sh samples/short 30
-cargo run --locked -- cast samples/short/test.mp4 \
+cargo run --locked -- samples/short/test.mp4 \
   --device "Living Room" --subtitles samples/short/subtitles.vtt --http-port 8010
 ```
 
@@ -271,7 +275,7 @@ SRT conversion. Let playback finish without interrupting it; the CLI should
 report `Playback completed.` and exit. The original 12-minute fixture is retained.
 
 For a separate SIGTERM check, start casting again. While it plays, use another
-terminal to run `pgrep -a -x procast`, identify that casting process, and run
+terminal to run `pgrep -a -x yeet`, identify that casting process, and run
 `kill -TERM PID` with its numeric PID. SIGTERM is a normal termination request;
 Ctrl+C sends SIGINT instead. Both should stop the owned playback and clean up.
 After SIGTERM, `echo $?` in the casting terminal should report 143. Do not use
@@ -285,8 +289,8 @@ The script refuses to overwrite an existing fixture.
 
 ```sh
 bash scripts/generate-m1-fixture.sh
-cargo run --locked -p procast-core --example cast_probe -- --discover
-cargo run --locked -p procast-core --example cast_probe -- \
+cargo run --locked -p yeet-core --example cast_probe -- --discover
+cargo run --locked -p yeet-core --example cast_probe -- \
   --device "Living Room" \
   --video samples/m1/test.mp4 --subtitles samples/m1/subtitles.vtt \
   --http-port 8010 --seconds 620 --exercise-controls
@@ -302,7 +306,7 @@ separate from the production CLI exit-code contract above.
 `--host IP --cast-port 8009` bypasses discovery. `--bind-address IP` can override
 the local address chosen from the route to the receiver. The default HTTP port
 is OS-assigned; the example above chooses a fixed port for firewall diagnosis.
-The receiver must be able to reach this port. Procast does not edit firewall rules.
+The receiver must be able to reach this port. Yeet does not edit firewall rules.
 Only the two selected resources are served, under random session URLs.
 
 This prototype uses IPv4 discovery, requires an already compatible MP4 and valid
@@ -310,7 +314,7 @@ WebVTT, and does not inspect/convert the inputs or extract embedded subtitles.
 The host must remain awake. It uses encrypted Cast transport without device
 authentication, for use on a trusted LAN; see the [M1 decision](docs/decisions/001-cast-library.md).
 
-Prefer the production `procast devices` / `procast cast` commands for normal use.
+Prefer the production `yeet devices` / `yeet` commands for normal use.
 
 Keep personal sample videos outside the repository or under the ignored
 `samples/` directory.

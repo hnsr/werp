@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/procast-core", "crates/procast-cli"]
+members = ["crates/yeet-core", "crates/yeet-cli"]
 resolver = "3"
 
 [workspace.package]
