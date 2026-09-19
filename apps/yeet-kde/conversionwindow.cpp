@@ -44,6 +44,7 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     setWindowTitle(i18n("Convert only")); resize(740,480);
     auto *central=new QWidget(this); setCentralWidget(central);
     auto *layout=new QVBoxLayout(central); setWindowSpacing(layout);
+    central->installEventFilter(this);
     layout->addWidget(new SelectedVideoPanel(central,file));
     auto *formats=new QHBoxLayout;
     formats->setSpacing(16);
@@ -189,6 +190,16 @@ void ConversionWindow::cancel() {
         if (!reply["ok"].toBool() && reply["error"].toObject()["code"]!="invalid_operation" && !m_finished && !m_closing)
             fail(reply["error"].toObject()["message"].toString());
     });
+}
+bool ConversionWindow::eventFilter(QObject *watched,QEvent *event) {
+    if (watched==centralWidget() && (event->type()==QEvent::LayoutRequest || event->type()==QEvent::Resize)) {
+        // A wrapped label's minimumSizeHint only accounts for one line. Reserve
+        // the height needed at the actual width as paths and metadata arrive.
+        auto *content=centralWidget();
+        const auto required=content->layout()->totalHeightForWidth(content->width());
+        if (required>=0 && content->minimumHeight()!=required) content->setMinimumHeight(required);
+    }
+    return QMainWindow::eventFilter(watched,event);
 }
 void ConversionWindow::closeEvent(QCloseEvent *event) {
     if (m_canClose) { event->accept(); return; }

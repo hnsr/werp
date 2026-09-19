@@ -12,6 +12,7 @@ class ConversionWindow : public QMainWindow {
 public:
     explicit ConversionWindow(const QString &backend, const QString &file, const QStringList &backendArguments = {}, const QString &settingsFile = {});
 protected:
+    bool eventFilter(QObject *watched,QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 private:
     void updateState(const QJsonObject &state);

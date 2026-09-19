@@ -36,6 +36,8 @@ for line in sys.stdin:
         if "reuse" in params["file"]:
             source["streams"][1]={"kind":"audio","codec":"aac","profile":"LC","channels":6}
             planned={"container":"mp4","streams":source["streams"]}
+        if "wrapped" in params["file"]:
+            source["streams"][0]["frame_rate"]=23.976
         conversion_state={"phase":"preparing","source":source,"planned_target":planned,"target_description":"MP4 · H.264 / HEVC SDR · AAC-LC (up to 6 channels)","operation":"Converting to H.264 and stereo AAC in MP4","fraction":0.42,"message":"Converting video and audio","warnings":[]}
         emit({"id":request["id"],"ok":True,"result":{"operation_id":session}})
         emit({"event":"conversion_state","operation_id":session,"state":conversion_state})
@@ -50,6 +52,8 @@ for line in sys.stdin:
                 output="/tmp/test.yeet-prepared.mp4",message="Existing conversion reused" if "reuse" in file else "Conversion complete",reused="reuse" in file,
                 error="Test conversion failure" if failed else None,
                 target=actual)
+            if "wrapped" in file:
+                final["output"]="/tmp/downloads/Example.Series.S01E01.1080p.10bit.WEBRip.6CH.x265.HEVC/Example.Series.S01E01.1080p.10bit.WEBRip.6CH.x265.HEVC.yeet-0123456789ab-cdef0123.mp4"
             emit({"event":"conversion_ended","operation_id":operation,"state":final})
         if "long" not in params["file"]:
             timer=threading.Timer(0.8,converted); timer.daemon=True; timer.start()

@@ -130,6 +130,26 @@ private slots:
         QVERIFY(countdown->width()>=countdown->fontMetrics().horizontalAdvance(countdown->text()));
         window.close(); QTRY_VERIFY(!window.isVisible());
     }
+    void conversion_wrapped_details_keep_enough_height() {
+        QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        const auto settings=dir.filePath("ui.ini");
+        QSettings preferences(settings,QSettings::IniFormat); preferences.setValue("conversion/autoClose",false); preferences.sync();
+        ConversionWindow window(helper,dir.filePath("wrapped reuse Example.Series.S01E01.1080p.10bit.WEBRip.6CH.x265.HEVC.mkv"),{},settings);
+        window.show();
+        QTRY_COMPARE(window.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
+        for (const auto width : {740, 560}) {
+            window.resize(width,480); QTest::qWait(100);
+            screenshot(window,QString("conversion-wrapped-%1").arg(width));
+            for (auto *field : window.findChildren<QLabel *>()) {
+                if (!field->isVisible() || field->text().isEmpty()) continue;
+                const auto required=field->hasHeightForWidth() ? field->heightForWidth(field->width()) : field->minimumSizeHint().height();
+                QVERIFY2(field->height()>=required,qPrintable(QString("%1: height %2, needs %3 at width %4").arg(field->objectName()).arg(field->height()).arg(required).arg(field->width())));
+            }
+        }
+        window.close(); QTRY_VERIFY(!window.isVisible());
+    }
     void conversion_cancel_failure_and_window_close() {
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
