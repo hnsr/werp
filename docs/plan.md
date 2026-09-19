@@ -3,7 +3,7 @@
 Status: M0 and M1 verified; M2 implemented with automated checks passed and
 user-confirmed SRT/WebVTT playback, Ctrl+C shutdown, and SIGTERM cleanup with exit
 code 143. The IPv4 discovery issue
-is fixed and verified; remaining hardware checks are recorded below. M3 is parked;
+is fixed and verified; remaining hardware checks are recorded below. M3 terminal controls remain parked; shared controls are now needed for the KDE UI;
 M5 now implements automatic preparation selection, extended HEVC/AAC remuxing,
 MKV audio-only conversion, and persistent adjacent-file reuse with user-cache
 fallback. All 58 automated tests and 12 representative local preparation/reuse
@@ -41,7 +41,8 @@ small change should leave working behaviour behind.
 
 - One local video, one selected device, and one casting session per CLI process.
 - Fedora 44 is the initial development and hardware-test platform.
-- No GUI, Qt/KDE dependency, daemon, remote-control API, playlist, or account.
+- The initial CLI has no Qt dependency. The KDE frontend is separate; see
+  [KDE UI and interface](kde-ui.md). No separately managed daemon, playlist, or account.
 - Start with a known-good MP4 containing compatible H.264 video and AAC audio,
   plus an external UTF-8 SRT or WebVTT file. Validate codec profiles, resolution,
   and frame rate against the actual receiver; the extension alone is insufficient.
@@ -449,6 +450,11 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
+Implement the agreed [KDE UI and backend interface](kde-ui.md): separate CLI
+automation policy, add explicit controllable sessions and a private helper, then
+build a native C++/Qt Widgets frontend. The user has installed the development
+packages. Actual TV validation remains user-run.
+
 The project and executable are named `yeet`; playback is the default action
 (`yeet FILE`), with `yeet devices` and `yeet inspect FILE` retained as subcommands.
 Configuration, state, cache, prepared output names, crates, scripts, and docs use
@@ -464,7 +470,8 @@ available for regression testing when needed.
 The earlier M5 hardware batch passed. Seeking and longer playback on the expanded preparation
 paths, especially copied HEVC, are deferred until controls are available or the
 user resumes those checks. They do not block choosing the next development task.
-Keep M3 controls and frontend design parked until explicitly resumed.
+Keep M3 terminal controls parked; shared playback controls and the KDE frontend
+are now active work.
 
 ## Technical references
 

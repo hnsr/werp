@@ -1,5 +1,9 @@
 # Yeet outline
 
+The KDE frontend is now in scope, with native C++/Qt Widgets communicating with a
+private Rust helper. See [the agreed UI architecture](kde-ui.md); CLI automatic
+selection and resume policies stay specific to the CLI.
+
 Status: agreed direction and input for detailed planning.
 Last updated: 2026-09-19.
 
