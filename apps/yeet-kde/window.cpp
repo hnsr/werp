@@ -105,7 +105,7 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     m_pause = new QPushButton(i18n("Pause")); m_pause->setObjectName("pause");
     m_stop = new QPushButton(i18n("Stop")); m_stop->setObjectName("stop");
     auto *controls = new QHBoxLayout; controls->addStretch(); controls->addWidget(m_pause); controls->addWidget(m_stop); controls->addStretch();
-    playerLayout->addStretch(); playerLayout->addWidget(m_time); playerLayout->addWidget(m_seek); playerLayout->addLayout(controls); playerLayout->addStretch(); m_pages->addWidget(playing);
+    playerLayout->addStretch(); playerLayout->addWidget(m_time); playerLayout->addWidget(m_seek); playerLayout->addLayout(controls); m_pages->addWidget(playing);
     m_togglePlayback = new QShortcut(QKeySequence(Qt::Key_Space),this);
     m_togglePlayback->setAutoRepeat(false); m_togglePlayback->setEnabled(false);
     connect(m_togglePlayback,&QShortcut::activated,m_pause,&QPushButton::click);
