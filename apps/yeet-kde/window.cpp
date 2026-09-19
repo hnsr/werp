@@ -87,7 +87,13 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     auto *buttons = new QHBoxLayout;
     m_start = new QPushButton(i18n("Yeet")); m_start->setObjectName("yeet"); m_start->setDefault(true);
     m_resumeButton = new QPushButton(i18n("Yeet from last position")); m_resumeButton->setObjectName("resume");
-    buttons->addWidget(m_start); buttons->addWidget(m_resumeButton); startupLayout->addStretch(); startupLayout->addLayout(buttons); m_pages->addWidget(startup);
+    auto *quit = new QPushButton(i18n("Quit")); quit->setObjectName("quit");
+    quit->setToolTip(i18n("Quit (Ctrl+Q)"));
+    connect(quit,&QPushButton::clicked,this,&QWidget::close);
+    auto *quitShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Q),this);
+    quitShortcut->setAutoRepeat(false);
+    connect(quitShortcut,&QShortcut::activated,this,&QWidget::close);
+    buttons->addWidget(m_start,1); buttons->addWidget(m_resumeButton,1); buttons->addWidget(quit); startupLayout->addStretch(); startupLayout->addLayout(buttons); m_pages->addWidget(startup);
     auto *preparing = new QWidget; auto *prepareLayout = new QVBoxLayout(preparing);
     m_prepareLabel = new QLabel(i18n("Preparing playback…")); m_prepareLabel->setTextFormat(Qt::PlainText); m_prepareLabel->setWordWrap(true);
     m_progress = new QProgressBar; m_progress->setObjectName("preparationProgress"); m_progress->setRange(0,0);

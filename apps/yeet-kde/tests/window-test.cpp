@@ -80,7 +80,8 @@ private slots:
         QVERIFY(sawSeek);
         QCOMPARE(QSettings(settings,QSettings::IniFormat).value("lastDeviceId").toString(),QString("tv"));
         QSignalSpy exited(window.findChild<Backend *>(),&Backend::exited);
-        window.close(); QTRY_COMPARE_WITH_TIMEOUT(exited.count(),1,5000); QVERIFY(!window.isVisible());
+        QTest::mouseClick(window.findChild<QPushButton *>("quit"),Qt::LeftButton);
+        QTRY_COMPARE_WITH_TIMEOUT(exited.count(),1,5000); QVERIFY(!window.isVisible());
         Window reopened(helper,{},true,{},settings); reopened.show();
         auto *remembered=reopened.findChild<QComboBox *>("devices");
         QTRY_COMPARE(remembered->currentData().toString(),QString("tv"));
@@ -123,7 +124,8 @@ private slots:
         QDragEnterEvent duringPlayback(QPoint(30,30),Qt::CopyAction,&mime,Qt::LeftButton,Qt::NoModifier);
         QApplication::sendEvent(&window,&duringPlayback); QVERIFY(!duringPlayback.isAccepted());
         QSignalSpy exited(window.findChild<Backend *>(),&Backend::exited);
-        window.close(); QTRY_COMPARE_WITH_TIMEOUT(exited.count(),1,5000);
+        window.activateWindow(); QTest::keyClick(&window,Qt::Key_Q,Qt::ControlModifier);
+        QTRY_COMPARE_WITH_TIMEOUT(exited.count(),1,5000);
     }
     void real_helper_handshake_and_readonly_inspection() {
         QTemporaryDir dir;

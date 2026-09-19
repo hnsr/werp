@@ -57,7 +57,8 @@ No conversion starts before pressing a Yeet button. Progress is a structured
 fraction from the backend; the frontend does not parse FFmpeg or CLI output.
 Disable subtitle selection during preparation and playback. Stop waits for cleanup
 and returns to startup choices. The helper stays available for another session.
-Closing the UI or losing its input pipe cancels work, releases resources, and
+The bottom-row Quit button and Ctrl+Q use the normal window-close cleanup path.
+Ctrl+Q also works during preparation and playback. Closing the UI or losing its input pipe cancels work, releases resources, and
 exits the helper. Helper failure must be visible in the UI.
 
 ## Transport contract
