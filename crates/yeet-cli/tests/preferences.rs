@@ -47,7 +47,7 @@ fn config_location_language_order_and_cli_subtitle_overrides() {
         assert_eq!(output.status.code(), Some(1));
         String::from_utf8(output.stderr).unwrap()
     };
-    fs::write(&config, "[subtitles]\nlanguages=['nl','en']\n").unwrap();
+    fs::write(&config, "[cli.subtitles]\nlanguages=['nl','en']\n").unwrap();
     assert!(run(&[]).contains("embedded stream #3"));
     assert!(
         fs::read_to_string(dir.path().join("converter.args"))
@@ -57,13 +57,13 @@ fn config_location_language_order_and_cli_subtitle_overrides() {
     assert!(run(&["--subtitle-track", "2"]).contains("embedded stream #2"));
     assert!(run(&["--no-subtitles"]).contains("Subtitles: none selected"));
     assert!(run(&["--no-config"]).contains("embedded stream #2"));
-    fs::write(&config, "[subtitles]\nauto_load=false\n").unwrap();
+    fs::write(&config, "[cli.subtitles]\nauto_load=false\n").unwrap();
     assert!(run(&[]).contains("Subtitles: none selected"));
     assert!(run(&["--auto-subtitles"]).contains("embedded stream #2"));
     assert!(run(&["--subtitles", "missing.vtt"]).contains("missing.vtt"));
     let alternate = dir.path().join("alternate.toml");
-    fs::write(&alternate, "[subtitles]\nlanguages=['nl']\n").unwrap();
+    fs::write(&alternate, "[cli.subtitles]\nlanguages=['nl']\n").unwrap();
     assert!(run(&["--config", alternate.to_str().unwrap()]).contains("embedded stream #3"));
-    fs::write(&config, "[subtitles]\nauto_lod=true\n").unwrap();
+    fs::write(&config, "[cli.subtitles]\nauto_lod=true\n").unwrap();
     assert!(run(&[]).contains("invalid configuration"));
 }

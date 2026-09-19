@@ -1,4 +1,4 @@
-//! User preferences, independent of the CLI. Missing default config uses defaults.
+//! Configuration for frontend policies. The backend helper never loads CLI settings.
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -11,6 +11,12 @@ use crate::YeetError;
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    pub cli: CliPreferences,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CliPreferences {
     pub subtitles: SubtitlePreferences,
     pub devices: DevicePreferences,
     pub playback: PlaybackPreferences,
@@ -41,12 +47,12 @@ pub struct DevicePreferences {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PlaybackPreferences {
-    pub resume: bool,
+    pub auto_resume: bool,
 }
 
 impl Default for PlaybackPreferences {
     fn default() -> Self {
-        Self { resume: true }
+        Self { auto_resume: true }
     }
 }
 
@@ -64,7 +70,7 @@ pub fn default_path() -> Option<PathBuf> {
 
 pub fn parse(text: &str) -> Result<Config, YeetError> {
     let mut config: Config = toml::from_str(text).map_err(|e| YeetError::Config(e.to_string()))?;
-    for language in &mut config.subtitles.languages {
+    for language in &mut config.cli.subtitles.languages {
         let original = language.clone();
         *language = normalize_preference(language)
             .ok_or_else(|| {
@@ -74,8 +80,14 @@ pub fn parse(text: &str) -> Result<Config, YeetError> {
             })?
             .into();
     }
-    config.subtitles.languages.dedup();
-    if config.devices.preferred.iter().any(|p| p.trim().is_empty()) {
+    config.cli.subtitles.languages.dedup();
+    if config
+        .cli
+        .devices
+        .preferred
+        .iter()
+        .any(|p| p.trim().is_empty())
+    {
         return Err(YeetError::Config(
             "preferred device names/IDs cannot be empty".into(),
         ));
@@ -141,16 +153,16 @@ mod tests {
     #[test]
     fn defaults_aliases_and_invalid_preferences() {
         let config = parse("").unwrap();
-        assert!(config.subtitles.auto_load && config.playback.resume);
-        assert_eq!(config.subtitles.languages, ["en", "nl"]);
-        let config = parse("[subtitles]\nauto_load = false\nlanguages = ['Dutch', 'en-GB', 'eng']\n[devices]\npreferred = ['TV', 'tv-id']\n[playback]\nresume = false").unwrap();
-        assert_eq!(config.subtitles.languages, ["nl", "en"]);
-        assert!(!config.subtitles.auto_load && !config.playback.resume);
+        assert!(config.cli.subtitles.auto_load && config.cli.playback.auto_resume);
+        assert_eq!(config.cli.subtitles.languages, ["en", "nl"]);
+        let config = parse("[cli.subtitles]\nauto_load = false\nlanguages = ['Dutch', 'en-GB', 'eng']\n[cli.devices]\npreferred = ['TV', 'tv-id']\n[cli.playback]\nauto_resume = false").unwrap();
+        assert_eq!(config.cli.subtitles.languages, ["nl", "en"]);
+        assert!(!config.cli.subtitles.auto_load && !config.cli.playback.auto_resume);
         for invalid in [
-            "[subtitles]\nlanguages=['German']",
-            "[devices]\npreferred=['']",
-            "[playback]\nresuem=true",
-            "[subtitles]\nauto_load='yes'",
+            "[cli.subtitles]\nlanguages=['German']",
+            "[cli.devices]\npreferred=['']",
+            "[cli.playback]\nresuem=true",
+            "[cli.subtitles]\nauto_load='yes'",
         ] {
             assert!(parse(invalid).is_err(), "{invalid}");
         }

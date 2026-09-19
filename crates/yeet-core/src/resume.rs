@@ -49,27 +49,73 @@ fn default_directory() -> std::io::Result<PathBuf> {
         .ok_or_else(|| std::io::Error::other("cannot locate the user state directory"))
 }
 
+fn location(info: &MediaInfo, directory: Option<&Path>) -> std::io::Result<(PathBuf, f64)> {
+    let source = fs::canonicalize(&info.path)?;
+    let meta = fs::metadata(&source)?;
+    let modified = meta
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .map_err(std::io::Error::other)?;
+    let mut digest = Context::new(&SHA256);
+    digest.update(source.as_os_str().as_encoded_bytes());
+    digest.update(&meta.len().to_le_bytes());
+    digest.update(&modified.as_nanos().to_le_bytes());
+    let key: String = digest
+        .finish()
+        .as_ref()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let directory = directory
+        .map(Path::to_path_buf)
+        .map_or_else(default_directory, Ok)?;
+    let duration = info
+        .duration_seconds
+        .filter(|d| d.is_finite() && *d > 0.0)
+        .ok_or_else(|| std::io::Error::other("resume requires a positive duration"))?;
+    Ok((directory.join(format!("{key}.json")), duration))
+}
+
+fn read_position(path: &Path, duration: f64) -> std::io::Result<f64> {
+    let saved = match File::open(path) {
+        Ok(file) => {
+            let mut bytes = Vec::new();
+            file.take(4097).read_to_end(&mut bytes)?;
+            match serde_json::from_slice::<Record>(&bytes) {
+                Ok(r)
+                    if bytes.len() <= 4096
+                        && r.version == 1
+                        && r.position.is_finite()
+                        && r.position >= 0.0
+                        && r.position < duration
+                        && (r.duration - duration).abs() < 1.0 =>
+                {
+                    r.position
+                }
+                _ => {
+                    tracing::warn!("Invalid resume checkpoint ignored");
+                    0.0
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0.0,
+        Err(e) => return Err(e),
+    };
+    Ok(saved)
+}
+
+/// Read a usable resume offset without creating directories, files, or locks.
+/// Includes the existing five-second rewind for context.
+pub fn checkpoint(info: &MediaInfo, directory: Option<&Path>) -> std::io::Result<Option<f64>> {
+    let (path, duration) = location(info, directory)?;
+    let saved = read_position(&path, duration)?;
+    Ok((saved >= 10.0 && duration - saved >= 5.0).then_some(saved - 5.0))
+}
+
 impl ResumeStore {
     pub(crate) fn open(info: &MediaInfo, directory: Option<&Path>) -> std::io::Result<Self> {
-        let source = fs::canonicalize(&info.path)?;
-        let meta = fs::metadata(&source)?;
-        let modified = meta
-            .modified()?
-            .duration_since(UNIX_EPOCH)
-            .map_err(std::io::Error::other)?;
-        let mut digest = Context::new(&SHA256);
-        digest.update(source.as_os_str().as_encoded_bytes());
-        digest.update(&meta.len().to_le_bytes());
-        digest.update(&modified.as_nanos().to_le_bytes());
-        let key: String = digest
-            .finish()
-            .as_ref()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        let directory = directory
-            .map(Path::to_path_buf)
-            .map_or_else(default_directory, Ok)?;
+        let (path, duration) = location(info, directory)?;
+        let directory = path.parent().unwrap();
         let mut builder = fs::DirBuilder::new();
         builder.recursive(true);
         #[cfg(unix)]
@@ -77,8 +123,7 @@ impl ResumeStore {
             use std::os::unix::fs::DirBuilderExt;
             builder.mode(0o700);
         }
-        builder.create(&directory)?;
-        let path = directory.join(format!("{key}.json"));
+        builder.create(directory)?;
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true).truncate(false);
         #[cfg(unix)]
@@ -86,36 +131,9 @@ impl ResumeStore {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let lock = options.open(directory.join(format!("{key}.lock")))?;
+        let lock = options.open(path.with_extension("lock"))?;
         lock.try_lock().map_err(std::io::Error::other)?;
-        let duration = info
-            .duration_seconds
-            .filter(|d| d.is_finite() && *d > 0.0)
-            .ok_or_else(|| std::io::Error::other("resume requires a positive duration"))?;
-        let saved = match File::open(&path) {
-            Ok(file) => {
-                let mut bytes = Vec::new();
-                file.take(4097).read_to_end(&mut bytes)?;
-                match serde_json::from_slice::<Record>(&bytes) {
-                    Ok(r)
-                        if bytes.len() <= 4096
-                            && r.version == 1
-                            && r.position.is_finite()
-                            && r.position >= 0.0
-                            && r.position < duration
-                            && (r.duration - duration).abs() < 1.0 =>
-                    {
-                        r.position
-                    }
-                    _ => {
-                        tracing::warn!("Invalid resume checkpoint ignored");
-                        0.0
-                    }
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0.0,
-            Err(e) => return Err(e),
-        };
+        let saved = read_position(&path, duration)?;
         Ok(Self {
             path,
             _lock: lock,
@@ -127,6 +145,7 @@ impl ResumeStore {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn start_position(&self) -> f64 {
         if self.saved >= 10.0 && self.duration - self.saved >= 5.0 {
             self.saved - 5.0
@@ -203,6 +222,11 @@ mod tests {
             streams: vec![],
         };
         let state = dir.path().join("state");
+        assert_eq!(checkpoint(&info, Some(&state)).unwrap(), None);
+        assert!(
+            !state.exists(),
+            "read-only inspection must not create resume state"
+        );
         let open = || ResumeStore::open(&info, Some(&state)).unwrap();
         let mut store = open();
         assert_eq!(store.start_position(), 0.0);

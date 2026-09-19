@@ -8,7 +8,10 @@ use std::{
 
 use serde::Serialize;
 use serde_json::json;
-use tokio::{sync::watch, time::Instant};
+use tokio::{
+    sync::{mpsc, oneshot, watch},
+    time::Instant,
+};
 
 use crate::{
     CancellationToken, YeetError,
@@ -24,8 +27,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum Target {
-    Auto,
-    Device(String),
+    Device(discovery::Device),
     Host(SocketAddr),
 }
 
@@ -33,10 +35,9 @@ pub enum Target {
 pub struct CastRequest {
     pub file: PathBuf,
     pub subtitles: subtitles::Request,
-    pub target: Target,
+    pub target: Option<Target>,
     pub bind_address: Option<IpAddr>,
     pub http_port: u16,
-    pub scan_duration: Duration,
     pub probe: ProbeOptions,
     pub ffmpeg: PathBuf,
     pub mode: Mode,
@@ -45,8 +46,8 @@ pub struct CastRequest {
     pub transcode: TranscodeOptions,
     /// Best-effort Linux sleep inhibition during preparation and playback.
     pub inhibit_sleep: bool,
-    pub preferences: crate::config::Config,
-    pub restart: bool,
+    pub save_position: bool,
+    pub start_position: f64,
     /// Override state location for embedding/testing; CLI uses XDG_STATE_HOME.
     pub resume_directory: Option<PathBuf>,
 }
@@ -55,11 +56,10 @@ impl CastRequest {
     pub fn new(file: PathBuf) -> Self {
         Self {
             file,
-            subtitles: subtitles::Request::Auto,
-            target: Target::Auto,
+            subtitles: subtitles::Request::Off,
+            target: None,
             bind_address: None,
             http_port: 0,
-            scan_duration: Duration::from_secs(5),
             probe: ProbeOptions::default(),
             ffmpeg: "ffmpeg".into(),
             mode: Mode::Auto,
@@ -67,8 +67,8 @@ impl CastRequest {
             cache: CacheOptions::default(),
             transcode: TranscodeOptions::default(),
             inhibit_sleep: true,
-            preferences: crate::config::Config::default(),
-            restart: false,
+            save_position: true,
+            start_position: 0.0,
             resume_directory: None,
         }
     }
@@ -95,6 +95,9 @@ pub enum Phase {
 pub struct SessionState {
     pub phase: Phase,
     pub position_seconds: Option<f64>,
+    pub duration_seconds: Option<f64>,
+    pub preparation_operation: Option<String>,
+    pub preparation_fraction: Option<f64>,
     pub message: Option<String>,
     /// Durable preparation decisions, retained even when progress updates coalesce.
     pub notices: Vec<String>,
@@ -105,6 +108,9 @@ impl Default for SessionState {
         Self {
             phase: Phase::Preparing,
             position_seconds: None,
+            duration_seconds: None,
+            preparation_operation: None,
+            preparation_fraction: None,
             message: None,
             notices: Vec::new(),
         }
@@ -119,6 +125,10 @@ fn report(
 ) {
     progress.send_modify(|state| {
         state.phase = phase;
+        if phase != Phase::Preparing {
+            state.preparation_operation = None;
+            state.preparation_fraction = None;
+        }
         state.position_seconds = position_seconds;
         state.message = message;
     });
@@ -128,12 +138,54 @@ fn notice(progress: &watch::Sender<SessionState>, message: String) {
     progress.send_modify(|state| state.notices.push(message));
 }
 
-/// Cancel via the token and await completion. Progress uses a latest-state
-/// channel, so slow or absent frontends cannot block the session or heartbeats.
+#[derive(Debug, Clone, Copy)]
+pub enum Control {
+    Pause,
+    Play,
+    Seek(f64),
+}
+
+pub struct ControlRequest {
+    command: Control,
+    reply: oneshot::Sender<Result<(), String>>,
+}
+#[derive(Clone)]
+pub struct SessionController {
+    sender: mpsc::Sender<ControlRequest>,
+}
+pub fn control_channel() -> (SessionController, mpsc::Receiver<ControlRequest>) {
+    let (sender, receiver) = mpsc::channel(16);
+    (SessionController { sender }, receiver)
+}
+impl SessionController {
+    pub async fn command(&self, command: Control) -> Result<(), String> {
+        let (reply, response) = oneshot::channel();
+        self.sender
+            .send(ControlRequest { command, reply })
+            .await
+            .map_err(|_| "session has ended".to_string())?;
+        response
+            .await
+            .map_err(|_| "session has ended".to_string())?
+    }
+}
+
 pub async fn run(
     request: CastRequest,
     progress: watch::Sender<SessionState>,
     cancel: &CancellationToken,
+) -> Result<(), YeetError> {
+    let (_controller, controls) = control_channel();
+    run_controlled(request, progress, cancel, controls).await
+}
+
+/// Cancel via the token and await completion. Progress uses a latest-state
+/// channel, so slow or absent frontends cannot block the session or heartbeats.
+pub async fn run_controlled(
+    request: CastRequest,
+    progress: watch::Sender<SessionState>,
+    cancel: &CancellationToken,
+    mut controls: mpsc::Receiver<ControlRequest>,
 ) -> Result<(), YeetError> {
     let mut prepared = None;
     let mut prepared_media = None;
@@ -168,35 +220,34 @@ pub async fn run(
         );
         let info = media::inspect(&request.file, &request.probe, cancel).await?;
         transcode::validate_input(&info)?;
-        let mut start_position = 0.0;
-        if request.preferences.playback.resume {
+        progress.send_modify(|state| state.duration_seconds = info.duration_seconds);
+        let start_position = request.start_position;
+        if !start_position.is_finite() || start_position < 0.0 || info.duration_seconds.is_some_and(|d| start_position >= d) {
+            return Err(YeetError::Cast("starting position is outside the video duration".into()));
+        }
+        if start_position > 0.0 { notice(&progress, format!("Resuming from {start_position:.0} seconds")); }
+        if request.save_position {
             match crate::resume::ResumeStore::open(&info, request.resume_directory.as_deref()) {
-                Ok(store) => {
-                    if !request.restart { start_position = store.start_position(); }
-                    if start_position > 0.0 { notice(&progress, format!("Resuming from {start_position:.0} seconds")); }
-                    resume = Some(store);
-                }
-                Err(error) => tracing::warn!(%error, "Resume unavailable for this session; starting from the beginning"),
+                Ok(store) => resume = Some(store),
+                Err(error) => tracing::warn!(%error, "Could not save position for this session"),
             }
         }
-        let (address, model) = match &request.target {
-            Target::Host(address) => (*address, None),
-            target => {
-                report(&progress, Phase::Discovering, None, None);
-                let devices = discovery::discover(request.scan_duration, cancel).await?;
-                let selected = select_preferred_target(&devices, target, &request.preferences.devices.preferred)?;
-                (SocketAddr::new(
-                    (*selected.addresses.first().ok_or_else(|| {
-                        YeetError::Discovery("selected device has no IPv4 address".into())
-                    })?).into(), selected.port,
-                ), Some(selected.model.clone()))
+        let (address, model) = match request.target.as_ref() {
+            Some(Target::Host(address)) => (*address, None),
+            Some(Target::Device(device)) => {
+                if device.capabilities.is_some_and(|c| c & 1 == 0) { return Err(YeetError::Discovery("selected device is audio-only".into())); }
+                let address = device.addresses.first().ok_or_else(|| YeetError::Discovery("selected device has no IPv4 address".into()))?;
+                (SocketAddr::new((*address).into(), device.port), Some(device.model.clone()))
             }
+            None => return Err(YeetError::Discovery("an explicit device is required".into())),
         };
         let policy = request.profile.resolve(model.as_deref());
+        if matches!(request.subtitles, subtitles::Request::Auto) { return Err(YeetError::Subtitles("an explicit subtitle choice is required".into())); }
+        let subtitle_preferences = crate::config::SubtitlePreferences { auto_load: false, languages: vec![] };
         let subtitle = tokio::select! {
             biased;
             _ = cancel.cancelled() => return Err(YeetError::Cancelled),
-            selected = subtitles::select(&request.subtitles, &info, &request.file, &request.preferences.subtitles) => selected?,
+            selected = subtitles::select(&request.subtitles, &info, &request.file, &subtitle_preferences) => selected?,
         };
         let bitmap_index = match &subtitle { Some(subtitles::Selection::Bitmap { index }) => Some(*index), _ => None };
         let mode = if bitmap_index.is_some() {
@@ -236,6 +287,7 @@ pub async fn run(
                 TranscodeMode::AudioOnly => "Audio conversion",
                 TranscodeMode::Remux => "Remuxing",
             };
+            progress.send_modify(|state| { state.preparation_operation = Some(label.into()); state.preparation_fraction = None; });
             let mut last_percent = None;
             prepared_media = Some(cache::prepare(
                 &info, &request.ffmpeg, &request.probe, &options, &request.cache, cancel,
@@ -246,6 +298,7 @@ pub async fn run(
                         cache::Event::Stored(path) => { notice(&progress, format!("Saved prepared file: {}", path.display())); None },
                         cache::Event::Fallback(path) => { notice(&progress, format!("Source folder is not writable; using cache: {}", path.display())); None },
                         cache::Event::Progress(update) => {
+                            progress.send_modify(|state| state.preparation_fraction = Some(update.fraction.clamp(0.0, 1.0)));
                             let percent = (update.fraction * 100.0).floor() as u32;
                             if last_percent == Some(percent) { None } else {
                                 last_percent = Some(percent);
@@ -320,6 +373,7 @@ pub async fn run(
         let loaded_at = Instant::now();
         let mut tracks_enabled = false;
         let mut subtitle_confirmed = serving.subtitle_url.is_none();
+        let mut controls_open = true;
         loop {
             if cancel.is_cancelled() {
                 return Err(YeetError::Cancelled);
@@ -413,10 +467,33 @@ pub async fn run(
                 current.as_ref().map(|s| s.current_time),
                 None,
             );
-            current = cast
-                .wait_for_status(Duration::from_secs(1), cancel)
-                .await
-                .map_err(|e| delivery_error(e, serving))?;
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(YeetError::Cancelled),
+                command = controls.recv(), if controls_open => {
+                    if let Some(command) = command {
+                        let (kind, extra) = match command.command {
+                            Control::Pause => ("PAUSE", json!({})),
+                            Control::Play => ("PLAY", json!({})),
+                            Control::Seek(position) => {
+                                if !position.is_finite() || position < 0.0 || info.duration_seconds.is_some_and(|d| position >= d) {
+                                    let _ = command.reply.send(Err("seek position is outside the video duration".into()));
+                                    continue;
+                                }
+                                ("SEEK", json!({"currentTime":position}))
+                            }
+                        };
+                        match cast.command(kind, extra, cancel).await {
+                            Ok(status) => { current = Some(status); let _ = command.reply.send(Ok(())); },
+                            Err(error) => { let _ = command.reply.send(Err(error.to_string())); return Err(error); },
+                        }
+                    } else { controls_open = false; }
+                }
+                status = cast.wait_for_status(Duration::from_secs(1), cancel) => {
+                    current = status.map_err(|e| delivery_error(e, serving))?;
+                }
+            }
+
         }
     }.await;
 
@@ -492,214 +569,4 @@ fn delivery_error(error: YeetError, server: &MediaServer) -> YeetError {
         ));
     }
     error
-}
-
-pub fn select_target(
-    devices: &[discovery::Device],
-    target: &Target,
-) -> Result<discovery::Device, YeetError> {
-    select_preferred_target(devices, target, &[])
-}
-
-pub fn select_preferred_target(
-    devices: &[discovery::Device],
-    target: &Target,
-    preferred: &[String],
-) -> Result<discovery::Device, YeetError> {
-    let result = (|| {
-        if matches!(target, Target::Auto) {
-            let eligible: Vec<_> = devices
-                .iter()
-                .filter(|d| {
-                    d.capabilities.is_some_and(|bits| bits & 1 != 0) && !d.addresses.is_empty()
-                })
-                .cloned()
-                .collect();
-            for preference in preferred {
-                if eligible
-                    .iter()
-                    .any(|d| d.id == *preference || d.name == *preference)
-                {
-                    return discovery::select(&eligible, preference);
-                }
-            }
-        }
-        select_target_inner(devices, target)
-    })();
-    result.map_err(|error| match error {
-        YeetError::Discovery(message) => YeetError::Discovery(format!(
-            "{message}. Detected devices: {}",
-            if devices.is_empty() {
-                "none".into()
-            } else {
-                devices
-                    .iter()
-                    .map(|d| {
-                        format!(
-                            "{:?} ({}){}",
-                            d.name,
-                            d.id,
-                            if d.capabilities.is_some_and(|c| c & 1 == 0) {
-                                " [audio-only]"
-                            } else {
-                                ""
-                            }
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            }
-        )),
-        other => other,
-    })
-}
-
-fn select_target_inner(
-    devices: &[discovery::Device],
-    target: &Target,
-) -> Result<discovery::Device, YeetError> {
-    let selected = match target {
-        Target::Device(selector) => discovery::select(devices, selector)?,
-        Target::Auto => {
-            let eligible: Vec<_> = devices
-                .iter()
-                .filter(|d| {
-                    d.capabilities.is_some_and(|bits| bits & 1 != 0) && !d.addresses.is_empty()
-                })
-                .collect();
-            match eligible.as_slice() {
-                [device] => (*device).clone(),
-                _ => {
-                    return Err(YeetError::Discovery(format!(
-                        "found {} confirmed video receivers; choose --device NAME/ID or --host IP",
-                        eligible.len(),
-                    )));
-                }
-            }
-        }
-        Target::Host(_) => {
-            return Err(YeetError::Discovery(
-                "explicit IP does not require discovery".into(),
-            ));
-        }
-    };
-    if selected.capabilities.is_some_and(|bits| bits & 1 == 0) {
-        return Err(YeetError::Discovery("selected device is audio-only".into()));
-    }
-    if selected.addresses.is_empty() {
-        return Err(YeetError::Discovery(
-            "selected device has no IPv4 address".into(),
-        ));
-    }
-    Ok(selected)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn auto_selection_requires_exactly_one_known_video_receiver() {
-        let video = discovery::Device {
-            id: "tv-id".into(),
-            name: "TV".into(),
-            model: "test".into(),
-            addresses: vec!["127.0.0.1".parse().unwrap()],
-            port: 8009,
-            capabilities: Some(5),
-        };
-        let audio = discovery::Device {
-            id: "speaker".into(),
-            name: "Speaker".into(),
-            capabilities: Some(4),
-            ..video.clone()
-        };
-        let unknown = discovery::Device {
-            id: "unknown".into(),
-            name: "Unknown".into(),
-            capabilities: None,
-            ..video.clone()
-        };
-        let other = discovery::Device {
-            id: "other-id".into(),
-            name: "Other TV".into(),
-            ..video.clone()
-        };
-        let devices = [video.clone(), other.clone(), audio.clone()];
-        assert_eq!(
-            select_preferred_target(
-                &devices,
-                &Target::Auto,
-                &[
-                    "Speaker".into(),
-                    "missing".into(),
-                    "Other TV".into(),
-                    "TV".into()
-                ]
-            )
-            .unwrap()
-            .id,
-            "other-id"
-        );
-        assert_eq!(
-            select_preferred_target(&devices, &Target::Device("TV".into()), &["Other TV".into()])
-                .unwrap()
-                .id,
-            "tv-id"
-        );
-        let error = select_preferred_target(&devices, &Target::Device("Missing".into()), &[])
-            .unwrap_err()
-            .to_string();
-        assert!(
-            error.contains("Other TV")
-                && error.contains("Speaker")
-                && error.contains("[audio-only]")
-        );
-        let duplicate = discovery::Device {
-            name: "TV".into(),
-            ..other
-        };
-        assert!(
-            select_preferred_target(&[video.clone(), duplicate], &Target::Auto, &["TV".into()])
-                .unwrap_err()
-                .to_string()
-                .contains("ambiguous")
-        );
-        assert!(select_target(&[], &Target::Auto).is_err());
-        assert!(select_target(&[audio.clone(), unknown.clone()], &Target::Auto).is_err());
-        assert_eq!(
-            select_target(
-                &[audio.clone(), unknown.clone(), video.clone()],
-                &Target::Auto
-            )
-            .unwrap()
-            .id,
-            "tv-id"
-        );
-        assert!(
-            select_target(
-                &[
-                    video.clone(),
-                    discovery::Device {
-                        id: "other-tv".into(),
-                        ..video.clone()
-                    }
-                ],
-                &Target::Auto
-            )
-            .is_err()
-        );
-        assert!(select_target(&[audio], &Target::Device("speaker".into())).is_err());
-        assert!(select_target(&[unknown], &Target::Device("unknown".into())).is_ok());
-        assert!(
-            select_target(
-                &[discovery::Device {
-                    addresses: vec![],
-                    ..video
-                }],
-                &Target::Device("tv-id".into())
-            )
-            .is_err()
-        );
-    }
 }

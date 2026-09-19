@@ -7,13 +7,13 @@ mod linux {
 
     use crate::{CancellationToken, YeetError};
 
-    pub(crate) struct SleepInhibitor {
+    pub struct SleepInhibitor {
         stop: CancellationToken,
         worker: Option<JoinHandle<()>>,
     }
 
     impl SleepInhibitor {
-        pub(crate) async fn acquire(cancel: &CancellationToken) -> Result<Self, YeetError> {
+        pub async fn acquire(cancel: &CancellationToken) -> Result<Self, YeetError> {
             let mut command = Command::new("systemd-inhibit");
             command.args([
                 "--what=sleep",
@@ -99,7 +99,7 @@ mod linux {
             })
         }
 
-        pub(crate) async fn close(mut self) {
+        pub async fn close(mut self) {
             self.stop.cancel();
             if let Some(worker) = self.worker.take()
                 && let Err(error) = worker.await
@@ -213,4 +213,4 @@ mod linux {
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) use linux::SleepInhibitor;
+pub use linux::SleepInhibitor;

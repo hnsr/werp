@@ -1,13 +1,13 @@
 # Copy to ~/.config/yeet/config.toml (or $XDG_CONFIG_HOME/yeet/config.toml).
 # CLI overrides take precedence; omitted fields use these defaults.
-[subtitles]
+[cli.subtitles]
 auto_load = true
 languages = ["en", "nl"]
 
-[devices]
+[cli.devices]
 # Exact friendly names or stable IDs, highest priority first.
 # Example: preferred = ["Living Room", "Bedroom"]
 preferred = []
 
-[playback]
-resume = true
+[cli.playback]
+auto_resume = true

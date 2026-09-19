@@ -1,7 +1,7 @@
 # Yeet
 
-A Rust CLI and reusable backend for casting local videos and subtitles
-to Chromecast. `yeet FILE` selects direct play, remuxing, audio conversion, or full
+A Rust CLI, reusable backend, and native KDE frontend for casting local videos
+and subtitles to Chromecast. `yeet FILE` selects direct play, remuxing, audio conversion, or full
 conversion and reuses validated prepared files automatically. Automated checks
 and the consolidated short-clip TV validation passed on the KPN DIW7022 receiver;
 seeking and long-duration checks for the expanded paths are deferred.
@@ -25,12 +25,32 @@ subtitles off, and embedded PGS burn-in. Optional remaining checks are in the ch
   (already present on the Fedora KDE development machine). If unavailable or
   denied, Yeet warns and continues.
 
-No FFmpeg development headers, Qt, or KDE libraries are needed. Cargo resolves
+The CLI needs no FFmpeg development headers, Qt, or KDE libraries. Cargo resolves
 the Rust dependencies; `Cargo.lock` records tested versions.
 The development baseline is Fedora 44 with FFmpeg/ffprobe 8.1.2. Codec support
 depends on the installed FFmpeg build, not just its version.
 
-## Run
+## KDE application
+
+The C++/Qt 6 Widgets frontend starts its private Rust helper automatically.
+Opening a file shows explicit device and subtitle choices. Press **Yeet** to start
+at zero or **Yeet from last position** to resume. A separate preparation screen
+shows conversion/remuxing progress and cancellation before player controls appear.
+Pause/play, seeking, and stop are available in the window.
+
+```sh
+cmake -S apps/yeet-kde -B target/kde -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build target/kde
+./target/kde/yeet-kde samples/preferences/embedded.mkv --http-port 8010
+```
+
+The installed Fedora development packages are `gcc-c++ cmake ninja-build
+extra-cmake-modules qt6-qtbase-devel kf6-kcoreaddons-devel kf6-ki18n-devel`.
+See [build, installation, architecture, and TV checklist](docs/kde-ui.md) and the
+[backend protocol](docs/backend-protocol.md). Automated frontend checks are local;
+the new window's real-TV validation is pending.
+
+## CLI
 
 ```sh
 cargo run --locked -- devices
@@ -53,7 +73,7 @@ use `--cast-port` only with `--host`. Discovery and casting currently use IPv4.
 replaces playback on the selected receiver. Ctrl+C or SIGTERM stops Yeet's
 owned media, closes its server and transport, reaps subprocesses, and removes
 temporary media and subtitles. Completed reusable outputs are retained. If another sender takes over, Yeet exits without stopping
-their session. Interactive playback controls are planned for M3.
+their session. Interactive terminal controls remain parked in M3; the KDE window has player controls.
 
 Casting is the default action: `yeet FILE`. Use `yeet devices` to list receivers
 and `yeet inspect FILE` to inspect media. For a file named `devices`, `inspect`,
@@ -61,13 +81,16 @@ or `help`, use a path such as `./devices` or put `--` before the filename.
 
 ### Preferences and resume
 
-Preferences are read from `~/.config/yeet/config.toml` (or
+CLI automation preferences are read from `~/.config/yeet/config.toml` (or
 `$XDG_CONFIG_HOME/yeet/config.toml`). See [the example](docs/config.example.toml)
 and [configuration, subtitles, and resume](docs/preferences-and-subtitles.md).
 Defaults enable automatic subtitles, prefer English then Dutch, and save playback
-position. Configure `[devices] preferred` with ordered exact names or stable IDs.
+position. Configure `[cli.devices] preferred` with ordered exact names or stable IDs.
 Explicit `--device`/`--host` overrides preferences. `--config PATH` selects another
-file; `--no-config` uses built-in defaults.
+file; `--no-config` uses built-in defaults. All automatic preferences are under
+`[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`; the UI does not load them.
+`[cli.playback] auto_resume = false` disables automatic resume while still saving
+progress for explicit resume later.
 
 An interrupted video resumes on its next cast, five seconds before the last
 checkpoint. Normal completion clears the checkpoint. Use `--restart` to start

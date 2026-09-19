@@ -209,6 +209,94 @@ pub async fn select(
     Ok(None)
 }
 
+/// All selectable tracks for a frontend; no language preference or auto-selection.
+#[derive(Debug, serde::Serialize)]
+pub struct Choice {
+    pub kind: &'static str,
+    pub index: Option<u32>,
+    pub path: Option<PathBuf>,
+    pub codec: Option<String>,
+    pub language: Option<String>,
+    pub title: Option<String>,
+    pub forced: bool,
+    pub hearing_impaired: bool,
+    pub supported: bool,
+    pub burn_in: bool,
+}
+
+pub async fn choices(info: &MediaInfo, original_path: &Path) -> Result<Vec<Choice>, YeetError> {
+    let mut result: Vec<_> = info
+        .streams
+        .iter()
+        .filter(|s| s.kind == "subtitle")
+        .map(|s| Choice {
+            kind: "embedded",
+            index: Some(s.index),
+            path: None,
+            codec: s.codec.clone(),
+            language: s.language.clone(),
+            title: s.title.clone(),
+            forced: s.forced,
+            hearing_impaired: s.hearing_impaired,
+            supported: selection(s).is_ok(),
+            burn_in: bitmap(s.codec.as_deref().unwrap_or("")),
+        })
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    for video in [&info.path, original_path] {
+        let parent = video
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let mut entries = tokio::fs::read_dir(parent)
+            .await
+            .map_err(|e| invalid(e.to_string()))?;
+        let mut external = vec![];
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| invalid(e.to_string()))?
+        {
+            let path = entry.path();
+            if path.file_stem() == video.file_stem()
+                && path.extension().and_then(|s| s.to_str()).is_some_and(|s| {
+                    matches!(
+                        s.to_ascii_lowercase().as_str(),
+                        "srt" | "vtt" | "ass" | "ssa"
+                    )
+                })
+                && tokio::fs::metadata(&path).await.is_ok_and(|m| m.is_file())
+            {
+                let path = tokio::fs::canonicalize(path)
+                    .await
+                    .map_err(|e| invalid(e.to_string()))?;
+                if seen.insert(path.clone()) {
+                    external.push(path);
+                }
+            }
+        }
+        external.sort();
+        result.extend(external.into_iter().map(|path| {
+            let codec = path
+                .extension()
+                .map(|extension| extension.to_string_lossy().to_ascii_lowercase());
+            Choice {
+                kind: "external",
+                index: None,
+                path: Some(path),
+                codec,
+                language: None,
+                title: None,
+                forced: false,
+                hearing_impaired: false,
+                supported: true,
+                burn_in: false,
+            }
+        }));
+    }
+    Ok(result)
+}
+
 pub async fn extract(
     source: &MediaInfo,
     index: u32,

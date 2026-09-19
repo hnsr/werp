@@ -175,7 +175,7 @@ fn plan(info: &MediaInfo) -> Result<InputPlan, YeetError> {
     })
 }
 
-pub(crate) fn validate_input(info: &MediaInfo) -> Result<(), YeetError> {
+pub fn validate_input(info: &MediaInfo) -> Result<(), YeetError> {
     plan(info).map(|_| ())
 }
 

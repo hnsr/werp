@@ -20,15 +20,15 @@ change behavior. CLI overrides take precedence over file preferences.
 See [the example TOML](config.example.toml). Supported settings:
 
 ```toml
-[subtitles]
+[cli.subtitles]
 auto_load = true
 languages = ["en", "nl"]
 
-[devices]
+[cli.devices]
 preferred = ["Living Room", "Bedroom"]
 
-[playback]
-resume = true
+[cli.playback]
+auto_resume = true
 ```
 
 The built-in device preference list is empty. Personal device names belong in
@@ -106,6 +106,11 @@ still require explicit selection. Selection errors include detected names/IDs an
 mark known audio-only devices. This does not alter the separate `devices` scan.
 
 ## Playback positions
+
+CLI automatic resume is controlled by `[cli.playback] auto_resume`. Turning off
+automatic resume still records progress; `--no-resume` disables both reading and
+writing for that CLI invocation. The UI records progress but only resumes when
+the user chooses its resume button.
 
 Resume is enabled by default. Positions come from owned PLAYING/PAUSED receiver
 status, not elapsed wall time. Changed positions are saved at most every five

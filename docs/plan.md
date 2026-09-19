@@ -3,7 +3,7 @@
 Status: M0 and M1 verified; M2 implemented with automated checks passed and
 user-confirmed SRT/WebVTT playback, Ctrl+C shutdown, and SIGTERM cleanup with exit
 code 143. The IPv4 discovery issue
-is fixed and verified; remaining hardware checks are recorded below. M3 terminal controls remain parked; shared controls are now needed for the KDE UI;
+is fixed and verified; remaining hardware checks are recorded below. M3 terminal controls remain parked; shared controls and the first KDE UI are implemented with local checks;
 M5 now implements automatic preparation selection, extended HEVC/AAC remuxing,
 MKV audio-only conversion, and persistent adjacent-file reuse with user-cache
 fallback. All 58 automated tests and 12 representative local preparation/reuse
@@ -58,14 +58,17 @@ small change should leave working behaviour behind.
 
 ## Architecture and dependencies
 
-Use a Cargo workspace with two crates:
+Use a Cargo workspace with three crates and a separate native frontend:
 
 ```text
 Cargo.toml
 Cargo.lock
 crates/
   yeet-core/       # reusable backend library
-  yeet-cli/        # binary named yeet
+  yeet-cli/        # binary named yeet, owns CLI automation policy
+  yeet-backend/    # private JSON IPC helper, explicit frontend requests
+apps/
+  yeet-kde/        # C++ Qt Widgets frontend, built with CMake
 docs/
   outline.md
   plan.md
@@ -450,10 +453,14 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Implement the agreed [KDE UI and backend interface](kde-ui.md): separate CLI
-automation policy, add explicit controllable sessions and a private helper, then
-build a native C++/Qt Widgets frontend. The user has installed the development
-packages. Actual TV validation remains user-run.
+Validate the implemented [KDE frontend](kde-ui.md#tv-checklist) on the TV.
+CLI automation now uses `[cli.*]` configuration and remains separate from explicit
+frontend requests. The C++/Qt Widgets app launches a private Rust helper through
+the documented [versioned JSON protocol](backend-protocol.md). Selection,
+preparation progress/cancellation, and playback controls are separate UI states.
+Local protocol, simulated receiver, and native window checks cover the new path.
+The user has installed all required development packages; TV validation remains
+user-run.
 
 The project and executable are named `yeet`; playback is the default action
 (`yeet FILE`), with `yeet devices` and `yeet inspect FILE` retained as subcommands.
@@ -471,7 +478,7 @@ The earlier M5 hardware batch passed. Seeking and longer playback on the expande
 paths, especially copied HEVC, are deferred until controls are available or the
 user resumes those checks. They do not block choosing the next development task.
 Keep M3 terminal controls parked; shared playback controls and the KDE frontend
-are now active work.
+are implemented, with frontend hardware validation next.
 
 ## Technical references
 

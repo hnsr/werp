@@ -35,12 +35,12 @@ ffmpeg -nostdin -hide_banner -v error -n \
 cp -- "$output/test.mp4" "$output/external.mp4"
 cp -- "$output/english.srt" "$output/external.srt"
 cat > "$output/dutch.toml" <<'TOML'
-[subtitles]
+[cli.subtitles]
 auto_load = true
 languages = ["nl", "en"]
 
-[playback]
-resume = false
+[cli.playback]
+auto_resume = false
 TOML
 printf 'Prepared %s-second fixtures in %s (no TV contacted).\n' "$seconds" "$output"
 printf 'Embedded indexes: 2 = forced English, 3 = full English, 4 = Dutch.\n'

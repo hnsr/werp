@@ -83,6 +83,7 @@ struct Transcript {
     track_commands: usize,
     receiver_polls: usize,
     start_position: f64,
+    controls: Vec<String>,
 }
 
 fn status(url: &str, state: &str, tracks: bool) -> Value {
@@ -147,6 +148,7 @@ async fn receiver_at(
             .await
             .unwrap();
         let mut log = Transcript::default();
+        let mut position = position;
         let mut tracks = false;
         let mut state = "PLAYING";
         while let Ok(length) = stream.read_u32().await {
@@ -249,6 +251,8 @@ async fn receiver_at(
                                 "IDLE"
                             } else if mode == Mode::Transient && log.polls == 2 {
                                 "BUFFERING"
+                            } else if mode == Mode::Hold {
+                                state
                             } else {
                                 "PLAYING"
                             };
@@ -267,6 +271,17 @@ async fn receiver_at(
                     } else {
                         json!({"type":"MEDIA_STATUS","status":[status(&log.url,state,tracks)]})
                     }
+                }
+                "PAUSE" | "PLAY" | "SEEK" => {
+                    assert_eq!(payload["mediaSessionId"], 7);
+                    log.controls.push(payload["type"].as_str().unwrap().into());
+                    match payload["type"].as_str().unwrap() {
+                        "PAUSE" => state = "PAUSED",
+                        "PLAY" => state = "PLAYING",
+                        "SEEK" => position = payload["currentTime"].as_f64().unwrap(),
+                        _ => unreachable!(),
+                    }
+                    json!({"type":"MEDIA_STATUS","status":[status(&log.url,state,tracks)]})
                 }
                 "STOP" => {
                     log.stops.push(payload["mediaSessionId"].as_i64().unwrap());
@@ -381,8 +396,8 @@ async fn receiver_stop_finishes_without_stopping_other_apps_or_hiding_errors() {
         let mut request = CastRequest::new(video);
         request.inhibit_sleep = false;
         request.subtitles = yeet_core::subtitles::Request::Off;
-        request.preferences.playback.resume = false;
-        request.target = Target::Host(address);
+        request.save_position = false;
+        request.target = Some(Target::Host(address));
         request.subtitles = yeet_core::subtitles::Request::External(subtitles);
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
         let (progress, updates) = watch::channel(SessionState::default());
@@ -459,8 +474,8 @@ async fn terminal_broadcasts_complete_promptly_and_do_not_confuse_other_sessions
         let mut request = CastRequest::new(video);
         request.inhibit_sleep = false;
         request.subtitles = yeet_core::subtitles::Request::Off;
-        request.preferences.playback.resume = false;
-        request.target = Target::Host(address);
+        request.save_position = false;
+        request.target = Some(Target::Host(address));
         request.subtitles = yeet_core::subtitles::Request::External(subs);
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
         let (progress, updates) = watch::channel(SessionState::default());
@@ -539,9 +554,9 @@ async fn experimental_formats_require_opt_in_and_serve_original_bytes() {
         let mut request = CastRequest::new(video.clone());
         request.inhibit_sleep = false;
         request.subtitles = yeet_core::subtitles::Request::Off;
-        request.preferences.playback.resume = false;
+        request.save_position = false;
         request.mode = PlaybackMode::Direct;
-        request.target = Target::Host(address);
+        request.target = Some(Target::Host(address));
         request.probe.executable = probe;
         request.ffmpeg = directory.path().join("missing-ffmpeg");
         let (progress, updates) = watch::channel(SessionState::default());
@@ -605,8 +620,8 @@ async fn session_covers_completion_transient_idle_errors_takeover_and_cancellati
         let mut request = CastRequest::new(file);
         request.inhibit_sleep = false;
         request.subtitles = yeet_core::subtitles::Request::Off;
-        request.preferences.playback.resume = false;
-        request.target = Target::Host(address);
+        request.save_position = false;
+        request.target = Some(Target::Host(address));
         request.probe.executable = fake_probe(directory.path(), include_str!("fixtures/h264.json"));
         request.ffmpeg = directory.path().join("missing-ffmpeg");
         // Complete exercises the no-subtitle route; all others use WebVTT.
@@ -712,9 +727,9 @@ async fn invalid_media_and_subtitles_fail_before_contacting_receiver() {
         let mut request = CastRequest::new(file.clone());
         request.inhibit_sleep = false;
         request.subtitles = yeet_core::subtitles::Request::Off;
-        request.preferences.playback.resume = false;
+        request.save_position = false;
         request.mode = PlaybackMode::Direct;
-        request.target = Target::Host(listener.local_addr().unwrap());
+        request.target = Some(Target::Host(listener.local_addr().unwrap()));
         let data = if malformed_media {
             include_str!("fixtures/h264.json").replace("h264", "hevc")
         } else {
@@ -847,8 +862,8 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
         let mut request = CastRequest::new(source.clone());
         request.inhibit_sleep = false;
         request.subtitles = yeet_core::subtitles::Request::Off;
-        request.preferences.playback.resume = false;
-        request.target = Target::Host(address);
+        request.save_position = false;
+        request.target = Some(Target::Host(address));
         request.subtitles = yeet_core::subtitles::Request::External(subs);
         let force_transcode = mode.is_some();
         request.mode = match mode {
@@ -923,13 +938,23 @@ async fn resume_survives_interruptions_obeys_overrides_and_clears_on_completion(
         let (address, receiver) =
             receiver_at(mode, Arc::new(AtomicBool::new(false)), position).await;
         let mut request = CastRequest::new(video.clone());
-        request.target = Target::Host(address);
+        request.target = Some(Target::Host(address));
         request.probe.executable = probe.clone();
         request.inhibit_sleep = false;
         request.subtitles = yeet_core::subtitles::Request::Off;
-        request.preferences.playback.resume = enabled;
+        request.save_position = enabled;
         request.resume_directory = Some(state.clone());
-        request.restart = restart;
+        request.start_position = if enabled && !restart {
+            let info =
+                yeet_core::media::inspect(&request.file, &request.probe, &CancellationToken::new())
+                    .await
+                    .unwrap();
+            yeet_core::resume::checkpoint(&info, Some(&state))
+                .unwrap()
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
         let cancel = CancellationToken::new();
         let (progress, mut updates) = watch::channel(SessionState::default());
         let control = async {
@@ -968,4 +993,79 @@ async fn resume_survives_interruptions_obeys_overrides_and_clears_on_completion(
             .extension()
             .is_some_and(|s| s == "json"))
     );
+}
+
+#[tokio::test]
+async fn controlled_session_pauses_plays_seeks_and_stops_with_cleanup() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("video.mp4");
+    fs::write(&file, b"video").unwrap();
+    let (address, receiver) = receiver(Mode::Hold, Arc::new(AtomicBool::new(false))).await;
+    let mut request = CastRequest::new(file);
+    request.target = Some(Target::Host(address));
+    request.inhibit_sleep = false;
+    request.save_position = false;
+    let mut data: Value = serde_json::from_str(include_str!("fixtures/h264.json")).unwrap();
+    data["format"]["duration"] = json!("120.0");
+    request.probe.executable = fake_probe(dir.path(), &data.to_string());
+    let cancel = CancellationToken::new();
+    let (progress, mut updates) = watch::channel(SessionState::default());
+    let (controller, controls) = session::control_channel();
+    let token = cancel.clone();
+    let task =
+        tokio::spawn(
+            async move { session::run_controlled(request, progress, &token, controls).await },
+        );
+    tokio::time::timeout(Duration::from_secs(8), async {
+        while updates.borrow().phase != Phase::Playing {
+            updates.changed().await.unwrap();
+        }
+        controller.command(session::Control::Pause).await.unwrap();
+        while updates.borrow().phase != Phase::Paused {
+            updates.changed().await.unwrap();
+        }
+        for position in [f64::NAN, f64::INFINITY, -1.0, 999999.0] {
+            assert!(
+                controller
+                    .command(session::Control::Seek(position))
+                    .await
+                    .is_err()
+            );
+        }
+        controller
+            .command(session::Control::Seek(30.0))
+            .await
+            .unwrap();
+        while updates.borrow().position_seconds != Some(30.0) {
+            updates.changed().await.unwrap();
+        }
+        controller.command(session::Control::Play).await.unwrap();
+        while updates.borrow().phase != Phase::Playing {
+            updates.changed().await.unwrap();
+        }
+        controller
+            .command(session::Control::Seek(5.0))
+            .await
+            .unwrap();
+        while updates.borrow().position_seconds != Some(5.0) {
+            updates.changed().await.unwrap();
+        }
+        cancel.cancel();
+        assert!(matches!(task.await.unwrap(), Err(YeetError::Cancelled)));
+        assert_eq!(updates.borrow().phase, Phase::Cancelled);
+    })
+    .await
+    .unwrap();
+    assert!(controller.command(session::Control::Play).await.is_err());
+    let log = receiver.await.unwrap();
+    assert_eq!(log.controls, ["PAUSE", "SEEK", "PLAY", "SEEK"]);
+    assert_eq!(log.stops, [7]);
+    let host = log
+        .url
+        .strip_prefix("http://")
+        .unwrap()
+        .split('/')
+        .next()
+        .unwrap();
+    assert!(TcpStream::connect(host).await.is_err());
 }

@@ -865,48 +865,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "yeet-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "yeet-core",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "yeet-core"
-version = "0.1.0"
-dependencies = [
- "axum",
- "clap",
- "flume",
- "getrandom 0.4.3",
- "hyper",
- "hyper-util",
- "mdns-sd",
- "oxicast",
- "prost",
- "rcgen",
- "ring",
- "rustix",
- "rustls",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "toml",
- "tower-http",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "prost"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1706,6 +1664,61 @@ checksum = "b5f6765e852b9b4dc8e2a76843e4d64d1cea8e79bcde0b6901aea8e7c7f08282"
 dependencies = [
  "bit-vec",
  "time",
+]
+
+[[package]]
+name = "yeet-backend"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing-subscriber",
+ "yeet-core",
+]
+
+[[package]]
+name = "yeet-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing-subscriber",
+ "yeet-core",
+]
+
+[[package]]
+name = "yeet-core"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "clap",
+ "flume",
+ "getrandom 0.4.3",
+ "hyper",
+ "hyper-util",
+ "mdns-sd",
+ "oxicast",
+ "prost",
+ "rcgen",
+ "ring",
+ "rustix",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "toml",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

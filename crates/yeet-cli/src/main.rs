@@ -1,3 +1,4 @@
+mod selection;
 use std::{
     io::{self, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -241,20 +242,41 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
         Some(command) => Action::Command(command),
         None => Action::Play(cli.playback),
     };
+    #[cfg(target_os = "linux")]
+    let inhibitor = if matches!(&action, Action::Play(args) if !args.no_inhibit_sleep) {
+        match yeet_core::power::SleepInhibitor::acquire(&cancellation).await {
+            Ok(guard) => {
+                eprintln!("Sleep inhibition active for this casting session");
+                Some(guard)
+            }
+            Err(error) => {
+                eprintln!("Warning: Could not inhibit sleep: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
     let operation = execute(action, &preferences, &cancellation);
     tokio::pin!(operation);
-    tokio::select! {
-        result = &mut operation => { result?; Ok(ExitCode::SUCCESS) },
+    let result = tokio::select! {
+        result = &mut operation => result.map(|()| ExitCode::SUCCESS),
         received = signal => {
             cancellation.cancel();
             if let Err(error) = operation.await
                 && !matches!(error.downcast_ref::<YeetError>(), Some(YeetError::Cancelled)) {
-                return Err(error);
+                Err(error)
+            } else {
+                eprintln!("Cancelled; cleanup completed.");
+                received.map(ExitCode::from).map_err(Into::into)
             }
-            eprintln!("Cancelled; cleanup completed.");
-            Ok(ExitCode::from(received?))
         }
+    };
+    #[cfg(target_os = "linux")]
+    if let Some(guard) = inhibitor {
+        guard.close().await;
     }
+    result
 }
 
 async fn execute(
@@ -339,24 +361,18 @@ async fn execute(
         }) => {
             let mut request =
                 CastRequest::new(file.expect("clap requires a file without a subcommand"));
-            request.target = if let Some(host) = host {
-                Target::Host(SocketAddr::new(host.into(), cast_port))
+            let target = if let Some(host) = host {
+                selection::Target::Host(SocketAddr::new(host.into(), cast_port))
             } else if let Some(device) = device {
-                Target::Device(device)
+                selection::Target::Device(device)
             } else {
-                Target::Auto
+                selection::Target::Auto
             };
-            request.preferences = preferences.clone();
-            if resume || restart {
-                request.preferences.playback.resume = true;
-            }
-            if no_resume {
-                request.preferences.playback.resume = false;
-            }
-            request.restart = restart;
+            let mut subtitle_preferences = preferences.cli.subtitles.clone();
             if auto_subtitles {
-                request.preferences.subtitles.auto_load = true;
+                subtitle_preferences.auto_load = true;
             }
+            request.save_position = !no_resume;
             request.subtitles = if let Some(path) = subtitles {
                 yeet_core::subtitles::Request::External(path)
             } else if let Some(index) = subtitle_track {
@@ -369,16 +385,59 @@ async fn execute(
             request.mode = mode.into();
             request.profile = profile.into();
             request.cache.enabled = !no_cache;
-            request.inhibit_sleep = !no_inhibit_sleep;
+            request.inhibit_sleep = false;
+            let _ = no_inhibit_sleep; // The CLI owns inhibition across preflight and playback.
             request.cache.directory = cache_dir;
             request.bind_address = bind_address;
             request.http_port = http_port;
-            request.scan_duration = Duration::from_secs(scan_seconds);
+            let scan_duration = Duration::from_secs(scan_seconds);
             request.probe = ProbeOptions {
                 executable: ffprobe,
                 timeout: Duration::from_secs(probe_timeout),
             };
             request.ffmpeg = ffmpeg;
+            eprintln!("Preparing: Inspecting media");
+            let info = media::inspect(&request.file, &request.probe, cancel).await?;
+            yeet_core::transcode::validate_input(&info)?;
+            request.target = Some(match target {
+                selection::Target::Host(address) => Target::Host(address),
+                target => {
+                    eprintln!("Discovering devices");
+                    let devices = discovery::discover(scan_duration, cancel).await?;
+                    Target::Device(selection::select_preferred_target(
+                        &devices,
+                        &target,
+                        &preferences.cli.devices.preferred,
+                    )?)
+                }
+            });
+            if matches!(request.subtitles, yeet_core::subtitles::Request::Auto) {
+                request.subtitles = match yeet_core::subtitles::select(
+                    &request.subtitles,
+                    &info,
+                    &request.file,
+                    &subtitle_preferences,
+                )
+                .await?
+                {
+                    Some(yeet_core::subtitles::Selection::External(path)) => {
+                        yeet_core::subtitles::Request::External(path)
+                    }
+                    Some(
+                        yeet_core::subtitles::Selection::Text { index, .. }
+                        | yeet_core::subtitles::Selection::Bitmap { index },
+                    ) => yeet_core::subtitles::Request::Embedded(index),
+                    None => yeet_core::subtitles::Request::Off,
+                };
+            }
+            if request.save_position && !restart && (resume || preferences.cli.playback.auto_resume)
+            {
+                match yeet_core::resume::checkpoint(&info, None) {
+                    Ok(Some(position)) => request.start_position = position,
+                    Ok(None) => {}
+                    Err(error) => eprintln!("Warning: resume unavailable: {error}"),
+                }
+            }
             let (progress, mut updates) =
                 tokio::sync::watch::channel(session::SessionState::default());
             let monitor = tokio::spawn(async move {

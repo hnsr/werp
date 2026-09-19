@@ -1,5 +1,6 @@
 [workspace]
-members = ["crates/yeet-core", "crates/yeet-cli"]
+members = ["crates/yeet-core", "crates/yeet-cli", "crates/yeet-backend"]
+default-members = ["crates/yeet-cli"]
 resolver = "3"
 
 [workspace.package]
