@@ -13,7 +13,8 @@ at the user's request and do not block further work. Earlier explicit-mode
 hardware evidence remains recorded separately.
 Configuration, automatic subtitle selection/extraction, image-subtitle burn-in,
 preferred receivers, and persistent resume are implemented. Automatic English
-embedded captions and interrupted playback resume are confirmed on the TV;
+embedded captions, explicit Dutch selection, restart, interrupted playback resume,
+and completion clearing the saved position are confirmed on the TV;
 remaining hardware checks are pending. See [preferences and subtitles](preferences-and-subtitles.md).
 Updated: 2026-09-19.
 Requirements: [outline.md](outline.md).
@@ -445,8 +446,8 @@ exists; this workspace now has a local Git repository.
 
 ## Immediate next step
 
-Continue the remaining checks for Dutch selection, external subtitle fallback,
-subtitles off, completion clearing resume state, and optional image captions using
+Continue the remaining checks for automatic external subtitle fallback,
+subtitles off, and optional image captions or automatic Dutch preference using
 the short fixture and checklist in [preferences and subtitles](preferences-and-subtitles.md).
 The earlier M5 hardware batch passed. Seeking and longer playback on the expanded preparation
 paths, especially copied HEVC, are deferred until controls are available or the

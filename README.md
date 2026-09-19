@@ -7,7 +7,8 @@ and the consolidated short-clip TV validation passed on the KPN DIW7022 receiver
 seeking and long-duration checks for the expanded paths are deferred.
 Configuration, automatic embedded subtitles, preferred devices, and playback
 resume are implemented. Automatic English embedded captions and interrupted
-playback resume are confirmed on the TV; the remaining checks are in the checklist.
+playback resume are confirmed on the TV, along with explicit Dutch selection,
+restart, and completion clearing the saved position. Remaining checks are in the checklist.
 
 ## Development setup
 
