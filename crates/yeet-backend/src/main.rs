@@ -95,6 +95,32 @@ async fn send(output: &mpsc::Sender<Value>, message: Value) -> Result<(), String
         .map_err(|_| "frontend stopped reading protocol messages".to_string())?
         .map_err(|_| "frontend output closed".into())
 }
+// Read-only recommendation for native frontends. CLI configuration is not read.
+async fn suggested_subtitles(
+    info: &media::MediaInfo,
+    file: &std::path::Path,
+) -> Result<Value, String> {
+    let selection = subtitles::select(
+        &subtitles::Request::Auto,
+        info,
+        file,
+        &yeet_core::config::SubtitlePreferences::default(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(match selection {
+        None => json!({"kind":"none"}),
+        Some(subtitles::Selection::Text { index, .. } | subtitles::Selection::Bitmap { index }) => {
+            json!({"kind":"embedded","index":index})
+        }
+        Some(subtitles::Selection::External(path)) => {
+            let path = tokio::fs::canonicalize(path)
+                .await
+                .map_err(|e| e.to_string())?;
+            json!({"kind":"external","path":path})
+        }
+    })
+}
 async fn run(args: Args) -> Result<(), String> {
     let lifetime = CancellationToken::new();
     let (output, mut messages) = mpsc::channel::<Value>(32);
@@ -229,11 +255,19 @@ async fn run(args: Args) -> Result<(), String> {
                                         _ = cancel.cancelled() => return Err("cancelled".to_string()),
                                         choices = subtitles::choices(&info,&file) => choices.map_err(|e| e.to_string())?,
                                     };
+                                    let suggestion = tokio::select! {
+                                        _ = cancel.cancelled() => return Err("cancelled".to_string()),
+                                        suggestion = suggested_subtitles(&info,&file) => suggestion,
+                                    };
+                                    let (suggested_subtitles, subtitle_warning) = match suggestion {
+                                        Ok(value) => (value,None),
+                                        Err(error) => (json!({"kind":"none"}),Some(error)),
+                                    };
                                     let (checkpoint, warning) = match resume::checkpoint(&info,None) {
                                         Ok(value) => (value,None),
                                         Err(error) => (None,Some(error.to_string())),
                                     };
-                                    Ok(QueryResult::Data(json!({"media":info,"subtitles":choices,"resume_position":checkpoint,"resume_warning":warning})))
+                                    Ok(QueryResult::Data(json!({"media":info,"subtitles":choices,"resume_position":checkpoint,"resume_warning":warning,"suggested_subtitles":suggested_subtitles,"subtitle_warning":subtitle_warning})))
                                 }.await;
                                 (id,result)
                             });

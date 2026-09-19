@@ -2,6 +2,13 @@
 #include <QAbstractItemView>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QMimeDatabase>
+#include <QShortcut>
+#include <QStandardPaths>
+#include <QUrl>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -49,9 +56,11 @@ static QString timestamp(double seconds) {
     return QString("%1:%2:%3").arg(n/3600).arg((n/60)%60,2,10,QChar('0')).arg(n%60,2,10,QChar('0'));
 }
 static QString payload(const QJsonObject &value) { return QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)); }
-Window::Window(const QString &backend, const QString &file, bool discoverOnStart, const QStringList &backendArguments)
-    : m_backend(backend,this,backendArguments), m_autoDiscover(discoverOnStart) {
-    setWindowTitle(i18n("Yeet")); resize(640,360);
+Window::Window(const QString &backend, const QString &file, bool discoverOnStart, const QStringList &backendArguments, const QString &settingsFile)
+    : m_backend(backend,this,backendArguments),
+      m_settings(settingsFile.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/yeet/kde-ui.ini" : settingsFile,QSettings::IniFormat),
+      m_autoDiscover(discoverOnStart) {
+    setWindowTitle(i18n("Yeet")); resize(640,360); setAcceptDrops(true);
     auto *central = new QWidget(this); auto *layout = new QVBoxLayout(central);
     layout->setContentsMargins(24,20,24,20); layout->setSpacing(16); setCentralWidget(central);
     auto *header = new QHBoxLayout;
@@ -91,6 +100,10 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     m_stop = new QPushButton(i18n("Stop")); m_stop->setObjectName("stop");
     auto *controls = new QHBoxLayout; controls->addStretch(); controls->addWidget(m_pause); controls->addWidget(m_stop); controls->addStretch();
     playerLayout->addStretch(); playerLayout->addWidget(m_time); playerLayout->addWidget(m_seek); playerLayout->addLayout(controls); playerLayout->addStretch(); m_pages->addWidget(playing);
+    m_togglePlayback = new QShortcut(QKeySequence(Qt::Key_Space),this);
+    m_togglePlayback->setAutoRepeat(false); m_togglePlayback->setEnabled(false);
+    connect(m_togglePlayback,&QShortcut::activated,m_pause,&QPushButton::click);
+    m_pause->setToolTip(i18n("Pause or play (Space)"));
     connect(m_open,&QPushButton::clicked,this,[this] {
         const auto path = QFileDialog::getOpenFileName(this,i18n("Open video"),m_directory,i18n("Videos (*.mp4 *.mkv *.webm *.avi *.mov *.m4v *.ts);;All files (*)"));
         if (!path.isEmpty()) openFile(path);
@@ -119,7 +132,7 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     });
     connect(&m_backend,&Backend::event,this,&Window::handleEvent);
     connect(&m_backend,&Backend::failed,this,[this](const QString &message) {
-        m_busy=false; m_session=0; m_discovering=false; m_pages->setCurrentIndex(0); showError(message); m_retry->show(); refreshActions();
+        m_busy=false; m_session=0; m_discovering=false; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); showError(message); m_retry->show(); refreshActions();
     });
     connect(&m_backend,&Backend::exited,this,[this] { if (m_closing) { m_canClose=true; QTimer::singleShot(0,this,&Window::close); } });
     if (!file.isEmpty()) openFile(file);
@@ -129,7 +142,7 @@ void Window::openFile(const QString &file) {
     if (m_busy) { showError(i18n("Stop playback before opening another video.")); return; }
     ++m_generation; m_file=QFileInfo(file).absoluteFilePath(); m_directory=QFileInfo(m_file).absolutePath();
     m_fileLabel->setText(i18n("Selected video: %1",QFileInfo(m_file).fileName())); m_fileLabel->setToolTip(m_file);
-    m_inspected=false; m_resume=-1; m_duration=0; m_error->clear();
+    m_inspected=false; m_applySuggestedSubtitle=true; m_resume=-1; m_duration=0; m_error->clear();
     m_subtitles->clear(); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
     if (m_backend.ready()) inspect();
     refreshActions();
@@ -148,7 +161,8 @@ void Window::inspect() {
         const auto result=reply["result"].toObject(); const auto media=result["media"].toObject();
         m_duration=media["duration_seconds"].toDouble(); m_directory=QFileInfo(media["path"].toString()).absolutePath();
         m_resume=result["resume_position"].isDouble() ? result["resume_position"].toDouble() : -1;
-        const auto selected=m_subtitles->currentData().toString();
+        const auto selected=m_applySuggestedSubtitle && result["suggested_subtitles"].isObject()
+            ? payload(result["suggested_subtitles"].toObject()) : m_subtitles->currentData().toString();
         m_subtitles->clear(); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
         for (const auto value : result["subtitles"].toArray()) {
             const auto choice=value.toObject(); QJsonObject data; QString text;
@@ -176,6 +190,9 @@ void Window::inspect() {
                 m_subtitles->setCurrentIndex(m_subtitles->count()-1);
             }
         }
+        if (m_applySuggestedSubtitle && !result["subtitle_warning"].toString().isEmpty())
+            showError(i18n("Choose subtitles manually: %1",result["subtitle_warning"].toString()));
+        m_applySuggestedSubtitle=false;
         m_inspected=true;
         if (result["resume_warning"].isString() && !result["resume_warning"].toString().isEmpty()) showError(i18n("Saved position unavailable: %1",result["resume_warning"].toString()));
         refreshActions();
@@ -198,7 +215,13 @@ void Window::discover() {
                 if (auto *model=qobject_cast<QStandardItemModel *>(m_devices->model())) model->item(m_devices->count()-1)->setEnabled(false);
             }
         }
-        const int index=m_devices->findData(previous); if (index>=0) m_devices->setCurrentIndex(index);
+        m_settings.sync();
+        for (const auto &candidate : {previous,m_settings.value("lastDeviceId").toString()}) {
+            const int index=m_devices->findData(candidate);
+            if (index>0 && (m_devices->model()->flags(m_devices->model()->index(index,0)) & Qt::ItemIsEnabled)) {
+                m_devices->setCurrentIndex(index); break;
+            }
+        }
         if (m_devices->count()==1) showError(i18n("No devices found. Check the network and try Refresh."));
         refreshActions();
     });
@@ -218,9 +241,12 @@ void Window::startPlayback(bool resume) {
     if (!m_inspected || m_busy || m_devices->currentData().toString().isEmpty()) return;
     m_busy=true; m_error->clear(); m_prepareLabel->setText(i18n("Preparing playback…")); m_progress->setRange(0,0);
     m_cancel->setEnabled(false); m_pages->setCurrentIndex(1); refreshActions();
+    const auto deviceId=m_devices->currentData().toString();
     const auto subtitle=QJsonDocument::fromJson(m_subtitles->currentData().toString().toUtf8()).object();
-    m_backend.request("start",{{"file",m_file},{"device_id",m_devices->currentData().toString()},{"subtitles",subtitle},{"position",resume?m_resume:0.0}},[this](const QJsonObject &reply) {
+    m_backend.request("start",{{"file",m_file},{"device_id",deviceId},{"subtitles",subtitle},{"position",resume?m_resume:0.0}},[this,deviceId](const QJsonObject &reply) {
         if (!check(reply)) { m_busy=false; m_pages->setCurrentIndex(0); refreshActions(); return; }
+        m_settings.setValue("lastDeviceId",deviceId); m_settings.sync();
+        if (m_settings.status()!=QSettings::NoError) showError(i18n("Could not remember the selected device."));
         m_session=reply["result"].toObject()["session_id"].toInteger(); m_cancel->setEnabled(true); m_stop->setEnabled(true);
     });
 }
@@ -232,29 +258,53 @@ void Window::sendControl(const QString &method,QJsonObject params) {
 }
 void Window::stopPlayback() {
     if (!m_session) return;
+    m_togglePlayback->setEnabled(false);
     m_stop->setEnabled(false); m_cancel->setEnabled(false); m_pause->setEnabled(false); m_seek->setEnabled(false);
     m_backend.request("stop",{{"session_id",m_session}},[this](const QJsonObject &reply) { check(reply); });
 }
 void Window::handleEvent(const QJsonObject &message) {
     if (message["session_id"].toInteger()!=m_session || !m_session) return;
     if (message["event"]=="ended") {
-        m_busy=false; m_session=0; m_pages->setCurrentIndex(0); m_pause->setEnabled(true);
+        m_busy=false; m_session=0; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); m_pause->setEnabled(true);
         if (!message["error"].isNull()) showError(message["error"].toString());
         inspect(); refreshActions(); return;
     }
     const auto state=message["state"].toObject(); const auto phase=state["phase"].toString();
     if (phase=="playing" || phase=="paused" || (phase=="buffering" && m_pages->currentIndex()==2)) {
+        m_togglePlayback->setEnabled(m_stop->isEnabled());
         m_pages->setCurrentIndex(2); m_paused=phase=="paused"; m_pause->setText(m_paused?i18n("Play"):i18n("Pause"));
         const auto position=state["position_seconds"].toDouble(); m_duration=state["duration_seconds"].toDouble(m_duration);
         m_time->setText(timestamp(position)+" / "+timestamp(m_duration)+(phase=="buffering"?i18n(" · Buffering"):QString()));
         if (!m_dragging && m_duration>0) m_seek->setValue(static_cast<int>(100000*position/m_duration));
     } else if (phase=="preparing" || phase=="connecting" || phase=="loading") {
+        m_togglePlayback->setEnabled(false);
         m_pages->setCurrentIndex(1);
         const auto operation=state["preparation_operation"].toString();
         m_prepareLabel->setText(state["message"].toString(operation.isEmpty()?i18n("Starting playback…"):operation));
         if (state["preparation_fraction"].isDouble()) { m_progress->setRange(0,100); m_progress->setValue(qRound(100*state["preparation_fraction"].toDouble())); }
         else m_progress->setRange(0,0);
-    } else if (phase=="stopping") { m_prepareLabel->setText(i18n("Stopping and cleaning up…")); m_cancel->setEnabled(false); }
+    } else if (phase=="stopping") { m_togglePlayback->setEnabled(false); m_prepareLabel->setText(i18n("Stopping and cleaning up…")); m_cancel->setEnabled(false); }
+}
+static QString droppedVideo(const QMimeData *data) {
+    const auto urls=data->urls();
+    if (urls.size()!=1 || !urls.first().isLocalFile()) return {};
+    const auto path=urls.first().toLocalFile();
+    if (!QFileInfo(path).isFile()) return {};
+    const auto mime=QMimeDatabase().mimeTypeForFile(path,QMimeDatabase::MatchExtension).name();
+    return mime.startsWith("video/") ? path : QString();
+}
+void Window::dragEnterEvent(QDragEnterEvent *event) {
+    if (!m_busy && !m_closing && event->possibleActions().testFlag(Qt::CopyAction) && !droppedVideo(event->mimeData()).isEmpty()) { event->setDropAction(Qt::CopyAction); event->accept(); }
+    else event->ignore();
+}
+void Window::dragMoveEvent(QDragMoveEvent *event) {
+    if (!m_busy && !m_closing && event->possibleActions().testFlag(Qt::CopyAction) && !droppedVideo(event->mimeData()).isEmpty()) { event->setDropAction(Qt::CopyAction); event->accept(); }
+    else event->ignore();
+}
+void Window::dropEvent(QDropEvent *event) {
+    const auto path=droppedVideo(event->mimeData());
+    if (m_busy || m_closing || path.isEmpty() || !event->possibleActions().testFlag(Qt::CopyAction)) { event->ignore(); return; }
+    openFile(path); event->setDropAction(Qt::CopyAction); event->accept();
 }
 void Window::closeEvent(QCloseEvent *event) {
     if (m_canClose) { event->accept(); return; }

@@ -33,10 +33,12 @@ depends on the installed FFmpeg build, not just its version.
 ## KDE application
 
 The C++/Qt 6 Widgets frontend starts its private Rust helper automatically.
-Opening a file shows explicit device and subtitle choices. Press **Yeet** to start
+Opening or dropping a local video preselects the last-used device when available
+and suggests subtitles (English, then Dutch, then a matching SRT). These UI
+defaults are independent of CLI settings and remain editable. Press **Yeet** to start
 at zero or **Yeet from last position** to resume. A separate preparation screen
 shows conversion/remuxing progress and cancellation before player controls appear.
-Pause/play, seeking, and stop are available in the window.
+Pause/play (also Space), seeking, and stop are available in the window.
 
 ```sh
 cmake -S apps/yeet-kde -B target/kde -G Ninja -DCMAKE_BUILD_TYPE=Debug

@@ -14,29 +14,44 @@ can implement the same versioned message protocol without Rust bindings.
 
 `yeet-core` owns probing, discovery, subtitle enumeration/preparation, compatibility,
 conversion/cache, Cast sessions, controls, sleep inhibition, and checkpoint storage.
-The CLI owns automatic device/subtitle selection and automatic resume. The UI
-makes explicit choices; opening a file never launches playback or conversion.
+The CLI owns its configurable device/subtitle automation and automatic resume.
+The UI has independent convenience defaults: the last-used device and suggested
+subtitles. Opening a file never launches playback or conversion.
 
 CLI configuration uses `[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`.
 The last uses `auto_resume`; saving checkpoints is an independent shared capability.
 No compatibility aliases are required. Existing personal config is updated locally.
-The helper does not load CLI configuration.
+The helper does not load CLI configuration. The KDE app stores the last device ID
+in `$XDG_CONFIG_HOME/yeet/kde-ui.ini` (normally `~/.config/yeet/kde-ui.ini`), separate
+from `config.toml`. It records the device when a start request is accepted and
+restores it after discovery only if it is still an available video-capable target.
+Changing a selection without starting playback does not overwrite the last device.
 
 ## Interaction
 
 On startup, inspect the file and discover receivers asynchronously. Show a device
-selector with no automatic selection, a single subtitle list containing None,
+selector that restores the last-used device if available, a single subtitle list containing None,
 embedded tracks, and exact-basename external SRT, WebVTT, ASS, and SSA files. A separate file picker
 starts beside the source and can choose supported external subtitle files.
+On opening a new video, preselect the backend's recommendation using the CLI's
+existing ranking with fixed English-then-Dutch language order, then a matching
+SRT fallback. Unsupported tracks are skipped; ambiguous sidecars leave None selected
+and show a warning. Manual subtitle choices, including None, survive stopping and
+restarting the same video. CLI configuration and flags do not affect these defaults.
+
+A single local video can also be dragged onto the idle window. Dropping opens it
+without playback; drops during preparation/playback, multiple files, directories,
+and remote URLs are ignored. The source file is never moved.
 
 Yeet starts at zero. Yeet from last position appears when a usable checkpoint
-exists. Both require an explicitly selected receiver. There are three separate screens:
+exists. Both require a valid selected receiver. There are three separate screens:
 
 1. **Selection:** choose the receiver, subtitle track/file, and starting position.
 2. **Preparation:** show conversion/remuxing progress and Cancel. While probing,
    preparing subtitles, connecting, or loading, show an indeterminate indicator.
    Direct playback and cache hits pass through this screen briefly.
-3. **Playing:** show pause/play, stop, position, and a seek slider.
+3. **Playing:** show pause/play, stop, position, and a seek slider. Space toggles
+   pause/play while the window is active, without repeating when held down.
 
 No conversion starts before pressing a Yeet button. Progress is a structured
 fraction from the backend; the frontend does not parse FFmpeg or CLI output.
@@ -114,13 +129,16 @@ cargo test --locked --workspace -- --include-ignored
 /usr/bin/ctest --test-dir target/kde --output-on-failure
 ```
 
-All 72 Rust tests and both native window test cases passed on Fedora. Formatting,
+The initial full suite of 72 Rust tests passed on Fedora. The updated helper
+protocol tests, shared subtitle ranking check, and all three native window test
+cases also pass; the native checks run with both Fusion and KDE Breeze styles. Formatting,
 Clippy, the CMake build, desktop-entry validation, and installation into a temporary
 prefix also passed. The Rust checks include real FFmpeg fixtures and local simulated Cast receivers.
 The new coverage verifies explicit controls, invalid seeks, ownership/cleanup,
 protocol framing, version rejection, ignored CLI config, read-only inspection,
 and EOF cancelling/reaping an active probe. The native tests exercise the three
-screens, explicit device/subtitle/resume choices, controls, repeated sessions,
+screens, device persistence, suggested/manual subtitle choices, explicit resume,
+Space controls, drag-and-drop, repeated sessions,
 stale events, cancellation, and helper shutdown. Another native check inspects
 through the actual Rust helper. These checks do not cast to a TV.
 
@@ -129,10 +147,10 @@ selection, preparation, and playing screenshots from the simulated UI test.
 
 ## TV checklist
 
-1. Open `samples/preferences/embedded.mkv`. Confirm no playback starts and both
-   device and subtitle selection remain explicit. Select the TV and English,
-   then press **Yeet**. Confirm picture, sound, and captions.
-2. Pause and resume using the window. Seek forwards and backwards; also seek
+1. Open `samples/preferences/embedded.mkv`. Confirm no playback starts, English is selected, and
+   the last-used TV is selected if available (choose it on the first run).
+   Then press **Yeet**. Confirm picture, sound, and captions.
+2. Pause and resume using the window buttons and Space. Seek forwards and backwards; also seek
    while paused. Confirm playback and captions stay in sync.
 3. After at least 20 seconds, stop. Confirm the TV stops and selection returns.
    Use **Yeet from last position**, then stop and use **Yeet** to verify the
@@ -146,6 +164,10 @@ selection, preparation, and playing screenshots from the simulated UI test.
    PGS track. Confirm the preparation screen advances before playback starts.
    Repeat with another fresh copy and press Cancel during conversion; confirm
    selection returns and no incomplete prepared output remains.
+
+6. Reopen the app and verify the last-used device is restored after discovery.
+   Drop another local video onto the idle window; it should open with suggested
+   subtitles while waiting for **Yeet** to be pressed.
 
 Successful prepared outputs remain reusable, as in the CLI. Subtitle switching
 during playback, a settings window, packaging, and non-KDE frontends are deferred.

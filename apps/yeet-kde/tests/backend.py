@@ -20,7 +20,7 @@ for line in sys.stdin:
     if method=="hello":
         result={"version":1}
     elif method=="inspect":
-        result={"media":{"path":params["file"],"duration_seconds":120},"resume_position":25,
+        result={"media":{"path":params["file"],"duration_seconds":120},"resume_position":25,"suggested_subtitles":{"kind":"embedded","index":2},
             "subtitles":[
                 {"kind":"embedded","index":2,"codec":"subrip","language":"eng","title":"English","supported":True},
                 {"kind":"embedded","index":3,"codec":"subrip","language":"dut","title":"Dutch","supported":True},

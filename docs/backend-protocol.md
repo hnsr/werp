@@ -24,7 +24,7 @@ changes require a version bump. Frontends should ignore additional response fiel
 | Method | Params | Successful result |
 | --- | --- | --- |
 | `hello` | `version: 1` | `version`, `application` |
-| `inspect` | `file: string` | `media`, `subtitles`, `resume_position`, `resume_warning` |
+| `inspect` | `file: string` | `media`, `subtitles`, `suggested_subtitles`, `subtitle_warning`, `resume_position`, `resume_warning` |
 | `discover` | Omit params | `devices: array` from a five-second IPv4 scan |
 | `start` | `file`, `device_id`, `subtitles`, `position` | `session_id: integer` |
 | `pause`, `play` | `session_id` | Empty object after receiver acknowledgement |
@@ -66,10 +66,19 @@ Display the message; do not parse its prose to drive frontend behavior.
 
 ## Inspection and discovery data
 
-Inspection is read-only and never selects a device, subtitles, or starting position.
+Inspection is read-only and never starts a session or selects a device or starting position.
 It does not create checkpoint files or prepare media. The helper never loads CLI
 configuration. `resume_position` is a usable saved position, already adjusted five
 seconds backwards, or null; `resume_warning` is null or a read error string.
+
+`suggested_subtitles` has the same shape as the `start` subtitle parameter and
+uses the shared subtitle selector with fixed English-then-Dutch preferences.
+It recommends a supported embedded track, then an exact-basename SRT, or None.
+External paths are canonical to match enumeration. `subtitle_warning` is null
+or a selection warning (such as ambiguous sidecars); a warning leaves None
+recommended without making inspection fail. This suggestion never prepares or
+activates subtitles by itself: the frontend still sends an explicit selection
+in `start` and can preserve manual user choices instead.
 
 `media` contains canonical `path`, `container`, nullable `duration_seconds`, and
 `streams`. Each stream has an `index`, `kind`, codec/profile metadata, dimensions
@@ -85,7 +94,8 @@ An explicitly picked external file need not be in this list.
 
 Each discovered device has `id`, `name`, `model`, `addresses` (IPv4 strings), `port`,
 and nullable `capabilities`. Bit 0 means video support; null means unknown. Names
-are display labels; use IDs in requests. Do not automatically select a receiver.
+are display labels; use IDs in requests. A frontend may restore its last-used
+ID when that receiver is present and eligible; the helper does not store this preference.
 
 ## State events and lifecycle
 

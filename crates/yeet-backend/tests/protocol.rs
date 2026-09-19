@@ -134,6 +134,10 @@ fn handshake_inspection_framing_validation_and_explicit_shutdown() {
                     && choice["codec"].is_null()
             )
     );
+    assert_eq!(
+        reply["result"]["suggested_subtitles"],
+        json!({"kind":"embedded","index":2})
+    );
     assert!(reply["result"]["resume_position"].is_null());
     assert!(
         !state.exists(),
@@ -141,6 +145,29 @@ fn handshake_inspection_framing_validation_and_explicit_shutdown() {
     );
     helper.write("pect\",\"params\":{\"file\":\"/nonexistent/yeet-video\"}}\n");
     assert_eq!(helper.read()["id"], 4);
+    metadata["streams"].as_array_mut().unwrap().pop();
+    fs::write(dir.path().join("probe.json"), metadata.to_string()).unwrap();
+    helper.send(json!({"id":8,"method":"inspect","params":{"file":file}}));
+    assert_eq!(
+        helper.read()["result"]["suggested_subtitles"],
+        json!({"kind":"external","path":file.with_extension("srt")})
+    );
+    fs::write(file.with_extension("SRT"), "duplicate").unwrap();
+    helper.send(json!({"id":9,"method":"inspect","params":{"file":file}}));
+    let ambiguous = helper.read();
+    assert_eq!(ambiguous["ok"], true);
+    assert_eq!(
+        ambiguous["result"]["suggested_subtitles"],
+        json!({"kind":"none"})
+    );
+    assert!(ambiguous["result"]["subtitle_warning"].is_string());
+    fs::remove_file(file.with_extension("srt")).unwrap();
+    fs::remove_file(file.with_extension("SRT")).unwrap();
+    helper.send(json!({"id":10,"method":"inspect","params":{"file":file}}));
+    assert_eq!(
+        helper.read()["result"]["suggested_subtitles"],
+        json!({"kind":"none"})
+    );
     helper.send(json!({"id":5,"method":"pause","params":{"session_id":1}}));
     assert_eq!(helper.read()["error"]["code"], "invalid_session");
     helper.send(json!({"id":6,"method":"start","params":{"file":file,"device_id":"missing","subtitles":{"kind":"none"},"position":0}}));
