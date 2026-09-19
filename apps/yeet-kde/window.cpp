@@ -1,4 +1,5 @@
 #include "window.h"
+#include "selectedvideopanel.h"
 #include <QAbstractItemView>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -60,17 +61,16 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     : m_backend(backend,this,backendArguments),
       m_settings(settingsFile.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/yeet/kde-ui.ini" : settingsFile,QSettings::IniFormat),
       m_autoDiscover(discoverOnStart) {
-    setWindowTitle(i18n("Yeet")); resize(640,360); setAcceptDrops(true);
+    setWindowTitle(i18n("Yeet")); resize(640,440); setAcceptDrops(true);
     auto *central = new QWidget(this); auto *layout = new QVBoxLayout(central);
-    layout->setContentsMargins(24,20,24,20); layout->setSpacing(16); setCentralWidget(central);
-    auto *header = new QHBoxLayout;
-    m_fileLabel = new QLabel(i18n("Choose a video to get started"),this); m_fileLabel->setTextFormat(Qt::PlainText); m_fileLabel->setWordWrap(true);
-    m_open = new QPushButton(QIcon::fromTheme("document-open"),i18n("Open video…"),this);
-    m_open->setObjectName("openVideo"); header->addWidget(m_fileLabel,1); header->addWidget(m_open); layout->addLayout(header);
-    m_error = new QLabel(this); m_error->setTextFormat(Qt::PlainText); m_error->setWordWrap(true); m_error->setObjectName("message"); layout->addWidget(m_error);
+    setWindowSpacing(layout); setCentralWidget(central);
+    m_selectedVideo = new SelectedVideoPanel(central); layout->addWidget(m_selectedVideo);
+    m_open = new QPushButton(QIcon::fromTheme("document-open"),i18n("Open video…"),central);
+    m_open->setObjectName("openVideo"); layout->addWidget(m_open,0,Qt::AlignRight);
+    m_error = new QLabel(this); m_error->setTextFormat(Qt::PlainText); m_error->setWordWrap(true); m_error->setObjectName("message"); m_error->hide(); layout->addWidget(m_error);
     m_retry = new QPushButton(i18n("Reconnect backend"),this); m_retry->hide(); layout->addWidget(m_retry);
     m_pages = new QStackedWidget(this); m_pages->setObjectName("pages"); layout->addWidget(m_pages,1);
-    auto *startup = new QWidget; auto *startupLayout = new QVBoxLayout(startup);
+    auto *startup = new QWidget; auto *startupLayout = new QVBoxLayout(startup); startupLayout->setContentsMargins(0,0,0,0);
     auto *form = new QFormLayout; form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     startupLayout->addLayout(form);
     m_devices = new QComboBox; m_devices->setObjectName("devices"); m_devices->addItem(i18n("Choose a device…"),"");
@@ -94,12 +94,12 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     quitShortcut->setAutoRepeat(false);
     connect(quitShortcut,&QShortcut::activated,this,&QWidget::close);
     buttons->addWidget(m_start,1); buttons->addWidget(m_resumeButton,1); buttons->addWidget(quit); startupLayout->addStretch(); startupLayout->addLayout(buttons); m_pages->addWidget(startup);
-    auto *preparing = new QWidget; auto *prepareLayout = new QVBoxLayout(preparing);
+    auto *preparing = new QWidget; auto *prepareLayout = new QVBoxLayout(preparing); prepareLayout->setContentsMargins(0,0,0,0);
     m_prepareLabel = new QLabel(i18n("Preparing playback…")); m_prepareLabel->setTextFormat(Qt::PlainText); m_prepareLabel->setWordWrap(true);
     m_progress = new QProgressBar; m_progress->setObjectName("preparationProgress"); m_progress->setRange(0,0);
     m_cancel = new QPushButton(i18n("Cancel")); m_cancel->setObjectName("cancel");
     prepareLayout->addStretch(); prepareLayout->addWidget(m_prepareLabel); prepareLayout->addWidget(m_progress); prepareLayout->addWidget(m_cancel); m_pages->addWidget(preparing);
-    auto *playing = new QWidget; auto *playerLayout = new QVBoxLayout(playing);
+    auto *playing = new QWidget; auto *playerLayout = new QVBoxLayout(playing); playerLayout->setContentsMargins(0,0,0,0);
     m_time = new QLabel; m_time->setAlignment(Qt::AlignCenter);
     m_seek = new QSlider(Qt::Horizontal); m_seek->setRange(0,100000); m_seek->setObjectName("seek");
     m_pause = new QPushButton(i18n("Pause")); m_pause->setObjectName("pause");
@@ -134,7 +134,7 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
         if (m_duration > 0) sendControl("seek",{{"position",std::min(m_duration-0.1,m_duration*m_seek->value()/100000.0)}});
     });
     connect(&m_backend,&Backend::connected,this,[this] {
-        m_retry->hide(); m_error->clear(); if (!m_file.isEmpty()) inspect(); if (m_autoDiscover) discover(); refreshActions();
+        m_retry->hide(); showError({}); if (!m_file.isEmpty()) inspect(); if (m_autoDiscover) discover(); refreshActions();
     });
     connect(&m_backend,&Backend::event,this,&Window::handleEvent);
     connect(&m_backend,&Backend::failed,this,[this](const QString &message) {
@@ -147,8 +147,8 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
 void Window::openFile(const QString &file) {
     if (m_busy) { showError(i18n("Stop playback before opening another video.")); return; }
     ++m_generation; m_file=QFileInfo(file).absoluteFilePath(); m_directory=QFileInfo(m_file).absolutePath();
-    m_fileLabel->setText(i18n("Selected video: %1",QFileInfo(m_file).fileName())); m_fileLabel->setToolTip(m_file);
-    m_inspected=false; m_applySuggestedSubtitle=true; m_resume=-1; m_duration=0; m_error->clear();
+    m_selectedVideo->setFile(m_file);
+    m_inspected=false; m_applySuggestedSubtitle=true; m_resume=-1; m_duration=0; showError({});
     m_subtitles->clear(); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
     if (m_backend.ready()) inspect();
     refreshActions();
@@ -157,7 +157,7 @@ bool Window::check(const QJsonObject &reply) {
     if (reply["ok"].toBool()) return true;
     showError(reply["error"].toObject()["message"].toString(i18n("The operation failed."))); return false;
 }
-void Window::showError(const QString &message) { m_error->setText(message); }
+void Window::showError(const QString &message) { m_error->setText(message); m_error->setVisible(!message.isEmpty()); }
 void Window::inspect() {
     m_inspected=false; refreshActions();
     const auto generation=++m_generation; const auto file=m_file;
@@ -245,7 +245,7 @@ void Window::refreshActions() {
 }
 void Window::startPlayback(bool resume) {
     if (!m_inspected || m_busy || m_devices->currentData().toString().isEmpty()) return;
-    m_busy=true; m_error->clear(); m_prepareLabel->setText(i18n("Preparing playback…")); m_progress->setRange(0,0);
+    m_busy=true; showError({}); m_prepareLabel->setText(i18n("Preparing playback…")); m_progress->setRange(0,0);
     m_cancel->setEnabled(false); m_pages->setCurrentIndex(1); refreshActions();
     const auto deviceId=m_devices->currentData().toString();
     const auto subtitle=QJsonDocument::fromJson(m_subtitles->currentData().toString().toUtf8()).object();

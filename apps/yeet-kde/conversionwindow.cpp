@@ -1,4 +1,5 @@
 #include "conversionwindow.h"
+#include "selectedvideopanel.h"
 #include <KLocalizedString>
 #include <QCloseEvent>
 #include <QFileInfo>
@@ -42,13 +43,8 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     m_autoClose=settings.value("conversion/autoClose",true).toBool();
     setWindowTitle(i18n("Convert only")); resize(740,480);
     auto *central=new QWidget(this); setCentralWidget(central);
-    auto *layout=new QVBoxLayout(central); layout->setSpacing(12);
-    auto *selected=new QHBoxLayout;
-    auto *selectedCaption=label(central,"conversionFileLabel",i18n("Selected video:"));
-    bold(selectedCaption); selectedCaption->setWordWrap(false);
-    selected->addWidget(selectedCaption,0,Qt::AlignTop);
-    auto *filename=label(central,"conversionFile",QFileInfo(file).fileName());
-    filename->setToolTip(file); selected->addWidget(filename,1); layout->addLayout(selected);
+    auto *layout=new QVBoxLayout(central); setWindowSpacing(layout);
+    layout->addWidget(new SelectedVideoPanel(central,file));
     auto *formats=new QHBoxLayout;
     formats->setSpacing(16);
     formats->addWidget(createFormatSection(i18n("Source"),"conversionSource",m_source),1);
@@ -101,7 +97,7 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
 }
 QGroupBox *ConversionWindow::createFormatSection(const QString &title,const QString &name,FormatFields &fields) {
     auto *section=new QGroupBox(centralWidget()); section->setObjectName(name);
-    auto *sectionLayout=new QVBoxLayout(section);
+    auto *sectionLayout=new QVBoxLayout(section); sectionLayout->setContentsMargins(16,16,16,16);
     // Breeze centres native group-box titles regardless of their alignment.
     // A heading inside the frame gives all styles the same left alignment.
     auto *heading=label(section,qPrintable(name+"Heading"),title);

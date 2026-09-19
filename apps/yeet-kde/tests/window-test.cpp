@@ -68,8 +68,10 @@ private slots:
                 QVERIFY(!window.findChild<QLabel *>(QString(name)+suffix)->font().bold());
             }
         }
-        QVERIFY(window.findChild<QLabel *>("conversionFileLabel")->font().bold());
-        QVERIFY(!window.findChild<QLabel *>("conversionFile")->font().bold());
+        QVERIFY(window.findChild<QLabel *>("selectedVideoHeading")->font().bold());
+        QVERIFY(!window.findChild<QLabel *>("selectedVideoFilename")->font().bold());
+        QCOMPARE(window.findChild<QLabel *>("selectedVideoHeading")->text(),QString("Selected video"));
+        QCOMPARE(window.findChild<QLabel *>("selectedVideoFilename")->text(),QString("complete video.mkv"));
         QVERIFY(window.findChild<QLabel *>("conversionSourceVideo")->text().contains("HEVC"));
         QVERIFY(window.findChild<QLabel *>("conversionTargetVideo")->text().contains("H.264"));
         QVERIFY(window.findChild<QLabel *>("conversionTargetAudio")->text().contains("2 channels"));
@@ -174,6 +176,12 @@ private slots:
         QTRY_COMPARE(subtitles->count(),4);
         QCOMPARE(devices->currentIndex(),0); QCOMPARE(subtitles->currentIndex(),1);
         QVERIFY(!yeet->isEnabled()); QVERIFY(resume->isVisible()); QVERIFY(starts(log).isEmpty());
+        auto *selected=window.findChild<QGroupBox *>("selectedVideoPanel");
+        QVERIFY(selected);
+        QCOMPARE(window.findChild<QLabel *>("selectedVideoHeading")->text(),QString("Selected video"));
+        QVERIFY(window.findChild<QLabel *>("selectedVideoHeading")->font().bold());
+        QCOMPARE(window.findChild<QLabel *>("selectedVideoFilename")->text(),QString("test video.mkv"));
+        QVERIFY(!selected->isAncestorOf(window.findChild<QPushButton *>("openVideo")));
         screenshot(window,"selection");
         devices->setCurrentIndex(2); subtitles->setCurrentIndex(2); QVERIFY(yeet->isEnabled());
         QTest::mouseClick(resume,Qt::LeftButton);

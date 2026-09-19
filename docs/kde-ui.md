@@ -43,6 +43,13 @@ effect on CLI operation. The remembered device remains in the INI's General grou
 
 ## Interaction
 
+Both windows share a selected-video panel: a framed container with 16-pixel
+internal padding, a bold **Selected video** heading at the top left, and the
+filename below. Long names wrap; the full path is available as a tooltip. Window
+margins and section spacing match between the player and converter. The player's
+**Open video…** button sits outside the panel, below it on the right. The panel
+stays visible through selection, preparation, and playback.
+
 On startup, inspect the file and discover receivers asynchronously. Show a device
 selector that restores the last-used device if available, a single subtitle list containing None,
 embedded tracks, and exact-basename external SRT, WebVTT, ASS, and SSA files. A separate file picker

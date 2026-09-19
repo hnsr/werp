@@ -5,6 +5,8 @@
 #include <QSettings>
 class QShortcut; class QDragEnterEvent; class QDragMoveEvent; class QDropEvent;
 class QComboBox; class QLabel; class QPushButton; class QSlider; class QProgressBar; class QStackedWidget;
+class SelectedVideoPanel;
+
 class Window : public QMainWindow {
     Q_OBJECT
 public:
@@ -36,7 +38,8 @@ private:
     bool m_autoDiscover;
     bool m_discovering = false, m_canClose = false, m_applySuggestedSubtitle = true;
     QStackedWidget *m_pages;
-    QLabel *m_fileLabel, *m_error, *m_prepareLabel, *m_time;
+    SelectedVideoPanel *m_selectedVideo;
+    QLabel *m_error, *m_prepareLabel, *m_time;
     QComboBox *m_devices, *m_subtitles;
     QPushButton *m_open, *m_refresh, *m_browse, *m_start, *m_resumeButton, *m_pause, *m_stop, *m_cancel, *m_retry;
     QProgressBar *m_progress, *m_discoveryProgress;
