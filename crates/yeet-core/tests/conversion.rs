@@ -6,6 +6,10 @@ use yeet_core::{
 };
 
 async fn convert(file: &Path) -> State {
+    convert_with(file, yeet_core::media::DirectPlayPolicy::Conservative).await
+}
+
+async fn convert_with(file: &Path, policy: yeet_core::media::DirectPlayPolicy) -> State {
     let (updates, state) = watch::channel(State::default());
     conversion::run(
         conversion::Request {
@@ -14,6 +18,7 @@ async fn convert(file: &Path) -> State {
             ffmpeg: "ffmpeg".into(),
             inhibit_sleep: false,
             cache: Default::default(),
+            policy,
         },
         updates,
         &CancellationToken::new(),
@@ -153,7 +158,7 @@ async fn offline_conversion_copies_encodes_reuses_and_skips_compatible_sources()
 
 #[tokio::test]
 #[ignore = "requires real FFmpeg with libx264/libx265, AAC and ffprobe"]
-async fn offline_target_converts_hevc_surround_to_baseline() {
+async fn selected_device_preview_conversion_and_cast_cache_share_policy() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("hevc-surround.mkv");
     let generated = tokio::process::Command::new("ffmpeg")
@@ -195,6 +200,67 @@ async fn offline_target_converts_hevc_surround_to_baseline() {
         "{}",
         String::from_utf8_lossy(&generated.stderr)
     );
+    let policy = yeet_core::devices::database().policy(Some("DIW7022"));
+    let before = std::fs::read_dir(dir.path()).unwrap().count();
+    let preview = conversion::preview(
+        &file,
+        &Default::default(),
+        policy,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        preview.planned_target.unwrap().streams[0].codec.as_deref(),
+        Some("hevc")
+    );
+    assert_eq!(
+        std::fs::read_dir(dir.path()).unwrap().count(),
+        before,
+        "preview must not prepare any files"
+    );
+    let copied = convert_with(&file, policy).await;
+    assert_eq!(
+        copied.operation.as_deref(),
+        Some("Copying video and audio into MP4")
+    );
+    let target = copied.target.unwrap();
+    assert_eq!(target.streams[0].codec.as_deref(), Some("hevc"));
+    assert_eq!(target.streams[1].channels, Some(6));
+    assert!(convert_with(&target.path, policy).await.already_compatible);
+    // Normal casting with this model sees the same recipe, without an encoder.
+    let source = yeet_core::media::inspect(&file, &Default::default(), &CancellationToken::new())
+        .await
+        .unwrap();
+    let mut reused = false;
+    let cached = yeet_core::cache::prepare(
+        &source,
+        Path::new("/nonexistent/ffmpeg"),
+        &Default::default(),
+        &yeet_core::transcode::TranscodeOptions {
+            mode: yeet_core::transcode::TranscodeMode::Remux,
+            playback_policy: policy,
+            ..Default::default()
+        },
+        &Default::default(),
+        &CancellationToken::new(),
+        |event| reused |= matches!(event, yeet_core::cache::Event::Reused(_)),
+    )
+    .await
+    .unwrap();
+    assert!(reused);
+    assert_eq!(cached.info.path, target.path);
+    cached.close().unwrap();
+    // Tightening a model through an override must change its preparation recipe.
+    let restricted = yeet_core::devices::database().with_overrides("schema_version=1\n[[devices]]\nid='KPN DIW7022'\n[devices.playback]\nallow_aac_surround=false").unwrap().policy(Some("DIW7022"));
+    let audio = convert_with(&file, restricted).await;
+    assert_eq!(
+        audio.operation.as_deref(),
+        Some("Copying video; converting audio to stereo AAC")
+    );
+    let audio_target = audio.target.unwrap();
+    assert_eq!(audio_target.streams[0].codec.as_deref(), Some("hevc"));
+    assert_eq!(audio_target.streams[1].channels, Some(2));
     let baseline = convert(&file).await;
     assert_eq!(
         baseline.target.unwrap().streams[0].codec.as_deref(),

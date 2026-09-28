@@ -37,6 +37,16 @@ class WindowTest : public QObject {
         const auto output=qEnvironmentVariable("YEET_UI_SCREENSHOTS");
         if (!output.isEmpty()) { QDir().mkpath(output); QVERIFY(window.grab().save(output+"/"+name+".png")); }
     }
+    static void startConversion(ConversionWindow &window,bool useDevice=false) {
+        auto *start=window.findChild<QPushButton *>("conversionStart");
+        QTRY_VERIFY(start->isEnabled());
+        if (useDevice) {
+            auto *devices=window.findChild<QComboBox *>("conversionDevices");
+            devices->setCurrentIndex(devices->findData("tv"));
+            QTRY_VERIFY(start->isEnabled());
+        }
+        QTest::mouseClick(start,Qt::LeftButton);
+    }
 private slots:
     void destroying_active_backend_does_not_call_destroyed_callback_state() {
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
@@ -47,13 +57,65 @@ private slots:
         QTest::ignoreMessage(QtWarningMsg,QRegularExpression("QProcess: Destroyed while process .* is still running."));
         backend.reset(); // Emergency destruction, as when a test assertion exits early.
     }
+    void conversion_device_preview_requires_explicit_start_and_ignores_stale_results() {
+        QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        const auto settings=dir.filePath("ui.ini");
+        QSettings preferences(settings,QSettings::IniFormat); preferences.setValue("lastDeviceId","tv"); preferences.sync();
+        ConversionWindow window(helper,dir.filePath("slowpreview long.mkv"),{},settings); window.show();
+        auto *devices=window.findChild<QComboBox *>("conversionDevices");
+        auto *start=window.findChild<QPushButton *>("conversionStart");
+        auto *video=window.findChild<QLabel *>("conversionTargetVideo");
+        QTRY_VERIFY(start->isEnabled());
+        QCOMPARE(devices->count(),2); // baseline and video receiver; audio-only filtered out
+        QCOMPARE(devices->currentData().toString(),QString("tv"));
+        QVERIFY(video->text().contains("HEVC"));
+        for (const auto &call : calls(helper+".log")) QVERIFY(call["method"]!="convert");
+        screenshot(window,"conversion-device-preview");
+        devices->setCurrentIndex(0); QTRY_VERIFY(start->isEnabled());
+        QVERIFY(video->text().contains("H.264"));
+        devices->setCurrentIndex(1); QVERIFY(!start->isEnabled());
+        devices->setCurrentIndex(0); QTRY_VERIFY(start->isEnabled());
+        QTest::qWait(350); QVERIFY(video->text().contains("H.264"));
+        devices->setCurrentIndex(1); QTRY_VERIFY(start->isEnabled());
+        QTest::mouseClick(start,Qt::LeftButton);
+        QTRY_COMPARE(window.findChild<QProgressBar *>("conversionProgress")->value(),42);
+        QVERIFY(!devices->isEnabled()); QVERIFY(!window.findChild<QPushButton *>("conversionRefresh")->isEnabled());
+        int conversions=0;
+        for (const auto &call : calls(helper+".log")) {
+            QVERIFY(call["method"]!="start");
+            if (call["method"]=="convert") { ++conversions; QCOMPARE(call["params"].toObject()["device_id"].toString(),QString("tv")); }
+        }
+        QCOMPARE(conversions,1);
+        window.close(); QTRY_VERIFY(!window.isVisible());
+    }
+    void conversion_no_devices_or_discovery_error_keeps_baseline_available() {
+        for (const auto &payload : {QByteArray("{\"devices\":[]}"),QByteArray("{\"error\":\"Test discovery failure\"}")}) {
+            QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+            QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
+            QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+            QFile devicesFile(helper+".devices.json"); QVERIFY(devicesFile.open(QIODevice::WriteOnly)); devicesFile.write(payload); devicesFile.close();
+            ConversionWindow window(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.ini")); window.show();
+            auto *start=window.findChild<QPushButton *>("conversionStart");
+            QTRY_VERIFY(start->isEnabled());
+            QCOMPARE(window.findChild<QComboBox *>("conversionDevices")->count(),1);
+            QVERIFY(!window.findChild<QLabel *>("conversionDiscoveryStatus")->text().isEmpty());
+            QTest::mouseClick(start,Qt::LeftButton);
+            QTRY_COMPARE(window.findChild<QProgressBar *>("conversionProgress")->value(),42);
+            for (const auto &call : calls(helper+".log")) {
+                if (call["method"]=="convert") QVERIFY(!call["params"].toObject().contains("device_id"));
+            }
+            window.close(); QTRY_VERIFY(!window.isVisible());
+        }
+    }
     void conversion_progress_completion_stays_open() {
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
         const auto settings=dir.filePath("ui.ini");
         QSettings preferences(settings,QSettings::IniFormat); preferences.setValue("conversion/autoClose",false); preferences.sync();
-        ConversionWindow window(helper,dir.filePath("complete video.mkv"),{},settings); window.show();
+        ConversionWindow window(helper,dir.filePath("complete video.mkv"),{},settings); window.show(); startConversion(window);
         const auto button=window.findChild<QPushButton *>("conversionButton");
         const auto progress=window.findChild<QProgressBar *>("conversionProgress");
         QTRY_COMPARE(progress->value(),42);
@@ -87,14 +149,14 @@ private slots:
         QTest::qWait(5500); QVERIFY(window.isVisible());
         QTest::mouseClick(button,Qt::LeftButton); QTRY_VERIFY(!window.isVisible());
         for (const auto &call : calls(helper+".log")) {
-            QVERIFY(call["method"]!="discover"); QVERIFY(call["method"]!="start"); QVERIFY(call["method"]!="inspect");
+            QVERIFY(call["method"]!="start"); QVERIFY(call["method"]!="inspect");
         }
     }
     void conversion_auto_closes_by_default() {
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        ConversionWindow window(helper,dir.filePath("complete.mkv"),{},dir.filePath("default-ui.ini")); window.show();
+        ConversionWindow window(helper,dir.filePath("complete.mkv"),{},dir.filePath("default-ui.ini")); window.show(); startConversion(window);
         QTRY_COMPARE(window.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
         auto *countdown=window.findChild<QLabel *>("conversionCountdown");
         QCOMPARE(countdown->text(),QString("Closing in 5 seconds…"));
@@ -111,7 +173,7 @@ private slots:
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        ConversionWindow window(helper,dir.filePath("reuse video.mkv"),{},dir.filePath("ui.ini")); window.show();
+        ConversionWindow window(helper,dir.filePath("reuse video.mkv"),{},dir.filePath("ui.ini")); window.show(); startConversion(window,true);
         QTRY_COMPARE(window.findChild<QProgressBar *>("conversionProgress")->value(),42);
         QStringList before;
         for (const auto *name : {"conversionTargetContainer","conversionTargetVideo","conversionTargetResolution","conversionTargetAudio"})
@@ -138,7 +200,7 @@ private slots:
         const auto settings=dir.filePath("ui.ini");
         QSettings preferences(settings,QSettings::IniFormat); preferences.setValue("conversion/autoClose",false); preferences.sync();
         ConversionWindow window(helper,dir.filePath("wrapped reuse Example.Series.S01E01.1080p.10bit.WEBRip.6CH.x265.HEVC.mkv"),{},settings);
-        window.show();
+        window.show(); startConversion(window,true);
         QTRY_COMPARE(window.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
         for (const auto width : {740, 560}) {
             window.resize(width,480); QTest::qWait(100);
@@ -155,7 +217,7 @@ private slots:
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(YEET_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        ConversionWindow cancelled(helper,dir.filePath("long video.mkv"),{},dir.filePath("ui.ini")); cancelled.show();
+        ConversionWindow cancelled(helper,dir.filePath("long video.mkv"),{},dir.filePath("ui.ini")); cancelled.show(); startConversion(cancelled);
         auto *button=cancelled.findChild<QPushButton *>("conversionButton");
         QTRY_COMPARE(cancelled.findChild<QProgressBar *>("conversionProgress")->value(),42);
         QTest::mouseClick(button,Qt::LeftButton);
@@ -164,18 +226,17 @@ private slots:
         QVERIFY(cancelled.findChild<QLabel *>("conversionCountdown")->text().isEmpty());
         QTest::qWait(100); QCOMPARE(button->text(),QString("Close")); // Ignore stale progress.
         QTest::mouseClick(button,Qt::LeftButton); QTRY_VERIFY(!cancelled.isVisible());
-        ConversionWindow failed(helper,dir.filePath("fail.mkv"),{},dir.filePath("ui.ini")); failed.show();
+        ConversionWindow failed(helper,dir.filePath("fail.mkv"),{},dir.filePath("ui.ini")); failed.show(); startConversion(failed);
         QTRY_COMPARE(failed.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
         QVERIFY(failed.findChild<QLabel *>("conversionStatus")->text().contains("Test conversion failure"));
         QVERIFY(failed.findChild<QLabel *>("conversionCountdown")->text().isEmpty());
         screenshot(failed,"conversion-failed"); failed.close(); QTRY_VERIFY(!failed.isVisible());
-        ConversionWindow active(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.ini")); active.show();
+        ConversionWindow active(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.ini")); active.show(); startConversion(active);
         QTRY_COMPARE(active.findChild<QProgressBar *>("conversionProgress")->value(),42);
         active.close(); QTRY_VERIFY(!active.isVisible());
         ConversionWindow early(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.ini")); early.show();
         QTest::mouseClick(early.findChild<QPushButton *>("conversionButton"),Qt::LeftButton);
-        QTRY_COMPARE(early.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
-        early.close(); QTRY_VERIFY(!early.isVisible());
+        QTRY_VERIFY(!early.isVisible());
     }
     void explicit_choices_preparation_controls_and_stop() {
         QTemporaryDir dir;

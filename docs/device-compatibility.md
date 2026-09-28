@@ -16,7 +16,8 @@ With `--profile auto`, the bundled rules are merged with the user's optional
 `devices.toml`, then matched against the discovered model. Unknown models and
 `--host` use Baseline. Explicit Baseline/Extended/Experimental profiles override
 model rules; forced full transcoding still targets conservative H.264/stereo AAC.
-Convert-only has no target device and uses Baseline without model overrides.
+Convert-only can use a discovered device's merged model rules, or Baseline through
+its Broad compatibility option. It previews the format before an explicit Convert click.
 
 ## User overrides
 
@@ -54,11 +55,11 @@ Missing default files use the bundled database. Invalid TOML, unknown keys,
 duplicate IDs, conflicting aliases, invalid limits and files over 64 KiB fail
 visibly. Validation checks the entire merged database, so a local alias cannot
 silently shadow another model. The file is read for every new automatic CLI cast
-and KDE `start`; edits do not affect an active session. `--no-config` ignores both
+and device-targeted KDE preview/`convert`/`start`; edits do not affect an active operation. `--no-config` ignores both
 CLI preferences and local device overrides but retains bundled rules.
 `--config PATH` changes only the CLI preferences file; device overrides remain in the XDG
-location. Explicit CLI profiles bypass user database loading. Convert-only and
-backend inspect/discovery do not read this file.
+location. Explicit CLI profiles bypass user database loading. Broad-compatibility
+conversion/preview and backend inspect/discovery do not read this file.
 
 Exact aliases are already supported. Fuzzy matching, individual-device rules and
 stronger identification remain deferred.

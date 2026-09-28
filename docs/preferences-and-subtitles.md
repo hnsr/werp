@@ -40,8 +40,8 @@ CLI and KDE casting. Global `[compatibility]` flags are removed and rejected.
 `--no-config` ignores both CLI preferences and local model overrides, retaining
 bundled rules. `--config PATH` changes only CLI preferences; the model overlay
 stays in the default XDG location. Explicit CLI profiles bypass model overrides.
-The KDE helper does not read CLI preferences. Convert-only uses Baseline because
-there is no selected receiver.
+The KDE helper does not read CLI preferences. Convert-only uses the selected
+receiver's merged model rules, or Baseline for its Broad compatibility option.
 
 ## Subtitle selection and rendering
 

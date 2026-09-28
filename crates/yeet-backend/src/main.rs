@@ -44,8 +44,13 @@ enum Command {
         file: PathBuf,
     },
     Discover,
+    PreviewConversion {
+        file: PathBuf,
+        device_id: Option<String>,
+    },
     Convert {
         file: PathBuf,
+        device_id: Option<String>,
     },
     CancelConversion {
         operation_id: u64,
@@ -97,6 +102,38 @@ enum QueryResult {
     Devices(Vec<discovery::Device>),
     Data(Value),
 }
+// Conversion needs the model identity, not a connection to its address.
+fn conversion_model<'a>(
+    device_id: Option<&str>,
+    devices: &'a HashMap<String, discovery::Device>,
+) -> Result<Option<&'a str>, (&'static str, String)> {
+    let Some(id) = device_id else {
+        return Ok(None);
+    };
+    let device = devices.get(id).ok_or_else(|| {
+        (
+            "invalid_device",
+            "select a discovered device or broad compatibility".into(),
+        )
+    })?;
+    if device.capabilities.is_some_and(|bits| bits & 1 == 0) {
+        return Err(("invalid_device", "device cannot play video".into()));
+    }
+    Ok(Some(&device.model))
+}
+
+fn conversion_policy(
+    device_id: Option<&str>,
+    devices: &HashMap<String, discovery::Device>,
+) -> Result<media::DirectPlayPolicy, (&'static str, String)> {
+    let Some(model) = conversion_model(device_id, devices)? else {
+        return Ok(media::DirectPlayPolicy::Conservative);
+    };
+    let database =
+        yeet_core::devices::load(None).map_err(|e| ("operation_failed", e.to_string()))?;
+    Ok(database.policy(Some(model)))
+}
+
 fn ok(id: u64, result: Value) -> Value {
     json!({"id":id,"ok":true,"result":result})
 }
@@ -310,12 +347,30 @@ async fn run(args: Args) -> Result<(), String> {
                             pending.insert(id); let cancel = lifetime.clone();
                             queries.spawn(async move { (id,discovery::discover(Duration::from_secs(5),&cancel).await.map(QueryResult::Devices).map_err(|e| e.to_string())) });
                         }
-                        Command::Convert { file } => {
+                        Command::PreviewConversion { file, device_id } => {
+                            if queries.len() >= 16 { send(&output,error(Some(id),"busy","too many queries")).await?; continue; }
+                            let policy = match conversion_policy(device_id.as_deref(), &devices) {
+                                Ok(policy) => policy,
+                                Err((code,message)) => { send(&output,error(Some(id),code,message)).await?; continue; }
+                            };
+                            pending.insert(id);
+                            let probe = probe.clone(); let cancel = lifetime.clone();
+                            queries.spawn(async move {
+                                let result = conversion::preview(&file,&probe,policy,&cancel).await
+                                    .map(|state| QueryResult::Data(json!(state))).map_err(|e| e.to_string());
+                                (id,result)
+                            });
+                        }
+                        Command::Convert { file, device_id } => {
                             if active.is_some() || converting.is_some() { send(&output,error(Some(id),"busy","an operation is already active")).await?; continue; }
+                            let policy = match conversion_policy(device_id.as_deref(), &devices) {
+                                Ok(policy) => policy,
+                                Err((code,message)) => { send(&output,error(Some(id),code,message)).await?; continue; }
+                            };
                             let operation_id = next_session; next_session += 1;
                             let cancel = lifetime.child_token();
                             let (progress, updates) = watch::channel(conversion::State::default());
-                            let request = conversion::Request { file, probe:probe.clone(), ffmpeg:args.ffmpeg.clone(), inhibit_sleep:!args.no_inhibit_sleep, cache:Default::default() };
+                            let request = conversion::Request { file, probe:probe.clone(), ffmpeg:args.ffmpeg.clone(), inhibit_sleep:!args.no_inhibit_sleep, cache:Default::default(), policy };
                             converting = Some(Converting { id:operation_id, cancel:cancel.clone(), updates, stops:vec![] });
                             send(&output,ok(id,json!({"operation_id":operation_id}))).await?;
                             conversions.spawn(async move { conversion::run(request,progress,&cancel).await; operation_id });
@@ -434,6 +489,40 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conversion_uses_discovered_model_and_does_not_require_a_reachable_address() {
+        let mut devices = HashMap::new();
+        let mut device = discovery::Device {
+            id: "test-id".into(),
+            name: "Editable name".into(),
+            model: "DIW7022".into(),
+            addresses: vec![],
+            port: 8009,
+            capabilities: Some(1),
+        };
+        devices.insert(device.id.clone(), device.clone());
+        assert_eq!(conversion_model(None, &devices).unwrap(), None);
+        assert_eq!(
+            conversion_model(Some("test-id"), &devices).unwrap(),
+            Some("DIW7022")
+        );
+        for id in ["", "Editable name", "missing"] {
+            assert_eq!(
+                conversion_model(Some(id), &devices).unwrap_err().0,
+                "invalid_device"
+            );
+        }
+        device.capabilities = Some(4);
+        devices.insert(device.id.clone(), device.clone());
+        assert_eq!(
+            conversion_model(Some("test-id"), &devices).unwrap_err().0,
+            "invalid_device"
+        );
+        device.capabilities = None;
+        devices.insert(device.id.clone(), device);
+        assert!(conversion_model(Some("test-id"), &devices).is_ok());
+    }
 
     #[test]
     fn start_accepts_signed_subtitle_delay_and_defaults_to_zero() {

@@ -366,6 +366,27 @@ fn convert_uses_baseline_without_reading_cli_or_device_settings() {
     assert_eq!(helper.read()["ok"], true);
     fs::write(&config, "[cli.subtitles]\nlanguages=['unsupported']\n").unwrap();
     fs::write(config.with_file_name("devices.toml"), "invalid TOML").unwrap();
+    helper.send(json!({"id":10,"method":"preview_conversion","params":{"file":file}}));
+    let preview = helper.read();
+    assert_eq!(preview["ok"], true, "{preview}");
+    assert_eq!(preview["result"]["source"]["streams"][0]["codec"], "hevc");
+    assert_eq!(
+        preview["result"]["planned_target"]["streams"][0]["codec"],
+        "h264"
+    );
+    assert_eq!(
+        preview["result"]["planned_target"]["streams"][1]["channels"],
+        2
+    );
+    assert!(!preview["result"]["output"].is_string());
+    for (id, method) in [(11, "preview_conversion"), (12, "convert")] {
+        helper.send(
+            json!({"id":id,"method":method,"params":{"file":file,"device_id":"not-discovered"}}),
+        );
+        let error = helper.read();
+        assert_eq!(error["ok"], false);
+        assert_eq!(error["error"]["code"], "invalid_device");
+    }
     helper.send(json!({"id":2,"method":"convert","params":{"file":file}}));
     assert_eq!(helper.read()["ok"], true);
     loop {

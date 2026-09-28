@@ -2,6 +2,8 @@
 #include "selectedvideopanel.h"
 #include <KLocalizedString>
 #include <QCloseEvent>
+#include <QComboBox>
+#include <QSignalBlocker>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QGroupBox>
@@ -38,14 +40,24 @@ QLabel *label(QWidget *parent, const char *name, const QString &text={}) {
     return result;
 }
 }
-ConversionWindow::ConversionWindow(const QString &backend,const QString &file,const QStringList &arguments,const QString &settingsFile) {
-    QSettings settings(settingsFile.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/yeet/kde-ui.ini" : settingsFile,QSettings::IniFormat);
-    m_autoClose=settings.value("conversion/autoClose",true).toBool();
-    setWindowTitle(i18n("Convert only")); resize(740,480);
+ConversionWindow::ConversionWindow(const QString &backend,const QString &file,const QStringList &arguments,const QString &settingsFile,bool discoverOnStart)
+    : m_file(QFileInfo(file).absoluteFilePath()),
+      m_settings(settingsFile.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/yeet/kde-ui.ini" : settingsFile,QSettings::IniFormat) {
+    m_autoClose=m_settings.value("conversion/autoClose",true).toBool();
+    setWindowTitle(i18n("Convert only")); resize(740,580);
     auto *central=new QWidget(this); setCentralWidget(central);
     auto *layout=new QVBoxLayout(central); setWindowSpacing(layout);
     central->installEventFilter(this);
     layout->addWidget(new SelectedVideoPanel(central,file));
+    auto *deviceRow=new QHBoxLayout;
+    auto *deviceCaption=label(central,"conversionDeviceLabel",i18n("Target device:")); bold(deviceCaption);
+    deviceCaption->setWordWrap(false); deviceRow->addWidget(deviceCaption);
+    m_devices=new QComboBox(central); m_devices->setObjectName("conversionDevices");
+    m_devices->addItem(i18n("Broad compatibility (no device)"),QString());
+    m_devices->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed); deviceRow->addWidget(m_devices,1);
+    m_refresh=new QPushButton(i18n("Refresh"),central); m_refresh->setObjectName("conversionRefresh"); deviceRow->addWidget(m_refresh);
+    layout->addLayout(deviceRow);
+    m_discoveryStatus=label(central,"conversionDiscoveryStatus"); layout->addWidget(m_discoveryStatus);
     auto *formats=new QHBoxLayout;
     formats->setSpacing(16);
     formats->addWidget(createFormatSection(i18n("Source"),"conversionSource",m_source),1);
@@ -65,9 +77,13 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     m_countdown->setWordWrap(false);
     m_countdown->setSizePolicy(QSizePolicy::MinimumExpanding,QSizePolicy::Preferred);
     bottom->addWidget(m_countdown,1);
-    m_button=new QPushButton(i18n("Cancel"),central); m_button->setObjectName("conversionButton"); bottom->addWidget(m_button); layout->addLayout(bottom);
+    m_convert=new QPushButton(i18n("Convert"),central); m_convert->setObjectName("conversionStart"); bottom->addWidget(m_convert);
+    m_button=new QPushButton(i18n("Close"),central); m_button->setObjectName("conversionButton"); bottom->addWidget(m_button); layout->addLayout(bottom);
     auto *quit=new QShortcut(QKeySequence::Quit,this); connect(quit,&QShortcut::activated,this,&QWidget::close);
-    connect(m_button,&QPushButton::clicked,this,[this] { if (m_finished) close(); else cancel(); });
+    connect(m_button,&QPushButton::clicked,this,[this] { if (m_finished || !m_started) close(); else cancel(); });
+    connect(m_convert,&QPushButton::clicked,this,&ConversionWindow::startConversion);
+    connect(m_refresh,&QPushButton::clicked,this,&ConversionWindow::discover);
+    connect(m_devices,&QComboBox::currentIndexChanged,this,&ConversionWindow::preview);
     m_autoCloseTimer.setInterval(1000);
     m_autoCloseTimer.setTimerType(Qt::PreciseTimer);
     connect(&m_autoCloseTimer,&QTimer::timeout,this,[this] {
@@ -75,15 +91,7 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
         else m_countdown->setText(i18np("Closing in %1 second…","Closing in %1 seconds…",m_seconds));
     });
     m_backend=new Backend(backend,this,arguments);
-    connect(m_backend,&Backend::connected,this,[this,file] {
-        if (m_closing || m_finished || m_cancelling) return;
-        m_status->setText(i18n("Inspecting media…"));
-        m_backend->request("convert",{{"file",QFileInfo(file).absoluteFilePath()}},[this](const QJsonObject &reply) {
-            if (m_closing || m_finished) return;
-            if (!reply["ok"].toBool()) { fail(reply["error"].toObject()["message"].toString()); return; }
-            m_operation=reply["result"].toObject()["operation_id"].toInteger();
-        });
-    });
+    connect(m_backend,&Backend::connected,this,[this,discoverOnStart] { if (discoverOnStart) discover(); else preview(); });
     connect(m_backend,&Backend::event,this,[this](const QJsonObject &message) {
         if (m_closing || m_finished || !m_operation || message["operation_id"].toInteger()!=m_operation) return;
         const auto event=message["event"].toString();
@@ -94,7 +102,83 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     connect(m_backend,&Backend::exited,this,[this] {
         if (m_closing) { m_canClose=true; QTimer::singleShot(0,this,&QWidget::close); }
     });
+    refreshActions();
     m_backend->start();
+}
+QJsonObject ConversionWindow::targetParams() const {
+    QJsonObject params{{"file",m_file}};
+    const auto device=m_devices->currentData().toString();
+    if (!device.isEmpty()) params.insert("device_id",device);
+    return params;
+}
+void ConversionWindow::refreshActions() {
+    const bool ready=m_backend->ready() && !m_started && !m_finished && !m_closing;
+    m_devices->setEnabled(ready && !m_discovering);
+    m_refresh->setEnabled(ready && !m_discovering);
+    m_convert->setEnabled(ready && !m_discovering && m_previewReady);
+}
+void ConversionWindow::discover() {
+    if (!m_backend->ready() || m_discovering || m_started || m_finished || m_closing) return;
+    m_discovering=true; m_previewReady=false; ++m_previewGeneration;
+    refreshActions(); m_progress->setRange(0,0);
+    m_discoveryStatus->setText(i18n("Searching for devices…"));
+    m_status->setText(i18n("Choose a target before converting."));
+    m_backend->request("discover",{},[this](const QJsonObject &reply) {
+        if (m_closing || m_finished) return;
+        m_discovering=false;
+        const auto previous=m_devices->currentData().toString();
+        // Retain an explicit broad-compatibility choice across refreshes.
+        const bool hadSelection=m_devices->property("discovered").toBool();
+        const QSignalBlocker block(m_devices);
+        m_devices->clear(); m_devices->addItem(i18n("Broad compatibility (no device)"),QString());
+        if (reply["ok"].toBool()) {
+            for (const auto value : reply["result"].toObject()["devices"].toArray()) {
+                const auto device=value.toObject();
+                if (device["capabilities"].isDouble() && !(device["capabilities"].toInt() & 1)) continue;
+                m_devices->addItem(device["name"].toString()+" · "+device["model"].toString(),device["id"].toString());
+            }
+            m_discoveryStatus->setText(m_devices->count()==1 ? i18n("No video devices found. Use broad compatibility or try Refresh.") : i18n("The selected device determines the format; playback will not start."));
+        } else {
+            m_discoveryStatus->setText(i18n("Device search failed: %1. Broad compatibility is still available.",reply["error"].toObject()["message"].toString()));
+        }
+        m_settings.sync();
+        const auto candidate=hadSelection ? previous : m_settings.value("lastDeviceId").toString();
+        const int index=m_devices->findData(candidate);
+        if (index>=0) m_devices->setCurrentIndex(index);
+        m_devices->setProperty("discovered",true);
+        preview();
+    });
+}
+void ConversionWindow::preview() {
+    if (!m_backend->ready() || m_discovering || m_started || m_finished || m_closing) return;
+    const auto generation=++m_previewGeneration;
+    m_previewReady=false; refreshActions(); m_progress->setRange(0,0);
+    m_status->setText(i18n("Inspecting media and determining target…"));
+    for (auto *field : {m_target.container,m_target.video,m_target.resolution,m_target.audio}) field->setText(i18n("Determining…"));
+    m_backend->request("preview_conversion",targetParams(),[this,generation](const QJsonObject &reply) {
+        if (generation!=m_previewGeneration || m_started || m_finished || m_closing) return;
+        m_progress->setRange(0,100); m_progress->setValue(0);
+        if (!reply["ok"].toBool()) {
+            m_status->setText(reply["error"].toObject()["message"].toString());
+        } else {
+            updateState(reply["result"].toObject());
+            m_progress->setRange(0,100); m_progress->setValue(0);
+            m_previewReady=true;
+        }
+        refreshActions();
+    });
+}
+void ConversionWindow::startConversion() {
+    if (!m_previewReady || m_discovering || m_started || m_finished || m_closing) return;
+    m_started=true; ++m_previewGeneration; refreshActions(); m_convert->hide();
+    m_button->setText(i18n("Cancel")); m_status->setText(i18n("Preparing conversion…")); m_progress->setRange(0,0);
+    const auto device=m_devices->currentData().toString();
+    m_backend->request("convert",targetParams(),[this,device](const QJsonObject &reply) {
+        if (m_closing || m_finished) return;
+        if (!reply["ok"].toBool()) { fail(reply["error"].toObject()["message"].toString()); return; }
+        m_operation=reply["result"].toObject()["operation_id"].toInteger();
+        if (!device.isEmpty()) { m_settings.setValue("lastDeviceId",device); m_settings.sync(); }
+    });
 }
 QGroupBox *ConversionWindow::createFormatSection(const QString &title,const QString &name,FormatFields &fields) {
     auto *section=new QGroupBox(centralWidget()); section->setObjectName(name);
@@ -156,7 +240,7 @@ void ConversionWindow::updateState(const QJsonObject &state) {
     m_warnings->setText(warnings.join("\n"));
 }
 void ConversionWindow::finish(const QJsonObject &state) {
-    m_cancelling=false; updateState(state); m_finished=true; m_operation=0;
+    m_cancelling=false; updateState(state); m_finished=true; m_operation=0; refreshActions(); m_convert->hide();
     m_progress->setRange(0,100); m_button->setText(i18n("Close")); m_button->setEnabled(true);
     if (state["error"].isString()) m_status->setText(state["error"].toString());
     if (state["phase"].toString()=="completed") {
@@ -205,6 +289,6 @@ void ConversionWindow::closeEvent(QCloseEvent *event) {
     if (m_canClose) { event->accept(); return; }
     event->ignore();
     if (m_closing) return;
-    m_closing=true; m_autoCloseTimer.stop(); m_button->setEnabled(false);
+    m_closing=true; refreshActions(); m_autoCloseTimer.stop(); m_button->setEnabled(false);
     m_status->setText(i18n("Closing and cleaning up…")); m_backend->shutdown();
 }

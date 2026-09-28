@@ -17,7 +17,8 @@ conversion/cache, Cast sessions, controls, sleep inhibition, and checkpoint stor
 The CLI owns its configurable device/subtitle automation and automatic resume.
 The UI has independent convenience defaults: the last-used device and suggested
 subtitles. Opening a file in the regular player never launches playback or conversion.
-The separate convert-only entry starts offline preparation immediately.
+The separate convert-only entry previews preparation for a chosen target and waits
+for an explicit Convert click.
 
 CLI configuration uses `[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`.
 The last uses `auto_resume`; saving checkpoints is an independent shared capability.
@@ -94,21 +95,39 @@ Open a video with **Yeet (convert only)**, or run:
 ./target/kde/yeet-kde --convert-only /path/to/video.mkv
 ```
 
-Without a filename this mode opens a file picker. It starts preparation immediately
-and shows the filename, separate Source and Target sections, progress, and Cancel.
+Without a filename this mode opens a file picker. It shows the filename, target
+selection, and separate Source and Target sections before starting work. During
+conversion it shows progress and Cancel.
 Source and Target headings are bold and left-aligned. Both sections use fixed
 Container, Video, Resolution and Audio rows, with bold labels and regular-weight
 values. Selected video and Available file captions are bold too. The target
 shows the planned format before cache lookup, then fills in probed output details
 without changing the layout. Container aliases are normalized (for example, MP4).
-The default target is the conservative profile: MP4, SDR H.264 up to 1080p30/level 4.1, and optional
+The window discovers video-capable devices and preselects the last-used device
+when found, sharing `lastDeviceId` with the player. Audio-only receivers are omitted.
+The **Broad compatibility (no device)** entry remains available when there is no
+receiver or discovery fails. Refresh repeats discovery; changing the selection
+updates a read-only preview of the actual planned format. Conversion starts only
+when **Convert** is clicked. The target selector and Refresh are disabled once
+work starts. Close/CTRL+Q is available during selection too.
+
+A selected receiver uses its model from discovery, the bundled database and local
+`devices.toml` overrides, exactly as automatic casting does. Unknown models and
+Broad compatibility use MP4, SDR H.264 up to 1080p30/level 4.1, and optional
 mono/stereo AAC-LC. Compatible streams are copied when possible; an already
 compatible MP4 needs no conversion. Encoded audio is stereo AAC at 192 kbps/48 kHz.
-No receiver is discovered or contacted, and no HTTP listener or resume checkpoint
-is created. The helper acquires the same best-effort sleep inhibitor used by casting.
-The window displays the target reported by the backend. Model overrides, CLI
-preferences and the last-used receiver do not influence the offline target.
-See [device overrides](device-compatibility.md#user-overrides) for normal casting.
+Discovery does not launch a Cast app or start playback. Conversion itself never
+connects to the receiver or creates an HTTP listener or resume checkpoint.
+The helper acquires the same best-effort sleep inhibitor used by casting once
+conversion is started; preview does not inhibit sleep or prepare files.
+CLI automation preferences do not influence conversion. See
+[device overrides](device-compatibility.md#user-overrides).
+
+The selected device must be in this helper's discovery results, but does not need
+to remain online while conversion runs. The model policy is captured again on
+Convert, so file/override changes since preview are validated before preparation.
+Malformed overrides fail visibly; choosing Broad compatibility bypasses them.
+`--no-discovery` skips the initial scan for development; Refresh is still available.
 
 Completed output is validated and kept beside the canonical source, with the
 existing user-cache fallback if the directory is not writable. Existing conversions
@@ -124,9 +143,9 @@ says **Auto-close disabled**, and successful conversions stay open. Errors and
 cancellation always stay open until explicitly closed.
 An already-compatible source and cache reuse are successes.
 
-The regular player still chooses its recipe for the selected receiver, which may
-be different from the convert-only target. Opening the prepared MP4 directly needs no
-conversion; opening the original reuses it only when the player's recipe matches.
+The player and convert-only share preparation/cache recipes for the same resolved
+policy. Opening the original reuses its conversion when the recipe matches. A
+different receiver or subtitle burn-in can require a different recipe.
 
 ## Transport contract
 
@@ -240,13 +259,18 @@ Automated checks use short generated media to exercise remuxing, audio conversio
 full video conversion, reuse, already-compatible input, and unchanged sources.
 Protocol checks cancel active encoders by explicit cancellation, shutdown, and EOF,
 verify child reaping and partial-output removal, and reject concurrent operations.
-Native tests cover progress, terminal errors, cancellation, early cancellation,
+Native tests cover device selection, remembered targets, baseline fallback after
+empty/failed discovery, stale preview rejection, explicit start, progress, terminal
+errors, cancellation, early close,
 window close, consistent cached-output format rows, and successful completion
 remaining open with auto-close disabled, plus default auto-close and countdown
 layout. None of these tests contacts a TV.
 
-For a manual check, open a video via Dolphin's new entry and confirm the formats,
-progress, output location and that it remains open after success. Cancel a second conversion and confirm
+For a manual check, open a video via Dolphin's convert-only entry. Confirm the
+last-used receiver is selected and no conversion starts yet. Switch between the
+receiver and Broad compatibility and review the format preview, then click Convert.
+Check progress, output location and that it remains open after success when
+auto-close is disabled. Cancel a second conversion and confirm
 that it stays open with Close after cleanup. Real listening remains useful for
 subjective dialogue clarity; synthetic channel tests cannot judge a movie's mix.
 

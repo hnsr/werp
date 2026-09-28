@@ -27,7 +27,8 @@ changes require a version bump. Frontends should ignore additional response fiel
 | `inspect` | `file: string` | `media`, `subtitles`, `suggested_subtitles`, `subtitle_warning`, `resume_position`, `resume_warning` |
 | `discover` | Omit params | `devices: array` from a five-second IPv4 scan |
 | `start` | `file`, `device_id`, `subtitles`, `position`, optional `subtitle_delay_ms` | `session_id: integer` |
-| `convert` | `file: string` | `operation_id: integer` |
+| `preview_conversion` | `file`, optional `device_id` | Conversion snapshot with `source`, `planned_target`, `target_description`, `message` |
+| `convert` | `file`, optional `device_id` | `operation_id: integer` |
 | `cancel_conversion` | `operation_id` | Empty object after conversion cleanup |
 | `pause`, `play` | `session_id` | Empty object after receiver acknowledgement |
 | `seek` | `session_id`, `position` | Empty object after receiver acknowledgement |
@@ -138,15 +139,29 @@ to 32. Large libraries are not sent wholesale: inspection covers one file.
 
 ## Offline conversion
 
-`convert` starts receiver-independent preparation targeting the conservative
-H.264/stereo AAC MP4 profile, independent of device rules. Its acknowledgement precedes events. `start` and `convert`
-reject overlapping work with `busy`; IDs share the helper's monotonic sequence.
-No CLI preferences, discovery, subtitle selection, HTTP server or resume state
-are involved. Completed output uses the shared retained cache. An already
-compatible input completes without invoking FFmpeg or creating a duplicate.
+`preview_conversion` probes the file and reports its source and planned target
+without writing prepared files, acquiring a sleep inhibitor, contacting a Cast
+receiver or changing resume state. It is a read-only query and can finish out of
+order; frontends must discard stale previews when the selected device changes.
+
+`convert` starts preparation using the same automatic selection as casting. Both
+methods accept an optional `device_id`. When present, it must identify a video
+receiver in this helper's latest discovery results; its advertised model selects
+the bundled-plus-user policy. Unknown models use Baseline. No receiver connection
+or reachable IPv4 address is needed for conversion. Invalid IDs or audio-only
+devices return `invalid_device`. With no ID (or null), use conservative H.264/stereo
+AAC MP4 without reading device overrides. An empty string is an invalid ID.
+
+`convert` resolves policy and probes again, rather than trusting a previous
+preview. Its acknowledgement precedes events. `start` and `convert` reject
+overlapping work with `busy`; IDs share the helper's monotonic sequence. No CLI
+preferences, subtitle selection, HTTP server or resume state are involved.
+Completed output uses the shared retained cache. An already compatible input
+completes without invoking FFmpeg or creating a duplicate.
 
 ```json
-{"id":10,"method":"convert","params":{"file":"/path/to/video.mkv"}}
+{"id":9,"method":"preview_conversion","params":{"file":"/path/to/video.mkv","device_id":"example-device-id"}}
+{"id":10,"method":"convert","params":{"file":"/path/to/video.mkv","device_id":"example-device-id"}}
 {"id":10,"ok":true,"result":{"operation_id":2}}
 {"event":"conversion_state","operation_id":2,"state":{"phase":"preparing","source":null,"target":null,"operation":"Copying video and audio into MP4","fraction":0.42,"message":"Copying video and audio into MP4","output":null,"reused":false,"already_compatible":false,"warnings":[],"error":null}}
 {"id":11,"method":"cancel_conversion","params":{"operation_id":2}}
@@ -177,10 +192,12 @@ At most 16 cancellation acknowledgements may be pending. Shutdown, EOF and
 output failure cancel and join conversions as well as playback/query tasks.
 Auto-close timing belongs to the frontend, not the core or protocol.
 
-Before accepting `start`, the helper snapshots the bundled model database merged
-with `$XDG_CONFIG_HOME/yeet/devices.toml` (normally `~/.config/yeet/devices.toml`).
-Invalid overrides produce `operation_failed` without starting playback. A missing
-file retains bundled rules. Edits do not affect an active session. CLI preferences
-are not read. `convert`, inspect and discovery do not load device overrides.
-The core session receives a typed database snapshot, keeping configuration loading
-at the frontend boundary. See [override semantics](device-compatibility.md#user-overrides).
+Before accepting `start` or a device-targeted `preview_conversion`/`convert`, the
+helper snapshots the bundled model database merged with
+`$XDG_CONFIG_HOME/yeet/devices.toml` (normally `~/.config/yeet/devices.toml`).
+Invalid overrides produce `operation_failed` without starting the operation. A
+missing file retains bundled rules. Edits do not affect an active operation.
+CLI preferences are not read. Broad-compatibility conversion/preview, inspect and
+discovery do not load device overrides. The core receives a resolved policy for
+conversion and a database snapshot for casting, keeping configuration loading at
+the frontend boundary. See [override semantics](device-compatibility.md#user-overrides).

@@ -1,5 +1,5 @@
-//! Receiver-independent preparation using the same validated cache as casting.
-use std::path::PathBuf;
+//! Offline preparation for a resolved policy using the same cache as casting.
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tokio::sync::watch;
@@ -17,6 +17,8 @@ pub struct Request {
     pub ffmpeg: PathBuf,
     pub inhibit_sleep: bool,
     pub cache: cache::CacheOptions,
+    /// Resolved receiver policy, or Conservative for receiver-independent output.
+    pub policy: DirectPlayPolicy,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, PartialEq, Eq)]
@@ -86,11 +88,50 @@ pub struct State {
     pub error: Option<String>,
 }
 
+fn target_description(policy: DirectPlayPolicy) -> String {
+    format!(
+        "MP4 · {} · {}",
+        if policy.allows_hevc() {
+            "H.264 / HEVC SDR"
+        } else {
+            "H.264"
+        },
+        if policy.allows_aac_surround() {
+            "AAC-LC (up to 6 channels)"
+        } else {
+            "AAC-LC (up to stereo)"
+        }
+    )
+}
+
+/// Read-only format preview. Does not prepare files or contact the receiver.
+pub async fn preview(
+    file: &Path,
+    probe: &ProbeOptions,
+    policy: DirectPlayPolicy,
+    cancel: &CancellationToken,
+) -> Result<State, YeetError> {
+    let info = media::inspect(file, probe, cancel).await?;
+    let plan = playback::select(&info, Mode::Auto, policy)?;
+    Ok(State {
+        planned_target: Some(PlannedFormat::for_plan(&info, plan.mode)),
+        target_description: Some(target_description(policy)),
+        source: Some(info),
+        message: if plan.mode == Mode::Direct {
+            "Already compatible; no conversion needed"
+        } else {
+            plan.reason
+        }
+        .into(),
+        ..Default::default()
+    })
+}
+
 /// Publishes a terminal snapshot only after local cleanup, including the inhibitor.
 /// No discovery, receiver connection, HTTP server, subtitle or resume side effects.
 pub async fn run(request: Request, updates: watch::Sender<State>, cancel: &CancellationToken) {
     let mut state = State {
-        target_description: Some("MP4 · H.264 · AAC-LC (up to stereo)".into()),
+        target_description: Some(target_description(request.policy)),
         message: "Inspecting media".into(),
         ..Default::default()
     };
@@ -142,7 +183,7 @@ async fn prepare(
     let info = media::inspect(&request.file, &request.probe, cancel).await?;
     state.source = Some(info.clone());
     updates.send_replace(state.clone());
-    let plan = playback::select(&info, Mode::Auto, DirectPlayPolicy::Conservative)?;
+    let plan = playback::select(&info, Mode::Auto, request.policy)?;
     state.planned_target = Some(PlannedFormat::for_plan(&info, plan.mode));
     updates.send_replace(state.clone());
     let Some(mode) = plan.preparation() else {

@@ -35,7 +35,7 @@ int main(int argc,char **argv) {
         auto file=parser.positionalArguments().value(0);
         if (file.isEmpty()) file=QFileDialog::getOpenFileName(nullptr,i18n("Choose a video to convert"));
         if (file.isEmpty()) return 0;
-        ConversionWindow window(backend,file); window.show(); return app.exec();
+        ConversionWindow window(backend,file,{}, {},!parser.isSet("no-discovery")); window.show(); return app.exec();
     }
     Window window(backend,parser.positionalArguments().value(0),!parser.isSet("no-discovery"),{"--http-port",QString::number(port)});
     window.show(); return app.exec();

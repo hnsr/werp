@@ -2,6 +2,8 @@
 #include "backend.h"
 #include <QMainWindow>
 #include <QTimer>
+#include <QSettings>
+class QComboBox;
 class QLabel;
 class QProgressBar;
 class QPushButton;
@@ -10,11 +12,23 @@ class QGroupBox;
 class ConversionWindow : public QMainWindow {
     Q_OBJECT
 public:
-    explicit ConversionWindow(const QString &backend, const QString &file, const QStringList &backendArguments = {}, const QString &settingsFile = {});
+    explicit ConversionWindow(const QString &backend, const QString &file, const QStringList &backendArguments = {}, const QString &settingsFile = {}, bool discoverOnStart = true);
 protected:
     bool eventFilter(QObject *watched,QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 private:
+    void discover();
+    void preview();
+    void startConversion();
+    void refreshActions();
+    QJsonObject targetParams() const;
+    QString m_file;
+    QSettings m_settings;
+    QComboBox *m_devices;
+    QPushButton *m_refresh, *m_convert;
+    QLabel *m_discoveryStatus;
+    bool m_discovering = false, m_previewReady = false, m_started = false;
+    quint64 m_previewGeneration = 0;
     void updateState(const QJsonObject &state);
     void finish(const QJsonObject &state);
     void fail(const QString &message);

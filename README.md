@@ -53,9 +53,11 @@ See [build, installation, architecture, and TV checklist](docs/kde-ui.md) and th
 the new window's real-TV validation is pending.
 
 Open a file with **Yeet (convert only)** to prepare a broadly compatible MP4
-without a receiver, or run `yeet-kde --convert-only FILE`. This uses the conservative
-H.264/stereo AAC target, independent of device rules. The separate window
-shows formats and progress and supports cancellation. Successful conversions
+without starting playback, or run `yeet-kde --convert-only FILE`. Choose a discovered
+video device to use its model rules and local overrides, or choose **Broad compatibility**
+for conservative H.264/stereo AAC output. The last-used device is preselected when
+available. Review the source/target preview, then click **Convert**. The separate
+window shows progress and supports cancellation. Successful conversions
 auto-close after five seconds by default; set `[conversion] autoClose=false` in
 `~/.config/yeet/kde-ui.ini` to keep them open. Outputs use the shared reusable cache; see the [KDE guide](docs/kde-ui.md#convert-only-window).
 

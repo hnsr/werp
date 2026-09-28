@@ -12,6 +12,17 @@ def state(phase_value=None, fraction=None):
         "phase":phase_value or phase,"position_seconds":position,"duration_seconds":120,
         "preparation_operation":"Transcoding","preparation_fraction":fraction,
         "message":"Preparing video" if fraction else None,"notices":[]}})
+def conversion_formats(params):
+    source={"container":"matroska","streams":[{"kind":"video","codec":"hevc","profile":"Main 10","width":1920,"height":1080},{"kind":"audio","codec":"ac3","channels":6}]}
+    planned={"container":"mp4","streams":[{"kind":"video","codec":"h264","profile":"High"},{"kind":"audio","codec":"aac","profile":"LC","channels":2}]}
+    if params.get("device_id")=="tv":
+        planned["streams"][0]=dict(source["streams"][0])
+    if "reuse" in params["file"] and params.get("device_id")=="tv":
+        source["streams"][1]={"kind":"audio","codec":"aac","profile":"LC","channels":6}
+        planned={"container":"mp4","streams":source["streams"]}
+    if "wrapped" in params["file"]:
+        source["streams"][0]["frame_rate"]=23.976
+    return source,planned
 for line in sys.stdin:
     request=json.loads(line)
     with open(__file__+".log","a") as log:
@@ -29,15 +40,24 @@ for line in sys.stdin:
         result={"devices":[
             {"id":"speaker","name":"Speaker","model":"Audio receiver","capabilities":4,"addresses":["127.0.0.1"]},
             {"id":"tv","name":"Test TV","model":"Video receiver","capabilities":1,"addresses":["127.0.0.1"]}]}
+        custom=Path(__file__+".devices.json")
+        if custom.exists():
+            override=json.loads(custom.read_text())
+            if "error" in override:
+                emit({"id":request["id"],"ok":False,"error":{"message":override["error"]}})
+                continue
+            result=override
+    elif method=="preview_conversion":
+        source,planned=conversion_formats(params)
+        result={"source":source,"planned_target":planned,"message":"Ready to convert","warnings":[]}
+        if "slowpreview" in params["file"] and params.get("device_id")=="tv":
+            preview_reply={"id":request["id"],"ok":True,"result":result}
+            delayed=threading.Timer(0.25,lambda reply=preview_reply: emit(reply))
+            delayed.daemon=True; delayed.start()
+            continue
     elif method=="convert":
         session+=1
-        source={"container":"matroska","streams":[{"kind":"video","codec":"hevc","profile":"Main 10","width":1920,"height":1080},{"kind":"audio","codec":"ac3","channels":6}]}
-        planned={"container":"mp4","streams":[{"kind":"video","codec":"h264","profile":"High"},{"kind":"audio","codec":"aac","profile":"LC","channels":2}]}
-        if "reuse" in params["file"]:
-            source["streams"][1]={"kind":"audio","codec":"aac","profile":"LC","channels":6}
-            planned={"container":"mp4","streams":source["streams"]}
-        if "wrapped" in params["file"]:
-            source["streams"][0]["frame_rate"]=23.976
+        source,planned=conversion_formats(params)
         conversion_state={"phase":"preparing","source":source,"planned_target":planned,"target_description":"MP4 · H.264 / HEVC SDR · AAC-LC (up to 6 channels)","operation":"Converting to H.264 and stereo AAC in MP4","fraction":0.42,"message":"Converting video and audio","warnings":[]}
         emit({"id":request["id"],"ok":True,"result":{"operation_id":session}})
         emit({"event":"conversion_state","operation_id":session,"state":conversion_state})

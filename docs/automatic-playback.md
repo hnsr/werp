@@ -66,8 +66,9 @@ as well as relax bundled defaults. Dolby/HE-AAC still requires audio conversion;
 HDR, unsupported pixel formats, larger dimensions and ambiguous tracks remain
 subject to existing guards.
 
-Convert-only has no target model and uses conservative H.264/stereo AAC MP4.
-Normal casting uses the selected receiver's merged rules. Original and prepared
+Convert-only offers a discovered target device and an explicit Convert button. Its
+preview and conversion use the same merged model rules as normal casting. The
+Broad compatibility choice uses conservative H.264/stereo AAC MP4 without a device. Original and prepared
 files are kept. Reuse still requires the same resolved recipe; changing where
 rules are stored does not require a cache format migration.
 
