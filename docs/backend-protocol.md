@@ -139,7 +139,7 @@ to 32. Large libraries are not sent wholesale: inspection covers one file.
 ## Offline conversion
 
 `convert` starts receiver-independent preparation targeting the conservative
-H.264/AAC MP4 profile plus shared `[compatibility]` permissions. Its acknowledgement precedes events. `start` and `convert`
+H.264/stereo AAC MP4 profile, independent of device rules. Its acknowledgement precedes events. `start` and `convert`
 reject overlapping work with `busy`; IDs share the helper's monotonic sequence.
 No CLI preferences, discovery, subtitle selection, HTTP server or resume state
 are involved. Completed output uses the shared retained cache. An already
@@ -177,10 +177,10 @@ At most 16 cancellation acknowledgements may be pending. Shutdown, EOF and
 output failure cancel and join conversions as well as playback/query tasks.
 Auto-close timing belongs to the frontend, not the core or protocol.
 
-Before accepting `start` or `convert`, the helper reads shared `[compatibility]`
-settings from the default user config. It does not apply or validate CLI-only
-preferences. Invalid shared settings or malformed TOML produce `operation_failed`
-without starting the operation. No config file means conservative defaults (plus
-existing model support for casting). Settings are captured per operation; changes
-do not alter an active job. Inspect/discovery remain read-only and config-independent.
-The core receives typed preferences and never reads frontend config itself.
+Before accepting `start`, the helper snapshots the bundled model database merged
+with `$XDG_CONFIG_HOME/yeet/devices.toml` (normally `~/.config/yeet/devices.toml`).
+Invalid overrides produce `operation_failed` without starting playback. A missing
+file retains bundled rules. Edits do not affect an active session. CLI preferences
+are not read. `convert`, inspect and discovery do not load device overrides.
+The core session receives a typed database snapshot, keeping configuration loading
+at the frontend boundary. See [override semantics](device-compatibility.md#user-overrides).

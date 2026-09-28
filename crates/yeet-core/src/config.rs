@@ -1,4 +1,4 @@
-//! Shared compatibility preferences and separate frontend policies.
+//! CLI preferences; device capabilities live in the separate model database.
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -12,47 +12,6 @@ use crate::YeetError;
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub cli: CliPreferences,
-    pub compatibility: CompatibilityPreferences,
-}
-
-/// Independent opt-ins to bounded media profiles. HDR, resolution and track
-/// restrictions remain unchanged.
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct CompatibilityPreferences {
-    pub allow_hevc: bool,
-    pub allow_aac_surround: bool,
-    /// Permit SDR H.264 through Level 4.2 and 1080p60.
-    pub allow_h264_high_frame_rate: bool,
-}
-
-impl CompatibilityPreferences {
-    pub fn relax(self, base: crate::media::DirectPlayPolicy) -> crate::media::DirectPlayPolicy {
-        use crate::media::DirectPlayPolicy as Policy;
-        if base == Policy::Experimental {
-            return base;
-        }
-        if self.allow_h264_high_frame_rate || base.allows_h264_high_frame_rate() {
-            return Policy::H264HighFrameRate {
-                max_fps: if self.allow_h264_high_frame_rate {
-                    60
-                } else {
-                    base.h264_max_fps()
-                },
-                allow_hevc: self.allow_hevc || base.allows_hevc(),
-                allow_aac_surround: self.allow_aac_surround || base.allows_aac_surround(),
-            };
-        }
-        match (
-            self.allow_hevc || base.allows_hevc(),
-            self.allow_aac_surround || base.allows_aac_surround(),
-        ) {
-            (false, false) => Policy::Conservative,
-            (true, false) => Policy::Hevc,
-            (false, true) => Policy::AacSurround,
-            (true, true) => Policy::Extended,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -163,24 +122,6 @@ pub fn load(explicit: Option<&Path>) -> Result<Config, YeetError> {
     load_with(explicit, parse)
 }
 
-/// Frontends consume only the shared section. Syntactically valid CLI settings
-/// are ignored here, including CLI-only validation and preference selection.
-pub fn load_compatibility(explicit: Option<&Path>) -> Result<CompatibilityPreferences, YeetError> {
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Shared {
-        #[serde(default)]
-        compatibility: CompatibilityPreferences,
-        #[serde(default, rename = "cli")]
-        _cli: Option<serde::de::IgnoredAny>,
-    }
-    load_with(explicit, |text| {
-        toml::from_str::<Shared>(text)
-            .map(|config| config.compatibility)
-            .map_err(|e| YeetError::Config(e.to_string()))
-    })
-}
-
 fn load_with<T: Default>(
     explicit: Option<&Path>,
     parse: impl FnOnce(&str) -> Result<T, YeetError>,
@@ -217,43 +158,8 @@ fn load_with<T: Default>(
 mod tests {
     use super::*;
     #[test]
-    fn shared_compatibility_defaults_validation_and_cli_isolation() {
-        let defaults = parse("").unwrap().compatibility;
-        assert!(
-            !defaults.allow_hevc
-                && !defaults.allow_aac_surround
-                && !defaults.allow_h264_high_frame_rate
-        );
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        let valid = "[compatibility]\nallow_hevc=true\nallow_aac_surround=true\nallow_h264_high_frame_rate=true\n";
-        fs_write(&path, valid);
-        let shared = load_compatibility(Some(&path)).unwrap();
-        assert!(
-            shared.allow_hevc && shared.allow_aac_surround && shared.allow_h264_high_frame_rate
-        );
-        assert!(load(Some(&path)).unwrap().compatibility.allow_hevc);
-        fs_write(
-            &path,
-            &format!(
-                "{valid}[cli.subtitles]\nlanguages=['unavailable language']\nauto_load='not a boolean'\n"
-            ),
-        );
-        assert!(load(Some(&path)).is_err());
-        assert!(load_compatibility(Some(&path)).unwrap().allow_hevc);
-        for invalid in [
-            "allow_hevc='yes'",
-            "allow_h264_high_frame_rate='yes'",
-            "allow_av1=true",
-            "allow_aac_suround=true",
-        ] {
-            fs_write(&path, &format!("[compatibility]\n{invalid}\n"));
-            assert!(load(Some(&path)).is_err());
-            assert!(load_compatibility(Some(&path)).is_err());
-        }
-        fn fs_write(path: &Path, text: &str) {
-            std::fs::write(path, text).unwrap();
-        }
+    fn removed_global_compatibility_settings_are_rejected() {
+        assert!(parse("[compatibility]\nallow_hevc=true").is_err());
     }
     #[test]
     fn defaults_aliases_and_invalid_preferences() {

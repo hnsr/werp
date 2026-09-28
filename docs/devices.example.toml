@@ -1,0 +1,25 @@
+# Copy to ~/.config/yeet/devices.toml (or $XDG_CONFIG_HOME/yeet/devices.toml).
+# Optional local overlay; no rebuild needed. See device-compatibility.md.
+schema_version = 1
+
+# Change a known model by canonical ID. Omitted values remain bundled defaults.
+[[devices]]
+id = "KPN DIW7022"
+# Arrays replace the bundled array. Keep aliases you still need.
+aliases = ["DIW7022"]
+[devices.playback]
+# Example restriction for an output setup that needs stereo audio.
+allow_aac_surround = false
+# The bundled ceiling is 50 fps; 59.94/60 fps has not been verified on hardware.
+# h264_max_fps = 60
+
+# Add another model using the model string from `yeet devices` (not its name).
+# New entries start with Baseline; explicitly enable only the desired extensions.
+[[devices]]
+id = "Example TV Model"
+aliases = ["Example TV Model Alias"]
+[devices.playback]
+allow_hevc = true
+allow_aac_surround = false
+h264_max_level = 41
+h264_max_fps = 30

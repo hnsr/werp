@@ -316,7 +316,7 @@ fn assess_input(
 ) -> Result<DirectPlayAssessment, YeetError> {
     let unsupported = |reason: &str| {
         YeetError::UnsupportedMedia(format!(
-            "{reason}. The baseline profile requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without known HDR signalling. Opt in to H.264 Level 4.2/1080p60 with compatibility.allow_h264_high_frame_rate. Use automatic mode to select conversion, or --mode transcode to force SDR H.264/AAC output"
+            "{reason}. The baseline profile requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without known HDR signalling. Opt in to H.264 Level 4.2/1080p60 with a model-specific device database override. Use automatic mode to select conversion, or --mode transcode to force SDR H.264/AAC output"
         ))
     };
     if !info
@@ -395,7 +395,7 @@ fn assess_input(
     }
     if hevc && !policy.allows_hevc() {
         return Err(unsupported(
-            "HEVC requires --profile extended or compatibility.allow_hevc for copying or original-file playback",
+            "HEVC requires --profile extended or a device database rule allowing HEVC for copying or original-file playback",
         ));
     }
     let audio: Vec<_> = info.streams.iter().filter(|s| s.kind == "audio").collect();
@@ -451,7 +451,7 @@ fn assess_input(
     // admit surround AAC on the early HEVC assessment return.
     if audio_channels.is_some_and(|channels| channels > 2) && !policy.allows_aac_surround() {
         return Err(unsupported(
-            "multichannel AAC-LC requires --profile extended or compatibility.allow_aac_surround for copying or original-file playback; check audible audio/downmix on your receiver",
+            "multichannel AAC-LC requires --profile extended or a device database rule allowing surround AAC for copying or original-file playback; check audible audio/downmix on your receiver",
         ));
     }
     if hevc {

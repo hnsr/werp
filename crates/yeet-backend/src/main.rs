@@ -312,14 +312,10 @@ async fn run(args: Args) -> Result<(), String> {
                         }
                         Command::Convert { file } => {
                             if active.is_some() || converting.is_some() { send(&output,error(Some(id),"busy","an operation is already active")).await?; continue; }
-                            let compatibility = match yeet_core::config::load_compatibility(None) {
-                                Ok(settings) => settings,
-                                Err(error) => { send(&output,self::error(Some(id),"operation_failed",error)).await?; continue; }
-                            };
                             let operation_id = next_session; next_session += 1;
                             let cancel = lifetime.child_token();
                             let (progress, updates) = watch::channel(conversion::State::default());
-                            let request = conversion::Request { file, probe:probe.clone(), ffmpeg:args.ffmpeg.clone(), inhibit_sleep:!args.no_inhibit_sleep, cache:Default::default(), compatibility };
+                            let request = conversion::Request { file, probe:probe.clone(), ffmpeg:args.ffmpeg.clone(), inhibit_sleep:!args.no_inhibit_sleep, cache:Default::default() };
                             converting = Some(Converting { id:operation_id, cancel:cancel.clone(), updates, stops:vec![] });
                             send(&output,ok(id,json!({"operation_id":operation_id}))).await?;
                             conversions.spawn(async move { conversion::run(request,progress,&cancel).await; operation_id });
@@ -342,12 +338,12 @@ async fn run(args: Args) -> Result<(), String> {
                             if !position.is_finite() || position < 0.0 {
                                 send(&output,error(Some(id),"invalid_position","position must be nonnegative and finite")).await?; continue;
                             }
-                            let compatibility = match yeet_core::config::load_compatibility(None) {
+                            let device_database = match yeet_core::devices::load(None) {
                                 Ok(settings) => settings,
                                 Err(error) => { send(&output,self::error(Some(id),"operation_failed",error)).await?; continue; }
                             };
                             let mut request = CastRequest::new(file);
-                            request.compatibility = compatibility;
+                            request.device_database = device_database;
                             request.target = Some(Target::Device(device));
                             request.start_position = position;
                             request.subtitle_delay_ms = subtitle_delay_ms;

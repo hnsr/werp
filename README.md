@@ -53,8 +53,8 @@ See [build, installation, architecture, and TV checklist](docs/kde-ui.md) and th
 the new window's real-TV validation is pending.
 
 Open a file with **Yeet (convert only)** to prepare a broadly compatible MP4
-without a receiver, or run `yeet-kde --convert-only FILE`. Shared `[compatibility]`
-settings can allow HEVC and AAC surround to avoid unnecessary transcoding. The separate window
+without a receiver, or run `yeet-kde --convert-only FILE`. This uses the conservative
+H.264/stereo AAC target, independent of device rules. The separate window
 shows formats and progress and supports cancellation. Successful conversions
 auto-close after five seconds by default; set `[conversion] autoClose=false` in
 `~/.config/yeet/kde-ui.ini` to keep them open. Outputs use the shared reusable cache; see the [KDE guide](docs/kde-ui.md#convert-only-window).
@@ -98,9 +98,11 @@ position. Configure `[cli.devices] preferred` with ordered exact names or stable
 Explicit `--device`/`--host` overrides preferences. `--config PATH` selects another
 file; `--no-config` uses built-in defaults. All automatic preferences are under
 `[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`; the UI does not apply them.
-Shared `[compatibility]` settings `allow_hevc`, `allow_aac_surround`, and
-`allow_h264_high_frame_rate` (H.264 up to Level 4.2/1080p60) default to false and relax convert-only and automatic casting. Explicit CLI `--profile`
-values other than `auto` override those settings. See the example TOML for limits.
+Model capabilities can be adjusted or extended in `~/.config/yeet/devices.toml`;
+see [user device overrides](docs/device-compatibility.md#user-overrides).
+They apply to automatic casting in CLI and KDE. Explicit CLI profiles bypass
+model rules; `--no-config` skips local overrides but retains the bundled database.
+`--config PATH` changes only CLI preferences. Global compatibility flags are removed.
 `[cli.playback] auto_resume = false` disables automatic resume while still saving
 progress for explicit resume later.
 
@@ -154,8 +156,7 @@ and HE-AAC audio convert to AAC-LC under the normal profiles. Full encoding uses
 libx264 veryfast/CRF 20, up to 1080p30, and stereo AAC 192 kbps/48 kHz.
 
 Original MP4 H.264 High Level 4.2 at 1080p50 with stereo AAC-LC also passed a
-user playback check on the development KPN receiver with
-`allow_h264_high_frame_rate` enabled.
+user playback check on the development KPN receiver and is now in its bundled policy.
 See the [compatibility notes](docs/automatic-playback.md#h264-1080p50-direct-play-result);
 59.94/60 fps remains unverified on hardware.
 

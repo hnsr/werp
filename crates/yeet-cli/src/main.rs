@@ -29,10 +29,10 @@ struct Cli {
     /// Show debug diagnostics on stderr
     #[arg(short, long, global = true)]
     verbose: bool,
-    /// Read preferences from this TOML file instead of the user config directory
+    /// Read CLI preferences from this TOML file (device overrides stay in the user config directory)
     #[arg(long, global = true, conflicts_with = "no_config")]
     config: Option<PathBuf>,
-    /// Use built-in preferences without loading a configuration file
+    /// Ignore CLI preferences and user device overrides; retain bundled model rules
     #[arg(long, global = true)]
     no_config: bool,
     #[command(subcommand)]
@@ -160,7 +160,7 @@ struct PlaybackArgs {
     /// Select automatically, or require one preparation path
     #[arg(long, value_enum, default_value_t = ModeArg::Auto)]
     mode: ModeArg,
-    /// Receiver compatibility profile (auto uses model plus shared preferences; explicit profiles override config)
+    /// Receiver compatibility profile (auto uses the model database; explicit profiles override its rules)
     #[arg(long, value_enum, default_value_t = ProfileArg::Auto)]
     profile: ProfileArg,
     /// Do not reuse or retain prepared files; remove them after this session
@@ -260,7 +260,7 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     } else {
         None
     };
-    let operation = execute(action, &preferences, &cancellation);
+    let operation = execute(action, &preferences, cli.no_config, &cancellation);
     tokio::pin!(operation);
     let result = tokio::select! {
         result = &mut operation => result.map(|()| ExitCode::SUCCESS),
@@ -285,6 +285,7 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
 async fn execute(
     command: Action,
     preferences: &yeet_core::config::Config,
+    no_config: bool,
     cancel: &CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match command {
@@ -389,7 +390,9 @@ async fn execute(
             };
             request.mode = mode.into();
             request.profile = profile.into();
-            request.compatibility = preferences.compatibility;
+            if !no_config && request.profile == yeet_core::playback::Profile::Auto {
+                request.device_database = yeet_core::devices::load(None)?;
+            }
             request.cache.enabled = !no_cache;
             request.inhibit_sleep = false;
             let _ = no_inhibit_sleep; // The CLI owns inhibition across preflight and playback.

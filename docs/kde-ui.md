@@ -22,8 +22,8 @@ The separate convert-only entry starts offline preparation immediately.
 CLI configuration uses `[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`.
 The last uses `auto_resume`; saving checkpoints is an independent shared capability.
 No compatibility aliases are required. Existing personal config is updated locally.
-The helper reads only shared `[compatibility]` settings when starting work; it
-does not apply CLI configuration. The KDE app stores the last device ID
+The helper snapshots the bundled device database plus local `devices.toml` overrides
+for each new cast; it does not read CLI configuration. The KDE app stores the last device ID
 in `$XDG_CONFIG_HOME/yeet/kde-ui.ini` (normally `~/.config/yeet/kde-ui.ini`), separate
 from `config.toml`. It records the device when a start request is accepted and
 restores it after discovery only if it is still an available video-capable target.
@@ -38,7 +38,7 @@ autoClose=true
 
 `autoClose` defaults to true and closes successful conversions after five seconds.
 Set it to false to leave completed conversions open. It is read when a conversion
-window opens. This setting is independent of the shared/CLI TOML file and has no
+window opens. This setting is independent of the CLI preferences and device override TOML files and has no
 effect on CLI operation. The remembered device remains in the INI's General group.
 
 ## Interaction
@@ -106,10 +106,9 @@ mono/stereo AAC-LC. Compatible streams are copied when possible; an already
 compatible MP4 needs no conversion. Encoded audio is stereo AAC at 192 kbps/48 kHz.
 No receiver is discovered or contacted, and no HTTP listener or resume checkpoint
 is created. The helper acquires the same best-effort sleep inhibitor used by casting.
-Shared `[compatibility]` settings can independently allow bounded SDR HEVC and
-AAC-LC surround; both default to false. The window displays the target reported
-by the backend. CLI automation preferences and the last-used receiver do not
-influence this target. See [configuration](preferences-and-subtitles.md#configuration).
+The window displays the target reported by the backend. Model overrides, CLI
+preferences and the last-used receiver do not influence the offline target.
+See [device overrides](device-compatibility.md#user-overrides) for normal casting.
 
 Completed output is validated and kept beside the canonical source, with the
 existing user-cache fallback if the directory is not writable. Existing conversions

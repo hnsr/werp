@@ -27,13 +27,12 @@ cannot meet its constraints. `--mode auto` is the default. There is no automatic
 retry or escalation after a network/receiver failure: a successful Cast status
 does not establish that audio was audible.
 
-`--profile auto` uses the bundled [device database](device-compatibility.md).
+`--profile auto` uses the bundled [device database](device-compatibility.md)
+merged with optional local model overrides in `~/.config/yeet/devices.toml`.
 KPN DIW7022 starts with Extended support plus the observed H.264 Level 4.2/1080p50
-limit; unknown models start with Baseline. Shared `[compatibility]` permissions
-are added afterward.
-`--host` bypasses discovery, so it starts with Baseline plus those permissions.
-An explicit `--profile baseline`, `extended`, or `experimental` overrides config. This is an observation-based model mapping, not
-receiver capability negotiation or a guarantee for every device of that model.
+limit; unknown models and `--host` use Baseline. Explicit `--profile baseline`,
+`extended`, or `experimental` bypasses model rules. This is an observation-based
+model mapping, not receiver capability negotiation or a guarantee for every unit.
 
 | Profile | Supported video for direct/copy paths | Supported copied audio |
 | --- | --- | --- |
@@ -59,35 +58,18 @@ removed; backward compatibility is not maintained at this stage.
 
 ## Configurable compatibility
 
-All shared flags default to false:
+Compatibility permissions belong to specific models in the optional user
+[device database overlay](device-compatibility.md#user-overrides).
+Global `[compatibility]` flags have been removed. A model may independently admit
+bounded HEVC, AAC-LC surround and H.264 Level 4.2/50 or 60 fps. Rules can tighten
+as well as relax bundled defaults. Dolby/HE-AAC still requires audio conversion;
+HDR, unsupported pixel formats, larger dimensions and ambiguous tracks remain
+subject to existing guards.
 
-```toml
-[compatibility]
-allow_hevc = false
-allow_aac_surround = false
-# Permit SDR H.264 through Level 4.2, up to 1080p60.
-allow_h264_high_frame_rate = false
-```
-
-They independently admit the HEVC and AAC-LC surround portions of Extended.
-With HEVC enabled and AAC surround disabled, HEVC video can be copied while
-surround audio is encoded to stereo. With both enabled and high-frame-rate H.264 disabled, the effective policy is
-exactly Extended, including its cache recipe. The separate `allow_h264_high_frame_rate` flag permits SDR H.264 through
-Level 4.2 at up to 1080p60, without changing HEVC limits. These settings do not
-admit AC-3/E-AC-3 or HE-AAC passthrough, HDR, higher resolutions, or ambiguous tracks.
-The documented hardware batch establishes these HEVC/AAC permissions on the
-observed receiver. A subsequent [H.264 1080p50 trial](#h264-1080p50-direct-play-result)
-also passed with the high-frame-rate opt-in; these observations do not establish
-universal support.
-
-Convert-only reads these shared settings too. A supported HEVC/AAC MP4 may need
-no preparation; a matching MKV needs only remuxing. Unknown audio can still
-require audio-only conversion while HEVC video is preserved. Full video
-transcoding always produces the existing conservative H.264/stereo AAC target.
-Original files and existing prepared files are kept. Reuse still requires the
-same resolved recipe; enabling both shares existing Extended-profile outputs,
-while either partial combination has its own distinct recipe. No cache format
-or version migration is needed.
+Convert-only has no target model and uses conservative H.264/stereo AAC MP4.
+Normal casting uses the selected receiver's merged rules. Original and prepared
+files are kept. Reuse still requires the same resolved recipe; changing where
+rules are stored does not require a cache format migration.
 
 ## Storage and reuse
 
@@ -214,7 +196,7 @@ seek behavior on the expanded paths, or compatibility with other receivers.
 ## H.264 1080p50 direct-play result
 
 The user reported successful original-file playback on the development KPN receiver after
-enabling `compatibility.allow_h264_high_frame_rate`. The tested MP4 contains
+enabling the former global high-frame-rate opt-in (now replaced by model rules). The tested MP4 contains
 1920×1080 H.264 High Level 4.2, 50 fps, 8-bit 4:2:0 (`yuv420p`), BT.709 transfer,
 and stereo AAC-LC at 48 kHz. An attached JPEG cover image is ignored when
 assessing the video stream.
@@ -225,12 +207,11 @@ needed” with FFmpeg unavailable; the subsequent receiver playback confirmation
 comes from the user's report. No source filename or personal device identifier
 is recorded here.
 
-This establishes a successful 1080p50/Level 4.2 trial on this receiver. The setting
-admits up to 1080p60, but 59.94/60 fps has not yet been hardware-validated. This
-report does not establish full-duration playback, seeking, or subtitle behavior
-for this sample. The generic 60 fps option remains off by default and is enabled in the
-development user's personal configuration. The bundled device database now admits
-the observed 50 fps/Level 4.2 case automatically for KPN DIW7022.
+This establishes a successful 1080p50/Level 4.2 trial on this receiver. The bundled
+device database admits that case automatically for KPN DIW7022. A local model
+override can raise the ceiling to 60 fps, but 59.94/60 fps has not yet been
+hardware-validated. This report does not establish full-duration playback, seeking,
+or subtitle behavior for this sample.
 
 ## Reproduce the guided hardware batch
 

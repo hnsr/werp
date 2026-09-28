@@ -26,18 +26,16 @@ pub enum Profile {
 }
 
 impl Profile {
-    /// Explicit profiles override shared preferences; automatic mode adds them
-    /// to the existing receiver-model recommendation.
+    /// Explicit profiles bypass both bundled and user-supplied model rules.
     pub fn resolve_with(
         self,
         model: Option<&str>,
-        preferences: crate::config::CompatibilityPreferences,
+        database: &crate::devices::Database,
     ) -> DirectPlayPolicy {
-        let base = self.resolve(model);
         if self == Self::Auto {
-            preferences.relax(base)
+            database.policy(model)
         } else {
-            base
+            self.resolve(model)
         }
     }
 
@@ -141,8 +139,7 @@ mod tests {
 
     #[tokio::test]
     async fn database_profile_uses_observed_limits_and_preserves_overrides() {
-        use crate::config::CompatibilityPreferences;
-        let preferences = CompatibilityPreferences::default();
+        let preferences = crate::devices::database();
         for model in ["KPN DIW7022", "DIW7022", " kpn diw7022 "] {
             let policy = Profile::Auto.resolve_with(Some(model), preferences);
             assert_eq!(policy.h264_max_fps(), 50);
@@ -159,10 +156,7 @@ mod tests {
                 assert_eq!(select(&source, Mode::Auto, policy).unwrap().mode, expected);
                 let opted_in = Profile::Auto.resolve_with(
                     Some(model),
-                    CompatibilityPreferences {
-                        allow_h264_high_frame_rate: true,
-                        ..preferences
-                    },
+                    &preferences.with_overrides("schema_version=1\n[[devices]]\nid='KPN DIW7022'\n[devices.playback]\nh264_max_fps=60").unwrap(),
                 );
                 assert_eq!(opted_in.h264_max_fps(), 60);
                 assert_eq!(
@@ -201,12 +195,9 @@ mod tests {
 
     #[tokio::test]
     async fn high_frame_rate_h264_is_opt_in_and_keeps_other_limits() {
-        use crate::config::CompatibilityPreferences;
-        let preferences = CompatibilityPreferences {
-            allow_h264_high_frame_rate: true,
-            ..Default::default()
-        };
-        let policy = Profile::Auto.resolve_with(None, preferences);
+        let db = crate::devices::database().with_overrides("schema_version=1\n[[devices]]\nid='Test TV'\n[devices.playback]\nh264_max_level=42\nh264_max_fps=60").unwrap();
+        let preferences = &db;
+        let policy = Profile::Auto.resolve_with(Some("Test TV"), preferences);
         assert!(policy.allows_h264_high_frame_rate());
         assert!(!policy.allows_hevc());
         assert!(!policy.allows_aac_surround());
@@ -225,7 +216,7 @@ mod tests {
                     select(
                         &source,
                         Mode::Auto,
-                        explicit.resolve_with(None, preferences)
+                        explicit.resolve_with(Some("Test TV"), preferences)
                     )
                     .unwrap()
                     .mode,
@@ -268,12 +259,11 @@ mod tests {
                 Mode::Transcode
             );
         }
-        let relaxed = CompatibilityPreferences {
+        let relaxed = DirectPlayPolicy::H264HighFrameRate {
             allow_hevc: true,
             allow_aac_surround: true,
-            ..preferences
-        }
-        .relax(policy);
+            max_fps: 60,
+        };
         assert!(
             relaxed.allows_hevc()
                 && relaxed.allows_aac_surround()
@@ -290,24 +280,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn independent_compatibility_flags_and_explicit_profile_precedence() {
-        use crate::config::CompatibilityPreferences as Preferences;
+    async fn independent_model_permissions_and_explicit_profile_precedence() {
         for allow_hevc in [false, true] {
             for allow_aac_surround in [false, true] {
-                let preferences = Preferences {
-                    allow_hevc,
-                    allow_aac_surround,
-                    ..Default::default()
-                };
-                let policy = Profile::Auto.resolve_with(None, preferences);
+                let db = crate::devices::database().with_overrides(&format!("schema_version=1\n[[devices]]\nid='Test TV'\n[devices.playback]\nallow_hevc={allow_hevc}\nallow_aac_surround={allow_aac_surround}")).unwrap();
+                let preferences = &db;
+                let policy = Profile::Auto.resolve_with(Some("Test TV"), preferences);
                 assert_eq!(policy.allows_hevc(), allow_hevc);
                 assert_eq!(policy.allows_aac_surround(), allow_aac_surround);
                 assert_eq!(
-                    Profile::Baseline.resolve_with(None, preferences),
+                    Profile::Baseline.resolve_with(Some("Test TV"), preferences),
                     DirectPlayPolicy::Conservative
                 );
                 assert_eq!(
-                    Profile::Extended.resolve_with(None, preferences),
+                    Profile::Extended.resolve_with(Some("Test TV"), preferences),
                     DirectPlayPolicy::Extended
                 );
                 assert_eq!(
@@ -346,16 +332,6 @@ mod tests {
                 }
             }
         }
-        let both = Preferences {
-            allow_hevc: true,
-            allow_aac_surround: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            both.relax(DirectPlayPolicy::Conservative),
-            DirectPlayPolicy::Extended,
-            "same admission policy uses the existing Extended cache recipe"
-        );
     }
 
     #[cfg(unix)]

@@ -44,7 +44,7 @@ pub struct CastRequest {
     pub ffmpeg: PathBuf,
     pub mode: Mode,
     pub profile: Profile,
-    pub compatibility: crate::config::CompatibilityPreferences,
+    pub device_database: crate::devices::Database,
     pub cache: CacheOptions,
     pub transcode: TranscodeOptions,
     /// Best-effort Linux sleep inhibition during preparation and playback.
@@ -68,7 +68,7 @@ impl CastRequest {
             ffmpeg: "ffmpeg".into(),
             mode: Mode::Auto,
             profile: Profile::Auto,
-            compatibility: Default::default(),
+            device_database: Default::default(),
             cache: CacheOptions::default(),
             transcode: TranscodeOptions::default(),
             inhibit_sleep: true,
@@ -246,7 +246,7 @@ pub async fn run_controlled(
             }
             None => return Err(YeetError::Discovery("an explicit device is required".into())),
         };
-        let policy = request.profile.resolve_with(model.as_deref(), request.compatibility);
+        let policy = request.profile.resolve_with(model.as_deref(), &request.device_database);
         if matches!(request.subtitles, subtitles::Request::Auto) { return Err(YeetError::Subtitles("an explicit subtitle choice is required".into())); }
         let subtitle_preferences = crate::config::SubtitlePreferences { auto_load: false, languages: vec![] };
         let subtitle = tokio::select! {

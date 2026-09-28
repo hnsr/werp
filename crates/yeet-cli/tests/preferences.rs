@@ -64,6 +64,16 @@ fn config_location_language_order_and_cli_subtitle_overrides() {
     let alternate = dir.path().join("alternate.toml");
     fs::write(&alternate, "[cli.subtitles]\nlanguages=['nl']\n").unwrap();
     assert!(run(&["--config", alternate.to_str().unwrap()]).contains("embedded stream #3"));
+    fs::write(&config, "[cli.subtitles]\nlanguages=['nl']\n").unwrap();
+    let overrides = config_dir.join("devices.toml");
+    fs::write(&overrides, "schema_version=1\nunknown=true").unwrap();
+    assert!(run(&[]).contains("device database"));
+    assert!(run(&["--config", alternate.to_str().unwrap()]).contains("device database"));
+    assert!(run(&["--no-config"]).contains("embedded stream #2"));
+    assert!(run(&["--profile", "baseline"]).contains("embedded stream #3"));
+    assert!(run(&["--profile", "extended"]).contains("embedded stream #3"));
+    fs::write(&overrides, "schema_version=1").unwrap();
+    assert!(run(&[]).contains("embedded stream #3"));
     fs::write(&config, "[cli.subtitles]\nauto_lod=true\n").unwrap();
     assert!(run(&[]).contains("invalid configuration"));
 }

@@ -340,7 +340,7 @@ exec sleep 60
 }
 
 #[test]
-fn convert_reads_shared_preferences_per_operation_without_applying_cli_policies() {
+fn convert_uses_baseline_without_reading_cli_or_device_settings() {
     let dir = tempfile::tempdir().unwrap();
     let probe = dir.path().join("probe");
     fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
@@ -364,44 +364,25 @@ fn convert_reads_shared_preferences_per_operation_without_applying_cli_policies(
     let mut helper = Helper::with_ffmpeg(Some(&probe), Some(&dir.path().join("no-ffmpeg")), &state);
     helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
     assert_eq!(helper.read()["ok"], true);
-    for (id, enabled, expected) in [(2, true, "completed"), (3, false, "failed")] {
-        fs::write(&config,format!("[compatibility]\nallow_hevc={enabled}\nallow_aac_surround={enabled}\n[cli.subtitles]\nlanguages=['unsupported']\n[cli.devices]\npreferred=['']\n")).unwrap();
-        helper.send(json!({"id":id,"method":"convert","params":{"file":file}}));
-        let ack = helper.read();
-        assert_eq!(ack["ok"], true, "{ack}");
-        loop {
-            let event = helper.read();
-            if event["event"] == "conversion_ended" {
-                assert_eq!(event["state"]["phase"], expected, "{event}");
-                if enabled {
-                    assert_eq!(event["state"]["already_compatible"], true);
-                    assert!(
-                        event["state"]["target_description"]
-                            .as_str()
-                            .unwrap()
-                            .contains("HEVC")
-                    );
-                    assert!(
-                        event["state"]["target_description"]
-                            .as_str()
-                            .unwrap()
-                            .contains("6 channels")
-                    );
-                }
-                break;
-            }
+    fs::write(&config, "[cli.subtitles]\nlanguages=['unsupported']\n").unwrap();
+    fs::write(config.with_file_name("devices.toml"), "invalid TOML").unwrap();
+    helper.send(json!({"id":2,"method":"convert","params":{"file":file}}));
+    assert_eq!(helper.read()["ok"], true);
+    loop {
+        let event = helper.read();
+        if event["event"] == "conversion_ended" {
+            // HEVC requires conversion without a target receiver; missing FFmpeg
+            // proves it did not skip conversion using unrelated model rules.
+            assert_eq!(event["state"]["phase"], "failed", "{event}");
+            assert!(
+                event["state"]["target_description"]
+                    .as_str()
+                    .unwrap()
+                    .contains("H.264")
+            );
+            break;
         }
     }
-    fs::write(&config, "[compatibility]\nallow_hevc='yes'\n").unwrap();
-    helper.send(json!({"id":4,"method":"convert","params":{"file":file}}));
-    let error = helper.read();
-    assert_eq!(error["ok"], false);
-    assert!(
-        error["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("config")
-    );
     helper.send(json!({"id":5,"method":"shutdown"}));
     assert_eq!(helper.read()["ok"], true);
     helper.wait();

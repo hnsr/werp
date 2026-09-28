@@ -6,13 +6,6 @@ use yeet_core::{
 };
 
 async fn convert(file: &Path) -> State {
-    convert_with(file, Default::default()).await
-}
-
-async fn convert_with(
-    file: &Path,
-    compatibility: yeet_core::config::CompatibilityPreferences,
-) -> State {
     let (updates, state) = watch::channel(State::default());
     conversion::run(
         conversion::Request {
@@ -21,7 +14,6 @@ async fn convert_with(
             ffmpeg: "ffmpeg".into(),
             inhibit_sleep: false,
             cache: Default::default(),
-            compatibility,
         },
         updates,
         &CancellationToken::new(),
@@ -161,8 +153,7 @@ async fn offline_conversion_copies_encodes_reuses_and_skips_compatible_sources()
 
 #[tokio::test]
 #[ignore = "requires real FFmpeg with libx264/libx265, AAC and ffprobe"]
-async fn relaxed_offline_target_preserves_hevc_and_shares_extended_cache() {
-    use yeet_core::{cache, config::CompatibilityPreferences, media, transcode};
+async fn offline_target_converts_hevc_surround_to_baseline() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("hevc-surround.mkv");
     let generated = tokio::process::Command::new("ffmpeg")
@@ -209,59 +200,7 @@ async fn relaxed_offline_target_preserves_hevc_and_shares_extended_cache() {
         baseline.target.unwrap().streams[0].codec.as_deref(),
         Some("h264")
     );
-    let hevc_only = convert_with(
-        &file,
-        CompatibilityPreferences {
-            allow_hevc: true,
-            allow_aac_surround: false,
-            ..Default::default()
-        },
-    )
-    .await;
-    assert_eq!(
-        hevc_only.operation.as_deref(),
-        Some("Copying video; converting audio to stereo AAC")
-    );
-    let target = hevc_only.target.unwrap();
-    assert_eq!(target.streams[0].codec.as_deref(), Some("hevc"));
-    assert_eq!(target.streams[1].channels, Some(2));
-    let both = CompatibilityPreferences {
-        allow_hevc: true,
-        allow_aac_surround: true,
-        ..Default::default()
-    };
-    let relaxed = convert_with(&file, both).await;
-    assert_eq!(
-        relaxed.operation.as_deref(),
-        Some("Copying video and audio into MP4")
-    );
-    let target = relaxed.target.unwrap();
-    assert_eq!(target.streams[0].codec.as_deref(), Some("hevc"));
-    assert_eq!(target.streams[1].channels, Some(6));
-    assert!(convert_with(&target.path, both).await.already_compatible);
-    let cancel = CancellationToken::new();
-    let source = media::inspect(&file, &Default::default(), &cancel)
-        .await
-        .unwrap();
-    // Existing cast preparation with the Extended profile must see the exact
-    // same recipe; a missing encoder proves that this is a genuine cache hit.
-    let mut reused = false;
-    let cached = cache::prepare(
-        &source,
-        Path::new("/nonexistent/ffmpeg"),
-        &Default::default(),
-        &transcode::TranscodeOptions {
-            mode: transcode::TranscodeMode::Remux,
-            playback_policy: media::DirectPlayPolicy::Extended,
-            ..Default::default()
-        },
-        &Default::default(),
-        &cancel,
-        |event| reused |= matches!(event, cache::Event::Reused(_)),
-    )
-    .await
-    .unwrap();
-    assert!(reused);
-    assert_eq!(cached.info.path, target.path);
-    cached.close().unwrap();
+    let repeated = convert(&file).await;
+    assert!(repeated.reused);
+    assert_eq!(repeated.target.unwrap().streams[1].channels, Some(2));
 }

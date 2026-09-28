@@ -12,12 +12,56 @@ canonical first entry; `DIW7022` is an alias. Matching uses the discovered model
 string, ignoring ASCII case and surrounding whitespace. It never matches a
 friendly name, IP address, serial number, or partial model prefix.
 
-With `--profile auto`, a known model supplies the base policy. Shared
-`[compatibility]` settings can add permissions. Unknown models and `--host` begin
-with Baseline. Explicit Baseline/Extended/Experimental profiles override both
-model policy and config; forced full transcoding still targets conservative
-H.264/stereo AAC. Convert-only has no target device and continues to use Baseline
-plus the shared settings, rather than assuming the KPN device.
+With `--profile auto`, the bundled rules are merged with the user's optional
+`devices.toml`, then matched against the discovered model. Unknown models and
+`--host` use Baseline. Explicit Baseline/Extended/Experimental profiles override
+model rules; forced full transcoding still targets conservative H.264/stereo AAC.
+Convert-only has no target device and uses Baseline without model overrides.
+
+## User overrides
+
+Create `$XDG_CONFIG_HOME/yeet/devices.toml` (normally `~/.config/yeet/devices.toml`).
+This is separate from CLI preferences in `config.toml`. No rebuild is needed.
+See [the example](devices.example.toml). For example, to restrict one known model:
+
+```toml
+schema_version = 1
+
+[[devices]]
+id = "KPN DIW7022"
+[devices.playback]
+allow_aac_surround = false
+```
+
+Entries merge by **canonical model ID**, ignoring ASCII case and surrounding
+whitespace. Use `KPN DIW7022` to edit that entry, rather than its `DIW7022` alias.
+Omitted fields inherit bundled values; explicit `false` values can disable a
+permission. Provided arrays (`aliases`, `limitations`, `observations`) replace
+the corresponding array, so include existing aliases you want to keep. An empty
+array clears the list. Other optional fields are `receiver_app`, `firmware` and
+`scope`. A new model starts with Baseline playback, no aliases or observations,
+and metadata identifying it as a local, unverified override. Personal entries
+need no observation records; any supplied observations must follow the bundled
+schema. Overrides never modify the bundled evidence or count as hardware passes.
+
+Playback fields are `allow_hevc`, `allow_aac_surround`, `h264_max_level` and
+`h264_max_fps`. Supported level/fps pairs are `(41, 30)` and `(42, 30|50|60)`.
+For a new Level 4.2 model set both numeric fields; they are merged independently.
+These permissions retain the media guards below; arbitrary new codecs cannot
+be enabled by adding unknown keys.
+
+Missing default files use the bundled database. Invalid TOML, unknown keys,
+duplicate IDs, conflicting aliases, invalid limits and files over 64 KiB fail
+visibly. Validation checks the entire merged database, so a local alias cannot
+silently shadow another model. The file is read for every new automatic CLI cast
+and KDE `start`; edits do not affect an active session. `--no-config` ignores both
+CLI preferences and local device overrides but retains bundled rules.
+`--config PATH` changes only the CLI preferences file; device overrides remain in the XDG
+location. Explicit CLI profiles bypass user database loading. Convert-only and
+backend inspect/discovery do not read this file.
+
+Exact aliases are already supported. Fuzzy matching, individual-device rules and
+stronger identification remain deferred.
 
 The database controls format selection through Yeet's existing media guards.
 Missing metadata, HDR, unsupported pixel formats and ambiguous track selection
@@ -35,7 +79,7 @@ from these observations, so recording a test does not silently enable a format.
 | --- | --- |
 | H.264 MP4 with stereo AAC-LC | Original-file picture and sound confirmed on several files. |
 | H.264 High Level 4.2 / 1080p50 | Original-file playback confirmed; admitted automatically for this model. |
-| H.264 59.94/60 fps | Untested on hardware; requires `allow_h264_high_frame_rate = true`. |
+| H.264 59.94/60 fps | Untested on hardware; requires a local `h264_max_fps = 60` model override. |
 | HEVC Main/Main 10 SDR | Bounded Level 4.0/1080p30 copying/direct policy; Main 10 original-file and Main/Main 10 remux trials passed. |
 | AAC-LC through six channels | Audible playback confirmed; discrete surround output was not established. |
 | AC-3 original-file audio | One trial was silent. Automatic playback converts audio to stereo AAC. |
@@ -50,9 +94,9 @@ from these observations, so recording a test does not silently enable a format.
 The 50 fps observation does not establish 59.94/60 fps support, full-duration
 stability, every possible codec combination, or support on every unit/firmware.
 The generic Extended profile retains its old 30 fps/Level 4.1 H.264 boundary.
-Personal high-frame-rate opt-ins can still permit 60 fps independently.
+A local model override can permit 60 fps without changing other receivers.
 
-## Maintaining the database
+## Maintaining the bundled database
 
 Edit `crates/yeet-core/data/devices.toml` and rebuild the app. Add an exact model ID
 and explicit aliases, then record bounded playback permissions and observations.
@@ -69,7 +113,7 @@ codec capabilities requires corresponding core support, not just a data edit.
 Model identifiers are suitable for committed data. Keep personal device names,
 network addresses, unique receiver IDs and downloaded filenames out of it.
 Automated checks validate the schema, unique model names/aliases, supported policy
-bounds, evidence links and selection behavior, including config/profile precedence.
+bounds, evidence links and selection behavior, including override/profile precedence.
 
 Run `cargo test --locked -p yeet-core --lib` after database edits. Hardware tests
 remain manual and must name the path and observed result; unit tests do not

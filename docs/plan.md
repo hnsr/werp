@@ -358,7 +358,8 @@ retain the historical evidence from explicit modes.
   stereo AAC conversion, or full SDR H.264/stereo AAC conversion, in that order.
 - A pure backend decision module owns selection; the CLI only maps `--mode` and
   `--profile`. Mode overrides require their requested path or return a clear error.
-- Automatic receiver profiles use the bundled [device database](device-compatibility.md):
+- Automatic receiver profiles use the bundled [device database](device-compatibility.md)
+  merged with optional user `devices.toml` overrides:
   KPN DIW7022 has Extended support plus observed H.264 Level 4.2/1080p50, with
   Baseline for unknown receivers/explicit hosts. Extended permits bounded HEVC and
   multichannel AAC-LC; Dolby and HE-AAC audio convert. The experimental AC-3 trial

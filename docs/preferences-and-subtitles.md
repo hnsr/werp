@@ -20,12 +20,6 @@ change behavior. CLI overrides take precedence over file preferences.
 See [the example TOML](config.example.toml). Supported settings:
 
 ```toml
-[compatibility]
-allow_hevc = false
-allow_aac_surround = false
-# Permit SDR H.264 through Level 4.2, up to 1080p60.
-allow_h264_high_frame_rate = false
-
 [cli.subtitles]
 auto_load = true
 languages = ["en", "nl"]
@@ -40,25 +34,14 @@ auto_resume = true
 The built-in device preference list is empty. Personal device names belong in
 the user's configuration, never in tracked examples or commits.
 
-`[compatibility]` is shared by the CLI and KDE helper. All flags default to
-false. `allow_hevc` admits SDR HEVC Main/Main 10 up to level 4.0/1080p30;
-`allow_aac_surround` admits AAC-LC with up to six channels. The flags are
-independent: HEVC alone still converts multichannel audio to stereo.
-`allow_h264_high_frame_rate` admits SDR H.264 through Level 4.2 at up to 1080p60;
-it does not raise HEVC limits. HDR, larger dimensions, unsupported pixel formats
-or codec profiles, and ambiguous tracks remain excluded. Dolby/HE-AAC audio still
-converts to AAC-LC. Enable only formats known to work on the intended receiver;
-these are global preferences, not device negotiation.
-
-Convert-only adds these permissions to its conservative target. Automatic casting
-adds them to the existing receiver-model profile. Existing known-model support
-is preserved when flags are false. Explicit CLI `--profile baseline`, `extended`,
-or `experimental` overrides these preferences; `--mode transcode` still forces
-H.264/stereo AAC. CLI `--no-config` disables file preferences, while model detection
-still applies. The helper reads the shared section for each new conversion or
-cast; it ignores CLI-only values and validates the shared section. Malformed TOML
-or invalid shared fields fail the new operation visibly. Inspect/discovery remain
-independent of configuration. No settings change an operation already in progress.
+Device capabilities are configured separately in the optional
+[model database overlay](device-compatibility.md#user-overrides), shared by
+CLI and KDE casting. Global `[compatibility]` flags are removed and rejected.
+`--no-config` ignores both CLI preferences and local model overrides, retaining
+bundled rules. `--config PATH` changes only CLI preferences; the model overlay
+stays in the default XDG location. Explicit CLI profiles bypass model overrides.
+The KDE helper does not read CLI preferences. Convert-only uses Baseline because
+there is no selected receiver.
 
 ## Subtitle selection and rendering
 

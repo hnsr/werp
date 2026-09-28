@@ -12,7 +12,7 @@ limitations = [
   "AAC surround trials confirm audible output, not discrete six-channel output.",
   "Direct-play codec support does not imply original Matroska support.",
   "Full-duration drift and seeking across every prepared format remain unverified.",
-  "H.264 59.94/60 fps requires a separate opt-in; only 50 fps has been observed above 30 fps.",
+  "H.264 59.94/60 fps requires a local model override; only 50 fps has been observed above 30 fps.",
 ]
 
 [devices.playback]
@@ -138,7 +138,7 @@ id = "h264-5994-60fps"
 status = "untested"
 path = "direct"
 format = "H.264 Level 4.2 at 1080p59.94/60"
-result = "Permitted only by the global high-frame-rate opt-in, not by this model's observed 50 fps policy."
+result = "Permitted only by a local h264_max_fps = 60 model override, not by this model's observed 50 fps policy."
 evidence = ["docs/automatic-playback.md#h264-1080p50-direct-play-result"]
 
 [[devices.observations]]
