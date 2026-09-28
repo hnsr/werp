@@ -99,7 +99,7 @@ Without a filename this mode opens a file picker. It shows the filename, target
 selection, and separate Source and Target sections before starting work. During
 conversion it shows progress and Cancel.
 Source and Target headings are bold and left-aligned. Both sections use fixed
-Container, Video, Resolution and Audio rows, with bold labels and regular-weight
+Container, Video, Resolution and Audio rows, with regular-weight labels and
 values. Selected video and Available file captions are bold too. The target
 shows the planned format before cache lookup, then fills in probed output details
 without changing the layout. Container aliases are normalized (for example, MP4).

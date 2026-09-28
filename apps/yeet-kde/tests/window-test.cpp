@@ -127,7 +127,7 @@ private slots:
             auto *heading=window.findChild<QLabel *>(QString(name)+"Heading");
             QVERIFY(heading->font().bold()); QVERIFY(heading->alignment() & Qt::AlignLeft);
             for (const auto *suffix : {"Container","Video","Resolution","Audio"}) {
-                QVERIFY(window.findChild<QLabel *>(QString(name)+suffix+"Label")->font().bold());
+                QVERIFY(!window.findChild<QLabel *>(QString(name)+suffix+"Label")->font().bold());
                 QVERIFY(!window.findChild<QLabel *>(QString(name)+suffix)->font().bold());
             }
         }

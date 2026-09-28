@@ -196,7 +196,7 @@ QGroupBox *ConversionWindow::createFormatSection(const QString &title,const QStr
         auto valueFont=font(); valueFont.setBold(false); value->setFont(valueFont);
         // Keep data at regular weight, independently of heading styling.
         auto *captionLabel=label(section,qPrintable(name+suffix+"Label"),caption);
-        bold(captionLabel); captionLabel->setWordWrap(false);
+        captionLabel->setFont(valueFont); captionLabel->setWordWrap(false);
         form->addRow(captionLabel,value); return value;
     };
     fields.container=row(i18n("Container:"),"Container");
