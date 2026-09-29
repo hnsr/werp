@@ -3,6 +3,7 @@ name = "werp-backend"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 werp-core = { path = "../werp-core" }

@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QFileInfo>
+#include <QIcon>
 #include <KAboutData>
 #include <KLocalizedString>
 int main(int argc,char **argv) {
@@ -12,8 +13,11 @@ int main(int argc,char **argv) {
     KAboutData about("werp",i18n("Werp"),"0.1.0");
     about.setShortDescription(i18n("Play local videos on a Chromecast"));
     KAboutData::setApplicationData(about);
-    QApplication::setDesktopFileName("org.werp.Werp");
-    QApplication::setWindowIcon(QIcon::fromTheme("video-display"));
+    QApplication::setDesktopFileName("nl.hnsr.Werp");
+    QIcon bundledIcon;
+    for (const int size : {16,22,24,32,48,64,96,128,256,512})
+        bundledIcon.addFile(QStringLiteral(":/icons/%1x%1/apps/nl.hnsr.Werp.png").arg(size));
+    QApplication::setWindowIcon(QIcon::fromTheme("nl.hnsr.Werp",bundledIcon));
     QCommandLineParser parser; parser.setApplicationDescription(about.shortDescription()); parser.addHelpOption(); parser.addVersionOption();
     parser.addPositionalArgument("file",i18n("Local video to open"),"[file]");
     parser.addOption({"backend",i18n("Backend helper executable"),"path"});
@@ -31,7 +35,7 @@ int main(int argc,char **argv) {
         if (!QFileInfo::exists(backend)) backend=QCoreApplication::applicationDirPath()+"/"+QStringLiteral(WERP_HELPER_RELATIVE);
     }
     if (parser.isSet("convert-only")) {
-        QApplication::setDesktopFileName("org.werp.Werp.ConvertOnly");
+        QApplication::setDesktopFileName("nl.hnsr.Werp.ConvertOnly");
         auto file=parser.positionalArguments().value(0);
         if (file.isEmpty()) file=QFileDialog::getOpenFileName(nullptr,i18n("Choose a video to convert"));
         if (file.isEmpty()) return 0;

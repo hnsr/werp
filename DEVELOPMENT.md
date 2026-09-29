@@ -55,7 +55,8 @@ The Rust CLI has no Qt dependency; Python is used only by the native test fixtur
 
 For local installation, configure `-DCMAKE_INSTALL_PREFIX="$HOME/.local"`, rebuild
 and run `cmake --install target/kde`. CMake installs the UI in `bin`, the helper in
-the KDE libexec directory, and both desktop entries. Ensure the install's `bin` is
+the KDE libexec directory, both desktop entries, and the application icons in the
+`hicolor` theme. Ensure the install's `bin` is
 in the desktop session's PATH. This does not change the default video player.
 RPM packaging/clean-system validation is still open.
 
@@ -65,18 +66,47 @@ The development setup uses user-local desktop entries pointing at the checkout.
 To register or repair them after moving it, run from the repository root:
 
 ```sh
+bash scripts/install-app-icons.sh
 desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
   --set-key=Exec --set-value="\"$PWD/target/kde/werp-kde\" --http-port 8010 %f" \
-  apps/werp-kde/org.werp.Werp.desktop
+  apps/werp-kde/nl.hnsr.Werp.desktop
 desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
   --set-key=Exec --set-value="\"$PWD/target/kde/werp-kde\" --convert-only %f" \
-  apps/werp-kde/org.werp.Werp.ConvertOnly.desktop
+  apps/werp-kde/nl.hnsr.Werp.ConvertOnly.desktop
 update-desktop-database "${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 kbuildsycoca6
 ```
 
 The entries advertise the MIME types in the committed desktop files, including
 MP4 and MKV. An Open With association is not a codec-compatibility guarantee.
+
+Install the icons even when launching directly from `target/kde`, then restart
+Werp. This lets both Qt and KWin resolve `nl.hnsr.Werp` by name. A desktop entry
+pointing directly at a PNG only fixes the launcher icon. With Qt 6.11.2 on
+Wayland, [Qt's bundled-icon transfer](https://github.com/qt/qtbase/blob/v6.11.2/src/plugins/platforms/wayland/plugins/shellintegration/xdg-shell/qwaylandxdgtopleveliconv1.cpp)
+uses straight alpha where KWin expects premultiplied alpha, producing dark or
+colored title-bar fringes. Loading the
+installed icon by name avoids that transfer path. Re-run the icon installation
+script after regenerating artwork; a full CMake installation already includes it.
+
+### Application icon artwork
+
+The editable master is `apps/werp-kde/icons/scalable/apps/nl.hnsr.Werp.svg`.
+The original artwork is kept alongside it at `apps/werp-kde/icons/worp-logo.png`
+and `apps/werp-kde/icons/worp-logo.svg`. The app icon preserves the SVG's red paths
+on a circular white base, with a gradient shadow and transparent outer padding.
+PNG exports cover 16, 22, 24, 32,
+48, 64, 96, 128, 256 and 512 pixels. CMake installs both formats under the shared
+`nl.hnsr.Werp` icon name for both launchers and embeds the PNGs for uninstalled
+builds. No SVG renderer is required for the bundled fallback.
+
+After editing the master, regenerate the checked-in PNGs with Inkscape:
+
+```sh
+bash scripts/generate-app-icons.sh
+```
+
+Inkscape is only needed to regenerate artwork, not to build or run Werp.
 
 ## Development launch options
 

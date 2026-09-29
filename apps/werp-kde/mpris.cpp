@@ -33,7 +33,7 @@ public:
     bool canRaise() const { return true; }
     bool hasTrackList() const { return false; }
     QString identity() const { return QStringLiteral("Werp"); }
-    QString desktopEntry() const { return QStringLiteral("org.werp.Werp"); }
+    QString desktopEntry() const { return QStringLiteral("nl.hnsr.Werp"); }
     QStringList supportedUriSchemes() const { return {}; }
     QStringList supportedMimeTypes() const { return {}; }
 public slots:
