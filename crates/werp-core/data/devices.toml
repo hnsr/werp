@@ -147,7 +147,6 @@ status = "intermittent"
 path = "playback"
 format = "Longer playback interrupted after approximately five to ten minutes"
 result = "User suspected laptop standby; cause was not confirmed. Host sleep inhibition was subsequently implemented and checked locally, but no long-video or actual-suspend validation established that it resolves this interruption."
-evidence = ["README.md#sleep-prevention", "docs/plan.md#open-functional-and-release-work"]
 
 [[devices.observations]]
 id = "h264-pq-tagged-direct"

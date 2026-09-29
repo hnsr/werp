@@ -102,19 +102,14 @@ preferences for the KDE frontend use `kde-ui.ini`. XDG locations are supported. 
 
 ## Limits and networking
 
-Known HDR/Dolby Vision, multiple tracks requiring explicit audio/video selection,
-and missing required metadata remain errors. On-the-fly transcoding/remuxing, hardware
-acceleration, HDR tone mapping and broader platform support are deferred. DVD/VobSub
-and DVB image subtitles are not supported; embedded PGS burn-in is supported.
-See [subtitles](docs/preferences-and-subtitles.md).
-
-PQ/HLG colour tags are accepted when the video is played directly or copied;
-rendering depends on the receiver. Transcoding HDR-tagged sources, including
-subtitle burn-in, is experimental: the usual 8-bit H.264 output is produced without
-tone mapping or a guarantee of correct HDR rendering. Dolby Vision, multiple tracks
-requiring explicit audio/video selection, and missing required metadata remain errors.
+PQ/HLG colour tags alone do not prevent direct playback or video copying. Werp
+preserves the video and its colour signalling on those paths; the receiver may
+still reject the format or render it incorrectly. Transcoding HDR-tagged sources,
+including subtitle burn-in, is experimental: Werp produces its usual 8-bit H.264
+output without tone mapping or a guarantee of correct rendering. Dolby Vision,
+multiple tracks requiring explicit audio/video selection, and missing required
+metadata remain errors.
 Live encoding, hardware acceleration, HDR tone mapping and broader platform support
 are deferred. Advanced ASS styling and external bitmap files remain limited.
 DVD/VobSub and DVB image subtitles are not supported; embedded PGS burn-in remains
 supported. See [subtitles](docs/preferences-and-subtitles.md).
-

@@ -23,7 +23,7 @@ frontends can reuse the backend protocol; they are not implemented yet.
 | --- | --- |
 | Inspection and discovery | ffprobe metadata, bounded IPv4 mDNS discovery, explicit selectors and CLI preferences implemented. |
 | Casting and lifecycle | Local HTTP range serving, subtitles, ownership-aware stop, cancellation and cleanup implemented. |
-| Media preparation | Automatic direct play → MP4 remux → audio-only conversion → full SDR conversion; adjacent-file cache with user-cache fallback. |
+| Media preparation | Automatic direct play → MP4 remux → audio-only conversion → full H.264/AAC conversion; adjacent-file cache with user-cache fallback. |
 | Subtitles | External/embedded text, preferred-language selection, signed delay, and embedded bitmap burn-in. Current sample-set scope accepted. |
 | Resume and power | Persistent checkpoints and Linux sleep inhibition implemented; GUI resume is explicit. |
 | GUI player | File opening (Dolphin integration in the KDE frontend), drag-and-drop, device/subtitle selection, preparation progress, pause/play/seek/stop and keyboard shortcuts. |
@@ -124,4 +124,3 @@ manual acceptance checklist; reproduce and investigate issues as they arise.
 | [GUI guide](gui.md) | Interaction, launch options and settings |
 | [Development guide](../DEVELOPMENT.md) | Setup, builds, local installation, contributor workflows and validation |
 | [Backend protocol](backend-protocol.md) | Exact private frontend contract |
-| [Sleep prevention](../README.md#sleep-prevention) | Linux support and validation limits |

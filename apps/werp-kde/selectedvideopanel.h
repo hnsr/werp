@@ -27,12 +27,24 @@ public:
         m_filename->setAlignment(Qt::AlignLeft|Qt::AlignTop);
         m_filename->setTextInteractionFlags(Qt::TextSelectableByMouse);
         layout->addWidget(m_filename);
+        m_subtitle=new QLabel(this); m_subtitle->setObjectName("activeSubtitle");
+        m_subtitle->setTextFormat(Qt::PlainText); m_subtitle->setWordWrap(true);
+        m_subtitle->setAlignment(Qt::AlignLeft|Qt::AlignTop);
+        m_subtitle->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        layout->addWidget(m_subtitle);
+        setActiveSubtitle({});
         setFile(file);
     }
     void setFile(const QString &file) {
         m_filename->setText(file.isEmpty() ? i18n("Choose a video to get started") : QFileInfo(file).fileName());
         m_filename->setToolTip(file.isEmpty() ? QString() : QFileInfo(file).absoluteFilePath());
     }
+    void setActiveSubtitle(const QString &subtitle) {
+        m_subtitle->setText(subtitle.isEmpty() ? QString() : i18n("Subtitles: %1",subtitle));
+        m_subtitle->setToolTip(m_subtitle->text());
+        m_subtitle->setVisible(!subtitle.isEmpty());
+    }
 private:
     QLabel *m_filename;
+    QLabel *m_subtitle;
 };

@@ -94,8 +94,8 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     delayRow->addWidget(new QLabel(i18n("ms"))); delayRow->addStretch();
     form->addRow(i18n("Subtitle delay:"),delayRow);
     auto *buttons = new QHBoxLayout;
-    m_start = new QPushButton(i18n("Werp")); m_start->setObjectName("werp"); m_start->setDefault(true);
-    m_resumeButton = new QPushButton(i18n("Werp from last position")); m_resumeButton->setObjectName("resume");
+    m_start = new QPushButton(i18n("Cast")); m_start->setObjectName("werp"); m_start->setDefault(true);
+    m_resumeButton = new QPushButton(i18n("Cast from last position")); m_resumeButton->setObjectName("resume");
     auto *quit = new QPushButton(i18n("Quit")); quit->setObjectName("quit");
     quit->setToolTip(i18n("Quit (Ctrl+Q)"));
     connect(quit,&QPushButton::clicked,this,&QWidget::close);
@@ -147,7 +147,7 @@ Window::Window(const QString &backend, const QString &file, bool discoverOnStart
     });
     connect(&m_backend,&Backend::event,this,&Window::handleEvent);
     connect(&m_backend,&Backend::failed,this,[this](const QString &message) {
-        m_busy=false; m_session=0; m_discovering=false; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); showError(message); m_retry->show(); refreshActions();
+        m_busy=false; m_session=0; m_discovering=false; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); m_selectedVideo->setActiveSubtitle({}); showError(message); m_retry->show(); refreshActions();
     });
     connect(&m_backend,&Backend::exited,this,[this] { if (m_closing) { m_canClose=true; QTimer::singleShot(0,this,&Window::close); } });
     if (!file.isEmpty()) openFile(file);
@@ -157,6 +157,7 @@ void Window::openFile(const QString &file) {
     if (m_busy) { showError(i18n("Stop playback before opening another video.")); return; }
     ++m_generation; m_file=QFileInfo(file).absoluteFilePath(); m_directory=QFileInfo(m_file).absolutePath();
     m_selectedVideo->setFile(m_file);
+    m_selectedVideo->setActiveSubtitle({});
     m_subtitleDelay->setValue(0);
     m_inspected=false; m_applySuggestedSubtitle=true; m_resume=-1; m_duration=0; showError({});
     m_subtitles->clear(); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
@@ -256,6 +257,7 @@ void Window::refreshActions() {
 }
 void Window::startPlayback(bool resume) {
     if (!m_inspected || m_busy || m_devices->currentData().toString().isEmpty()) return;
+    m_selectedVideo->setActiveSubtitle({});
     m_busy=true; showError({}); m_prepareLabel->setText(i18n("Preparing playback…")); m_progress->setRange(0,0);
     m_cancel->setEnabled(false); m_pages->setCurrentIndex(1); refreshActions();
     const auto deviceId=m_devices->currentData().toString();
@@ -282,12 +284,13 @@ void Window::stopPlayback() {
 void Window::handleEvent(const QJsonObject &message) {
     if (message["session_id"].toInteger()!=m_session || !m_session) return;
     if (message["event"]=="ended") {
-        m_busy=false; m_session=0; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); m_pause->setEnabled(true);
+        m_busy=false; m_session=0; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); m_pause->setEnabled(true); m_selectedVideo->setActiveSubtitle({});
         if (!message["error"].isNull()) showError(message["error"].toString());
         inspect(); refreshActions(); return;
     }
     const auto state=message["state"].toObject(); const auto phase=state["phase"].toString();
     if (phase=="playing" || phase=="paused" || (phase=="buffering" && m_pages->currentIndex()==2)) {
+        m_selectedVideo->setActiveSubtitle(m_subtitles->currentText());
         m_togglePlayback->setEnabled(m_stop->isEnabled());
         m_pages->setCurrentIndex(2); m_paused=phase=="paused"; m_pause->setText(m_paused?i18n("Play"):i18n("Pause"));
         const auto position=state["position_seconds"].toDouble(); m_duration=state["duration_seconds"].toDouble(m_duration);

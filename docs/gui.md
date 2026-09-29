@@ -25,7 +25,8 @@ playback. The selected-video panel stays visible through all three states:
 2. **Preparation:** conversion/remux progress and Cancel; probing, subtitle work,
    connection and loading use an indeterminate indicator. Direct/cache-hit paths
    pass through this state briefly.
-3. **Playing:** position, seek slider, pause/play and stop, aligned at the bottom.
+3. **Playing:** the selected-video panel shows the active subtitle track or external
+   filename. Position, seek slider, pause/play and stop are aligned at the bottom.
    Space toggles pause/play without key-repeat. Stop waits for cleanup and returns
    to choices. Quit/Ctrl+Q/window close cancels active work and waits for helper exit.
 
@@ -36,7 +37,7 @@ combined list also includes matching VTT/ASS/SSA; an explicit picker file need
 not match the video name. Manual choices survive stop/restart of the same video.
 CLI preferences do not change these UI defaults.
 
-**Werp** starts at zero; **Werp from last position** appears when a usable
+**Cast** starts at zero; **Cast from last position** appears when a usable
 checkpoint exists. The UI saves progress but never resumes implicitly.
 **Subtitle delay** is in signed milliseconds: positive later, negative earlier.
 It resets for a new file, survives stop/restart, and is fixed for each session,

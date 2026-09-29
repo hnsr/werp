@@ -14,7 +14,7 @@ Automatic mode inspects the source and selects the first suitable path:
 | Direct | Serve the original compatible MP4. |
 | Remux | Copy compatible video/audio from MP4 or MKV into MP4 without quality loss. |
 | Audio | Copy compatible video and encode audio as stereo AAC in MP4. |
-| Transcode | Encode SDR video as H.264 and audio as stereo AAC in MP4. |
+| Transcode | Encode video as 8-bit H.264 and audio as stereo AAC in MP4; HDR-tagged input is experimental and has no tone mapping. |
 
 Preparation produces a complete faststart MP4 before playback, keeping HTTP
 seeking and reuse straightforward. There is no live encoding. The receiver app
