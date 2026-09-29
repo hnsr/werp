@@ -1,8 +1,8 @@
 # Device compatibility database
 
 Yeet ships an editable, versioned [TOML database](../crates/yeet-core/data/devices.toml)
-inside the core binary. It is shared by CLI and KDE casting and needs no database
-server, network access, or separately installed data file. The core exposes
+inside the core binary. It serves CLI/KDE casting and device-targeted conversion,
+without a database server or separately installed data file. The core exposes
 `devices::database()`, exact model/alias lookup, and the resulting playback policy.
 
 ## Matching and precedence
@@ -55,8 +55,8 @@ Missing default files use the bundled database. Invalid TOML, unknown keys,
 duplicate IDs, conflicting aliases, invalid limits and files over 64 KiB fail
 visibly. Validation checks the entire merged database, so a local alias cannot
 silently shadow another model. The file is read for every new automatic CLI cast
-and device-targeted KDE preview/`convert`/`start`; edits do not affect an active operation. `--no-config` ignores both
-CLI preferences and local device overrides but retains bundled rules.
+and device-targeted KDE preview/`convert`/`start`; edits do not affect active work.
+`--no-config` ignores CLI preferences and local overrides but retains bundled rules.
 `--config PATH` changes only the CLI preferences file; device overrides remain in the XDG
 location. Explicit CLI profiles bypass user database loading. Broad-compatibility
 conversion/preview and backend inspect/discovery do not read this file.

@@ -1,8 +1,8 @@
 # Local media inventory
 
-This is the initial inventory and early trial history. Commands use current CLI
-spellings; historical compatibility limits and test status below are superseded
-by [automatic playback and reuse](automatic-playback.md).
+This is the initial inventory and early trial history. It is not a live inventory of the Downloads directory. Current policy is described
+in [automatic playback](automatic-playback.md); original hypotheses below are
+retained separately from observed outcomes.
 
 Scanned 2026-09-17 using ffprobe 8.1.2. Recursively found and successfully probed
 **75 videos (88.63 GiB): 45 Matroska/MKV and 30 MP4**. No probe failures.
@@ -11,7 +11,7 @@ associations were not checked. Archives were not unpacked. Source media was not
 modified, copied, decoded in full, or cast to a receiver during the scan.
 Subsequent user playback checks are recorded below.
 
-## Two provisional sets
+## Original candidate sets
 
 | Set | Files | Meaning |
 | --- | ---: | --- |
@@ -23,9 +23,9 @@ The CSV records the original scan assessment; subsequent playback evidence is
 recorded separately below.
 No file is proven to require transcoding by this scan. The second set identifies
 the strongest video-conversion concerns, not an unconditional instruction to encode.
-Files can move between sets after actual receiver tests. A receiver without HEVC
-or AV1 support would move those video codecs into its conversion set; audio
-support also depends on the output configuration.
+The directory names retain the original hypotheses; they do not drive runtime
+selection. Current rules may require audio or video encoding for a file in the
+no-transcode-candidates set.
 
 **Direct play** serves the original file. **Remuxing** changes its container while
 copying encoded streams, without quality loss from re-encoding, but still requires
@@ -40,7 +40,7 @@ codec/profile/channel count. Different dimensions, frame rates, and codec levels
 remain visible per file in [the complete CSV](media-inventory.csv). Sample links
 work only on the development machine and point to ignored local symlinks.
 
-| Container | Video | Audio | Count | First route to test | Representative |
+| Container | Video | Audio | Count | Original trial hypothesis | Representative |
 | --- | --- | --- | ---: | --- | --- |
 | MKV | AV1 Main, 10-bit | EAC3, 6 ch | 1 | Original trial / copy-remux; AV1 uncertain | [sample-007](../samples/library/no-transcode-candidates/sample-007_av1-main-10bit_1620x1080_23.976fps_eac3-6ch.mkv) |
 | MKV | H264 High, 8-bit | AAC LC, 2 ch | 13 | Original trial / copy-remux | [sample-006](../samples/library/no-transcode-candidates/sample-006_h264-high-8bit_720x480_23.976fps_aac-lc-2ch.mkv) |
@@ -65,8 +65,8 @@ work only on the development machine and point to ignored local symlinks.
   None reports PQ or HLG transfer characteristics. Missing colour metadata is
   not proof of SDR, and 10-bit alone is not proof of HDR.
 - **1 AV1 file:** Main profile, 10-bit 4:2:0, level 4.0, 1620×1080,
-  with E-AC-3 surround audio. Keep it as an experimental no-encoding candidate;
-  its Cast decoder support has not been established on the test receiver.
+  with E-AC-3 surround audio. It was an experimental no-encoding hypothesis;
+  native Cast support remains unverified and current automatic mode converts it.
 - All videos are at most 1920×1080, about 23.976 or 24 fps, with one video and
   one audio stream. No 4K, high-frame-rate, DTS, or TrueHD cases were found.
 - **Audio:** 47 AAC-LC (20 stereo, 27 six-channel), 14 HE-AAC six-channel,
@@ -75,8 +75,8 @@ work only on the development machine and point to ignored local symlinks.
   successful receiver output, correct downmix, or preservation of Atmos.
 - **Embedded subtitles:** 145 SubRip tracks, 16 mov_text tracks, and 11 PGS
   tracks across 53 files. Each of the 11 files containing PGS also has SubRip.
-  Text extraction/conversion can avoid video encoding; selecting only a bitmap
-  track could require burn-in later. No subtitle was selected in this scan.
+  Text extraction avoids video encoding; selecting PGS now uses implemented
+  burn-in. No subtitle was selected during the original scan.
 
 The CSV preserves ffprobe's raw codec-specific `level` values: H.264 uses ten
 units per level, HEVC uses thirty, and AV1 uses a level index (8 means 4.0).
@@ -108,121 +108,40 @@ This supports trying compatible streams before encoding; it does not establish
 Default Media Receiver compatibility or AV1 support.
 [KPN TV+ Box specifications](https://community.kpn.com/kennisbank-kpn-tv-box-149/specificaties-kpn-tv-box-573098).
 
-Yeet's current M2 guard is intentionally narrower: MP4-family H.264 with
-mono/stereo AAC-LC and conservative video limits. Only **6** library files fit
-that apparent format envelope; three now have user-confirmed picture and sound.
-Inventory
-membership does not bypass that guard. The experimental direct-play path
-(`--mode direct --profile experimental`) additionally admits one 3–6 channel AAC-LC track and HEVC Main/Main 10
-MP4 up to level 4.0 at 1080p30, with 8/10-bit 4:2:0 pixels and no known HDR
-signalling. It serves original bytes and reports receiver-dependent support.
-H.264/AC-3 MP4 trials are also enabled for one 1–6 channel audio track at 32,
-44.1, or 48 kHz; `sample-041` produced video but no audible sound on the test setup.
-HEVC/AC-3, E-AC-3, MKV,
-and HDR cases remain outside the experimental policy. The user has reported successful
-experimental HEVC playback of `sample-005` on the test receiver.
+At the time of the scan, only six files appeared to fit the narrow M2 guard.
+Current KPN model rules also admit bounded HEVC and multichannel AAC-LC, remux
+MKV to MP4, convert unsupported audio, and fully convert AV1. Native AC-3 failed
+in the trial below and is not promoted into the normal policy. Native AV1, native
+MKV, 4K/HDR and untested audio passthrough are not established by this inventory.
 
 ## User playback results
 
-On 2026-09-17, the user confirmed good video and sound for all three suggested
-MP4 H.264/AAC-stereo baseline samples using the existing direct-play path:
+These early observations concern the KPN DIW7022 development setup. Direct trials
+served original MP4 bytes; the wider cases initially used explicit experimental
+permissions, now represented by bounded model rules.
 
-| Sample | Video dimensions / frame rate | Picture | Sound |
+| Sample | Format/path | User observation | Evidence limits |
 | --- | --- | --- | --- |
-| `sample-009` | 1920×816 / 24 fps | Confirmed good | Confirmed good |
-| `sample-014` | 1280×690 / 24 fps | Confirmed good | Confirmed good |
-| `sample-017` | 1920×800 / approximately 23.976 fps | Confirmed good | Confirmed good |
+| 009 / 014 / 017 | H.264/stereo AAC MP4; 1920×816/24, 1280×690/24, 1920×800/~23.976 | Good picture and sound for all three. | No full-duration, subtitle or cleanup report for these runs. |
+| 004 | H.264 1920×1040/~23.976, six-channel AAC; original MP4 | General success for requested picture/dialogue/sync check. | Discrete surround and long-duration sync not established. |
+| 005 | HEVC Main 10 1920×1080/~23.976, six-channel AAC; original MP4 | General success; requested checks included colours, dialogue, sync and phone controls. | No separate per-check measurements; no subtitles selected. |
+| 041 | H.264 1920×804/24, six-channel AC-3; original MP4 | Picture, but no audible sound. | Cause not isolated between decoding, output setup and file; other AC-3 files untested. |
+| 041 | Copied video/stereo AAC preparation | First attempt exited to the TV home screen after brief sound. Later saved-output playback and integrated conversion succeeded. | Startup failure cause remains unresolved. |
+| 006 | H.264/stereo AAC MKV → MP4 remux | General success for picture/sound/sync/Ctrl+C request. | No per-check measurements or cleanup transcript. |
 
-This establishes real-file picture/audio playback for these three samples on the
-existing test receiver. No remuxing or transcoding was needed. It does not establish
-support on other receivers or validate the three remaining files in this group.
-Subtitles, full-duration playback, explicit A/V synchronization checks, natural
-completion, and shutdown were not reported for these runs. Earlier generated
-fixture results remain separate evidence.
+For sample-041, the successful saved-output log had HTTP 206, positions through
+about 298.6 seconds and pause/resume, ending paused. The later integrated run
+reported good sound, exit 130 after Ctrl+C, an empty preparation directory and a
+closed HTTP port. The user had seen similar intermittent receiver startup issues,
+but this is not proof of the earlier failure's cause or of a fix. See
+[audio-conversion evidence](transcode-validation.md#audio-only-preparation).
 
-On 2026-09-18, the user reported that `sample-004` also works with
-`--mode direct --profile experimental` on the existing KPN DIW7022 receiver. This serves
-the original MP4 containing H.264 High, 1920×1040 at approximately 23.976 fps,
-and six-channel AAC-LC, without remuxing or transcoding. The requested check
-covered picture, audible dialogue, and A/V synchronization; the user reported
-general success without separate measurements. This does not establish discrete
-surround output, long-duration synchronization, or compatibility with all files
-in the group or other receivers. No external subtitle was selected for this run.
-
-The user also reported success on 2026-09-18 for original-file playback of
-`sample-005` with `--mode direct --profile experimental` on the KPN DIW7022: MP4 with
-HEVC Main 10, 10-bit 4:2:0, 1920×1080 at approximately 23.976 fps, and six-channel
-AAC-LC. The suggested checks covered picture/colours, dialogue, synchronization,
-and phone-controlled seeking/pause/resume. The user reported general success
-without separate measurements or per-check details. No subtitles were selected.
-This is evidence for this file/receiver combination, not universal HEVC support
-or confirmation of discrete surround output or full-duration playback.
-
-On 2026-09-18, the user tested original-file playback of `sample-041` with
-`--mode direct --profile experimental` on the same KPN DIW7022 setup: H.264 High,
-1920×804 at 24 fps, with six-channel AC-3 at 48 kHz in MP4. Video played, but
-there was no audible sound. This is a failed audio-output trial, not successful
-direct playback. It does not isolate the cause between receiver decoding,
-passthrough/output configuration, or the particular file. Other receivers and
-the remaining AC-3 files have not been tested. Keep the original scan's candidate
-classification as a hypothesis; do not promote AC-3 into the default policy.
-The subsequent `--mode audio` trial produced audible sound for roughly
-one or two seconds, then returned to the Google TV home screen. Picture was not
-observed. The CLI reported Playing, then Buffering, and eventually a 30-second
-playable-state timeout. This is not a successful playback result; the cause of
-the receiver exit remains unknown. A locally recreated output preserves the full
-encoded video payload, has matching duration and stereo AAC, and decodes its first
-minute without FFmpeg errors.
-
-The user subsequently reported no issues casting the saved H.264/stereo AAC
-output directly with verbose logging. The inspected log shows successful HTTP
-206 responses, PLAYING positions through approximately 298.6 seconds, and
-pause/resume transitions without warnings or errors. At inspection the session
-was paused; natural completion and cleanup were not established by this log.
-This supports playback of the video-copy/audio-converted output on this setup;
-it is not a repeat of the integrated preparation step. The user reports prior
-intermittent startup cutouts on this device. That is a plausible explanation
-for the earlier failure, but its cause remains unresolved and the diagnostic
-changes are not proven to have fixed it.
-
-A later integrated `--mode audio` run of `sample-041` also passed: the user
-reported good sound and no issues, then interrupted playback with Ctrl+C.
-The CLI reported cleanup completed and exit code 130; the dedicated preparation
-directory was empty and the HTTP port was closed. Natural completion and
-receiver-initiated stop remain separate, unverified hardware checks for this mode.
-
-The user also reported no problems playing MKV H.264/AAC-stereo `sample-006`
-with `--mode remux` on the KPN DIW7022. The suggested check covered picture, sound,
-synchronization, and Ctrl+C; no separate measurements or cleanup transcript were
-provided. This confirms an initial successful remux trial for this sample/setup.
-No embedded or external subtitles were selected. See [remux validation](remux-validation.md).
-
-## Suggested M5 test order
-
-1. MP4 H.264/AAC-stereo picture and sound now pass for three real files above.
-   External subtitles and lifecycle checks on these files remain to be exercised.
-2. Original MP4 H.264/AAC-surround now has a successful trial with `sample-004`.
-   MP4 HEVC Main 10/AAC also has a successful trial with `sample-005`.
-   H.264/AC-3 `sample-041` played video but had no audible sound. A saved output
-   with copied video and stereo AAC now has a successful playback retry after
-   an unexplained initial startup failure. Integrated audio conversion, playback,
-   and Ctrl+C cleanup now also pass. Natural completion and receiver-initiated
-   stop remain unverified for this mode.
-   Confirm picture, colour, audible audio, timing, completion, and cancellation.
-3. MKV H.264/AAC-stereo `sample-006` now has a successful `--mode remux` hardware
-   trial, alongside the earlier local preparation and cleanup check.
-   Then evaluate HEVC Main/Main 10 with AAC/HE-AAC and H.264/HEVC with Dolby audio.
-   These broader profiles and original MKV delivery are not enabled by `--mode remux`. Preserve selected audio/video and handle
-   subtitle extraction separately rather than copying every stream blindly.
-4. Try the AV1/E-AC-3 sample as a separate low-confidence case.
-5. Inspect the two HDR review samples before considering any conversion. If an
-   otherwise compatible case fails only on audio, prefer audio-only conversion
-   when encoding work resumes.
-
-A failed LOAD is evidence to diagnose (container, codec, server requests, and
-receiver response), not enough by itself to conclude video encoding is required.
-No automatic encoding fallback is wanted during the initial compatibility work.
-Record original-file and remuxed-file outcomes separately by receiver model.
+The [M5 batch](automatic-playback.md#hardware-batch-result) later confirmed the
+short-clip direct/remux/audio/full-conversion matrix with captions and reuse.
+This supersedes the original proposed test order. Expanded-path seeking,
+long-duration sync and the two HDR review cases remain open; full-conversion
+success for AV1 does not establish native AV1 playback. Preserve separate
+original-file/remux/encoding results when adding evidence.
 
 ## Local samples and privacy
 

@@ -1,60 +1,40 @@
 # Sleep inhibition
 
-Implemented and verified on Fedora KDE on 2026-09-19. A reported long-video
-interruption prompted this change; standby was a possible explanation, not a
-confirmed diagnosis. Yeet previously had no sleep inhibition.
+Implemented and locally verified on Fedora KDE on 2026-09-19. A reported
+long-video interruption prompted the change; standby was a possible cause,
+not a confirmed diagnosis or a proven fix.
 
-## Initial implementation
+## Decision and behavior
 
-The backend casting session starts `systemd-inhibit` with `--what=sleep`,
-`--mode=block`, and `--no-ask-password`. The lock is labelled Yeet with a
-generic preparation/casting reason. No media paths or device names are supplied.
-This needs no new Rust dependencies or Qt/KDE bindings. The existing Fedora KDE
-installation already provides the helper.
+Use `systemd-inhibit --what=sleep --mode=block --no-ask-password` as a small Linux
+adapter: it works with the tested KDE setup without Qt/desktop bindings or new
+Rust dependencies. Broader platform integration remains deferred.
+
+CLI casting holds the lock through preflight, discovery, preparation, playback
+(including pauses) and cleanup. The KDE helper acquires it when a cast or
+conversion starts; opening a window, inspecting, previewing and discovering
+alone do not acquire it. CLI/helper `--no-inhibit-sleep` opts out. Missing helper,
+denied permission or a three-second acquisition timeout produces a warning and
+allows work to continue. Forced sleep/policy overrides may still interrupt it.
 
 [KDE PowerDevil](https://github.com/KDE/powerdevil/blob/master/daemon/powerdevilpolicyagent.cpp)
-tracks logind sleep inhibitors as interruptions of the session to prevent.
-The lock uses only `sleep`, not `idle`: screen dimming and screen locking can
-continue. Other desktop environments/platforms have not been validated for this
-feature. Broader integration remains deferred until frontend work.
+honors logind sleep inhibitors. The lock does not inhibit `idle`, so dimming and
+screen locking remain possible. Other desktop/platform behavior is unverified.
 
-The inhibitor covers inspection, discovery, media preparation, playback, pauses,
-and shutdown cleanup. `inspect` and `devices` do not acquire it. Use
-`--no-inhibit-sleep` to opt out of the default for one cast. If the helper is
-missing, permission is denied, or acquisition exceeds three seconds, Yeet
-warns and continues casting. Unexpected helper exit also produces a warning.
-Forced sleep and desktop policy overrides can still interrupt playback.
-
-The helper runs a fixed shell script with no interpolated user data. Its readiness
-byte is emitted only after systemd acquires the lock. A private stdin pipe holds
-the helper open; closing it releases the lock, including when Yeet exits
-abruptly. The helper is isolated from terminal signals so the lock can survive
-through Yeet's cleanup. Normal shutdown closes the pipe, waits up to two
-seconds, then kills/reaps a helper that does not exit. Dropping the guard requests
-the same cleanup. See [systemd's implementation](https://github.com/systemd/systemd/blob/main/src/login/inhibit.c).
+A fixed script emits readiness only after acquiring the lock. A private stdin
+pipe keeps it alive; closing the pipe releases it, including after abrupt parent
+exit. No media path or device name is passed to the helper. Terminal signals are
+isolated so inhibition survives cleanup. Normal release waits up to two seconds,
+then kills/reaps a stuck helper. See [systemd's implementation](https://github.com/systemd/systemd/blob/main/src/login/inhibit.c).
 
 ## Verification
 
-- All 55 ordinary workspace tests passed, together with formatting and Clippy.
-  The six existing opt-in FFmpeg tests were not rerun for this change.
-- Fake-helper tests verify readiness failure, missing executable, acquisition
-  timeout/cancellation, explicit release, dropped-guard release, and process reaping.
-- CLI tests verify best-effort failure, opt-out, release after failed input
-  validation, and cleanup with exit 130/143 after SIGINT/SIGTERM. Inspection does
-  not create an inhibitor. Ordinary tests do not alter host power policy.
-- A separate live local check started Yeet with a blocking fake probe and no
-  receiver contact. The Yeet `sleep`/`block` lock appeared in logind and in
-  KDE's `ActiveInhibitions`. SIGINT returned 130 and removed both entries.
+Fake-helper/CLI tests cover acquisition failure, timeout/cancellation, explicit
+and dropped-guard release, reaping, opt-out and SIGINT/SIGTERM cleanup. They do
+not alter host power policy. A separate local test used a blocking fake probe,
+contacted no receiver, and observed the Yeet lock in logind and KDE
+`ActiveInhibitions`; SIGINT returned 130 and removed both entries.
 
-No actual suspend or long-video test was performed. Existing deferred seeking
-and long-duration playback checks remain deferred.
-
-During an ordinary cast, the CLI should report
-`Sleep inhibition active for this casting session`. The lock is also visible in
-KDE's power applet or with:
-
-```sh
-systemd-inhibit --list --no-pager
-```
-
-The Yeet entry should disappear after playback ends or Ctrl+C cleanup finishes.
+No actual suspend or long-video test was performed for this feature. During a
+cast, check the KDE power applet or `systemd-inhibit --list --no-pager`; the Yeet
+entry should disappear after cleanup. See [remaining validation](plan.md#open-functional-and-release-work).

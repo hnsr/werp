@@ -35,7 +35,8 @@ changes require a version bump. Frontends should ignore additional response fiel
 | `stop` | `session_id` | Empty object after session cleanup |
 | `shutdown` | Omit params | Empty object after cleanup; helper exits |
 
-All start fields are mandatory. `position` is seconds from the beginning; zero
+`start` requires `file`, `device_id`, `subtitles` and `position`; delay is optional.
+`position` is seconds from the beginning; zero
 means restart. It must be finite, nonnegative, and below a known media duration.
 The device must be in this helper's latest discovery results and must have an
 IPv4 address. Known audio-only receivers are rejected. Subtitle selection is one
@@ -90,7 +91,7 @@ in `start` and can preserve manual user choices instead.
 `media` contains canonical `path`, `container`, nullable `duration_seconds`, and
 `streams`. Each stream has an `index`, `kind`, codec/profile metadata, dimensions
 or audio information, language/title, and disposition flags. The Rust definitions
-are in `yeet-core/src/media.rs`.
+are in [`media.rs`](../crates/yeet-core/src/media.rs).
 
 Each subtitle choice has `kind` (embedded/external), nullable `index`, `path`,
 `codec`, `language`, and `title`, plus boolean `forced`, `hearing_impaired`,

@@ -1,7 +1,8 @@
-# Cast transport for M1
+# Cast transport decision
 
 Date: 2026-09-17
-Status: accepted for M1; hardware and failure-path validation passed.
+Status: accepted; still used by the CLI and KDE helper. Hardware evidence below
+is from M1 and has that scope.
 
 ## Decision
 
@@ -50,10 +51,10 @@ Yeet explicitly supplies WebVTT track metadata and activates track ID 1.
 ## TLS behaviour
 
 Cast devices use certificates that do not follow ordinary public-web trust.
-The prototype explicitly uses oxicast's `verify_tls(false)`: the connection is
+Yeet uses oxicast's `verify_tls(false)`: the connection is
 encrypted, and handshake signatures are verified, but the device certificate
 identity is not authenticated. Cast device-auth is not implemented by oxicast.
-This is a trusted-LAN prototype, not an authenticated remote-control service.
+Yeet is intended for trusted LANs; it is not an authenticated remote-control service.
 
 The dependency graph enables both rustls ring and aws-lc providers. Yeet selects
 ring only when the embedding application has not already installed a provider,
@@ -89,8 +90,6 @@ Observed:
 - Two subsequent runs on the latest build verified SIGINT and SIGTERM during
   playback. They exited in 83 ms and 88 ms respectively, with successful remote
   STOP and the HTTP port closed. The same port was reusable between runs.
-- Formatting and Clippy passed. All 18 ordinary automated tests passed (the
-  additional real-FFmpeg fixture test remains opt-in and previously passed in M0).
 
 Automated checks use a generated TLS certificate and a loopback fake receiver.
 They exercise a refused connection, a stalled TLS handshake deadline,
@@ -101,17 +100,36 @@ media-status broadcast. HTTP tests check full/ranged reads,
 HEAD, invalid ranges, MIME/CORS/preflight, unregistered paths, and stalled-client
 shutdown. No ordinary test discovers or controls real TVs.
 
-## Limits and next step
+## Limits and later work
 
-This is evidence for one receiver and one prepared media profile. It does not
-establish all Chromecast generations, all codecs, accurate subtitle rendering
-for every file, or HDR support. The user's representative MKV was inspected in
-M0; it has not been cast in M1. Embedded text extraction, audio compatibility,
-remuxing/transcoding, and SRT conversion are subsequent work.
+This evidence concerns one receiver and one prepared media profile. It does not
+establish all generations/codecs, full subtitle rendering or HDR. Production CLI,
+SRT, embedded subtitles and media preparation were subsequently built around this
+adapter; see the [roadmap](../plan.md) and [device evidence](../device-compatibility.md).
+The adapter is not a stable public API. Preserve ownership, cancellation and raw
+track behavior when upgrading or replacing the transport.
 
-M2 should build the user-facing commands and lifecycle around this adapter,
-including media validation, actionable network errors, and more state-transition
-and takeover tests. The adapter is a feasibility API, not a stable public API.
+## Reproduction
+
+The original feasibility example is retained for transport diagnosis. It requires
+an already compatible MP4/WebVTT; prefer `yeet FILE` for normal use.
+
+```sh
+bash scripts/generate-m1-fixture.sh
+cargo run --locked -p yeet-core --example cast_probe -- --discover
+cargo run --locked -p yeet-core --example cast_probe -- \
+  --device "Living Room" \
+  --video samples/m1/test.mp4 --subtitles samples/m1/subtitles.vtt \
+  --http-port 8010 --seconds 620 --exercise-controls
+```
+
+The generator creates an ignored 12-minute silent H.264/AAC clip and numbered
+captions. Choose an intended receiver: the example replaces its playback.
+`--exercise-controls` pauses at 20 seconds, resumes at 25, seeks forward to 90
+at 40, then back to 20 at 60. Ctrl+C/SIGTERM triggers cleanup; this prototype
+counts cancellation as test success, unlike the CLI's 130/143 contract.
+The host must stay awake and allow the chosen serving port. No firewall rule is
+changed automatically. Generated media stays outside Git.
 
 ## Sources inspected
 

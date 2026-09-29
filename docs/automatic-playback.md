@@ -1,11 +1,8 @@
 # Automatic playback and reusable preparation
 
-Updated: 2026-09-19. Implementation, local verification, and the consolidated
-short-clip hardware batch passed. Seeking and long-duration checks are deferred
-at the user's request because phone media controls are currently unavailable.
-They do not block further work. Earlier receiver observations are
-recorded in [transcode-validation.md](transcode-validation.md) and
-[remux-validation.md](remux-validation.md).
+Current media selection and cache behavior, followed by scoped hardware evidence.
+The short-clip matrix passed on KPN DIW7022; expanded-path seeking and long-duration
+checks remain deferred. KDE controls are now available for future checks.
 
 ## Default behavior and overrides
 
@@ -46,31 +43,29 @@ regardless of the requested receiver profile. Known HDR, ambiguous multiple
 audio/video tracks, and missing required duration/frame-rate metadata remain clear
 errors. Tone mapping and track selection are separate work.
 
-Subtitle preferences now select an embedded track or matching external SRT;
+Subtitle preferences select an embedded track or matching external SRT;
 explicit `--subtitles`, `--subtitle-track`, and `--no-subtitles` override this.
 Text is served as WebVTT, while image tracks require full video burn-in. See
 [preferences and subtitles](preferences-and-subtitles.md) for scope and validation.
 Unselected tracks, attachments, titles, and chapters are omitted during preparation.
 
-The CLI exposes preparation through `--mode`, compatibility through `--profile`,
-and storage through `--cache-dir`/`--no-cache`. Legacy flags and aliases have been
-removed; backward compatibility is not maintained at this stage.
+Model-specific permissions can be changed in the optional
+[device override file](device-compatibility.md#user-overrides); there are no global
+codec opt-ins. Convert-only uses the same rules for its selected device, or
+Baseline for Broad compatibility. [KDE behavior](kde-ui.md#convert-only-window).
 
-## Configurable compatibility
+## Preparation limits
 
-Compatibility permissions belong to specific models in the optional user
-[device database overlay](device-compatibility.md#user-overrides).
-Global `[compatibility]` flags have been removed. A model may independently admit
-bounded HEVC, AAC-LC surround and H.264 Level 4.2/50 or 60 fps. Rules can tighten
-as well as relax bundled defaults. Dolby/HE-AAC still requires audio conversion;
-HDR, unsupported pixel formats, larger dimensions and ambiguous tracks remain
-subject to existing guards.
+Full encoding uses libx264 veryfast/CRF 20, at most 1080p30, an 8 Mbps maximum
+video rate/16 Mbit buffer, and AAC-LC 192 kbps/48 kHz. Smaller inputs are not
+intentionally enlarged; silent input remains silent. Copied streams are not
+subjected to encoder bitrate caps.
 
-Convert-only offers a discovered target device and an explicit Convert button. Its
-preview and conversion use the same merged model rules as normal casting. The
-Broad compatibility choice uses conservative H.264/stereo AAC MP4 without a device. Original and prepared
-files are kept. Reuse still requires the same resolved recipe; changing where
-rules are stored does not require a cache format migration.
+Preparation has a 24-hour default deadline. Space estimates use source size for
+copy paths or bounded output rates for encoding, with muxing overhead and 64 MiB
+headroom checked before/during work. This does not reserve disk space. Progress
+reaches completion only after validation/publication. FFmpeg errors are bounded
+and child processes are reaped on handled cancellation.
 
 ## Storage and reuse
 
@@ -82,8 +77,7 @@ movie.yeet-<12-hex-key-tag>-<8-hex-generation>.mp4
 movie.yeet-<12-hex-key-tag>-<8-hex-generation>.mp4.json
 ```
 
-The full source stem (without its old extension) is preserved, replacing the
-previous fixed 40-character cutoff. Only exceptionally long names are shortened:
+The source stem (without its old extension) is preserved unless too long:
 both the MP4 and its metadata sidecar stay within a 255-byte filename budget,
 leaving up to 219 UTF-8 bytes for the source stem without splitting a character.
 This fits the usual Linux filename limit, including
@@ -99,12 +93,11 @@ up to 32 attempts, without repeating the conversion or overwriting existing data
 Existing files with the older naming scheme remain reusable under their current
 names; renaming them is unnecessary.
 
-The key includes
-the canonical source path, full source SHA-256 digest, preparation mode, resolved
-profile, selected image track for burn-in, and recipe versions. The base recipe
-is version 1; encoded audio additionally uses the versioned stereo-matrix recipe
-described below. Output-affecting changes must update the relevant recipe version. External subtitle changes do not
-invalidate the prepared video.
+The key includes canonical source path, full source SHA-256, preparation mode,
+resolved profile, selected image track/delay for burn-in, and recipe versions.
+The base recipe is version 1; encoded audio also uses the stereo-matrix recipe
+below. Output-affecting changes must bump the relevant version. External text
+subtitle changes do not invalidate prepared video.
 
 A cache hit verifies the completion record, output size, full output SHA-256, and
 fresh ffprobe metadata against the profile. Reuse reads the source and output
@@ -133,14 +126,8 @@ with its matching sidecar. Original files are never modified.
 
 ## Local verification
 
-Formatting and Clippy passed. The complete workspace suite passed **58 tests**,
-including all **six opt-in tests using real FFmpeg**, with none skipped:
-
-```sh
-cargo fmt --all -- --check
-cargo clippy --locked --workspace --all-targets -- -D warnings
-cargo test --locked --workspace -- --include-ignored
-```
+See [README checks](../README.md#checks) for the current test commands. Automated
+coverage distinguishes simulated/local verification from TV observations.
 
 Coverage includes automatic selection and overrides; source/recipe invalidation;
 corrupt output/metadata; symlink destinations; read-only fallback; concurrent
@@ -230,22 +217,14 @@ CLI and generates short clips, external SRT/VTT, and logs under an ignored
 prepared outputs beside those originals. `--prepare-only` creates the fixtures
 without casting; this path and shell syntax were verified locally.
 
-Allow roughly 15–20 minutes for the interactive run. For each clip:
-
-1. Let it finish naturally, then confirm picture, audible sound, audio/video
-   timing, and the two subtitle cues.
-2. Prepared cases repeat with FFmpeg unavailable and WebVTT captions to prove
-   reuse. Confirm the same visible/audible behavior.
-3. The last case disables caching and asks for Enter during playback. The script
-   sends SIGINT and checks exit 130, temporary-file removal, and HTTP port closure.
-
-The script checks selected modes, completion messages, reuse messages, and port
-closure. It stops at the first failure and preserves logs and successful outputs.
-If a visual check fails, record the sample ID and what happened; protocol success
-alone does not count as a hardware pass. Seeking and long-duration playback,
-especially for newly supported copied HEVC paths, are deferred rather than
-validated. Revisit them when controls are available or the user resumes those
-checks. M3 controls remain parked; this batch does not depend on phone controls.
+Allow roughly 15–20 minutes. For each clip, let it finish and confirm picture,
+sound, timing and captions. Prepared cases repeat with FFmpeg unavailable to
+verify reuse. The last case disables caching and asks for Enter during playback;
+the script sends SIGINT and checks exit 130, temporary-file removal and port
+closure. Failures stop the batch and preserve logs. No run is scheduled by these
+instructions. Phone controls became unavailable during earlier tests; KDE now
+provides seek/pause controls for separate long-play/sync checks, which remain
+unconfirmed. Protocol success is never substituted for visual/audio confirmation.
 
 ## Stereo downmix
 

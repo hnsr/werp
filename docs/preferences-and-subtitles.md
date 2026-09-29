@@ -1,12 +1,7 @@
 # Preferences, subtitles, device selection, and resume
 
-Implemented 2026-09-19. Local and simulated-receiver verification is described
-below. The user confirmed automatic English embedded subtitles and interrupted
-playback resume on the TV, followed by explicit Dutch selection, restart, and
-normal completion clearing the saved position. Automatic external SRT loading and
-subtitles off also passed, followed by embedded PGS burn-in. Optional remaining
-TV checks are listed below. No TV
-was contacted during implementation. Earlier seeking and long-duration checks remain deferred.
+Current CLI preferences and shared subtitle/resume behavior. GUI choices and
+independent defaults are described in the [KDE guide](kde-ui.md).
 
 ## Configuration
 
@@ -102,17 +97,11 @@ playback. DVD/DVB use the same route but remain unverified with representative
 samples. External image-subtitle files and OCR are
 not implemented. Existing SDR/HDR and audio-track limits still apply.
 
-The library scan found 53 of 75 videos with embedded subtitles: 145 SubRip,
-16 MP4 text, and 11 PGS streams. All PGS examples also had English text
-alternatives. Common metadata included `eng`, `dut`, `English`, `English SDH`,
-`Forced`, and `Nederlands`; these informed the ranking above. Private filenames
-and raw metadata remain under ignored `samples/`.
-
-The user considers this subtitle scope sufficient for now: all subtitle codec
-types found in the provided sample set are supported, including external SRT.
-Further format expansion and optional subtitle checks are parked until a real
-file exposes a gap. This is format coverage, not a claim that every sample and
-subtitle stream has been played through on the receiver.
+The [historical inventory](media-inventory.md) contained SubRip, MP4 text and PGS;
+all PGS examples also had text alternatives. That evidence informed the ranking.
+The user accepted coverage of the sample-set subtitle types, not a claim that
+every stream has been played. Further subtitle expansion/optional checks remain
+parked until a real file exposes a gap.
 
 ## Device selection
 
@@ -165,12 +154,6 @@ on the TV using the short image-caption fixture. Automatic Dutch preference has
 local test coverage only. This report does
 not establish subtitle synchronization after arbitrary seeking.
 
-`cargo test --locked --workspace -- --include-ignored` passed all 68 tests,
-including the real FFmpeg fixtures. Formatting, Clippy with warnings denied,
-and `git diff --check` passed. Local CLI checks also confirmed English/Dutch
-selection, external fallback, subtitles off, image-caption cache reuse, and
-refusal to reuse that captioned output when subtitles are disabled.
-
 Local tests cover TOML defaults/validation/overrides, language ranking and explicit
 selection, exact sidecar lookup, UTF-16, device preferences/errors, cancellation,
 state identity/locking, restart, disabled resume, and normal completion. Complete
@@ -187,9 +170,8 @@ bash scripts/generate-subtitle-fixture.sh samples/preferences 60
 
 The fixture includes full English at stream 3, Dutch at stream 4, and deliberately
 default/forced English at stream 2. It also creates an exact-name external SRT
-case and an alternate Dutch-first config. On the development machine these files
-have already been generated. Run these checks when ready, substituting a selected
-receiver where an explicit device is needed:
+case and an alternate Dutch-first config. Run these checks when ready, substituting a selected receiver where an explicit
+device is needed:
 
 1. `cargo run --locked -- samples/preferences/embedded.mkv`: the configured
    preferred receiver should play full English captions, not the forced track.
@@ -206,5 +188,7 @@ receiver where an explicit device is needed:
    The CLI should select burn-in and reuse its prepared output; confirm visible
    captions during the short clip. This fixture is local-only.
 
-The earlier long-duration and general seeking checks remain deferred. No phone
-controls are required for this checklist; Ctrl+C is sufficient.
+Use `--subtitle-delay-ms 1500` and then `-1500` for a signed-delay regression;
+text/image delays have local test coverage, not a complete hardware sync report.
+Long-duration and expanded-path seeking remain deferred. This checklist uses
+Ctrl+C for interruption; KDE provides controls for later seek checks.

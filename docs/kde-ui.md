@@ -1,219 +1,126 @@
-# KDE frontend and backend interface
+# KDE frontend
 
-The first implementation is available in `apps/yeet-kde` and
-`crates/yeet-backend`. Local automated checks cover the native window, protocol,
-and controlled sessions. The user confirmed the initial frontend test worked;
-the full TV checklist remains pending.
+The C++/Qt 6 Widgets application launches a private Rust helper through QProcess.
+The user opens one app, not a separately managed service. This avoids Rust GUI
+bindings and lets other native frontends reuse the [versioned protocol](backend-protocol.md).
+The core owns media/Cast/lifecycle logic; the UI owns presentation and choices.
+See [project decisions](plan.md#decisions-and-rationale).
 
-## Design
+The user confirmed initial KDE playback and subsequent UI improvements. Local
+native/protocol tests pass; the complete TV checklist below is not recorded as passed.
 
-The KDE application is C++ with Qt 6 Widgets and KDE Frameworks 6. It starts a
-private Rust helper automatically through QProcess. The user opens one app;
-there is no separately managed service. Future GTK or other native frontends
-can implement the same versioned message protocol without Rust bindings.
+## Player interaction
 
-`yeet-core` owns probing, discovery, subtitle enumeration/preparation, compatibility,
-conversion/cache, Cast sessions, controls, sleep inhibition, and checkpoint storage.
-The CLI owns its configurable device/subtitle automation and automatic resume.
-The UI has independent convenience defaults: the last-used device and suggested
-subtitles. Opening a file in the regular player never launches playback or conversion.
-The separate convert-only entry previews preparation for a chosen target and waits
-for an explicit Convert click.
+Opening a video or dropping one local file on the idle player does not start
+playback. The selected-video panel stays visible through all three states:
 
-CLI configuration uses `[cli.devices]`, `[cli.subtitles]`, and `[cli.playback]`.
-The last uses `auto_resume`; saving checkpoints is an independent shared capability.
-No compatibility aliases are required. Existing personal config is updated locally.
-The helper snapshots the bundled device database plus local `devices.toml` overrides
-for each new cast; it does not read CLI configuration. The KDE app stores the last device ID
-in `$XDG_CONFIG_HOME/yeet/kde-ui.ini` (normally `~/.config/yeet/kde-ui.ini`), separate
-from `config.toml`. It records the device when a start request is accepted and
-restores it after discovery only if it is still an available video-capable target.
-Changing a selection without starting playback does not overwrite the last device.
+1. **Selection:** devices, a combined embedded/exact-basename external subtitle
+   list, a subtitle file picker, signed delay, and starting-position buttons.
+   The picker starts beside the source. Discovery has a loading indicator.
+2. **Preparation:** conversion/remux progress and Cancel; probing, subtitle work,
+   connection and loading use an indeterminate indicator. Direct/cache-hit paths
+   pass through this state briefly.
+3. **Playing:** position, seek slider, pause/play and stop, aligned at the bottom.
+   Space toggles pause/play without key-repeat. Stop waits for cleanup and returns
+   to choices. Quit/Ctrl+Q/window close cancels active work and waits for helper exit.
 
-The same GUI-only INI file stores conversion window preferences:
+The last-used eligible device is restored after discovery. Subtitles default to
+English then Dutch using shared ranking, then exact-name SRT fallback. Unsupported
+tracks are skipped; ambiguous sidecars leave None selected with a warning. The
+combined list also includes matching VTT/ASS/SSA; an explicit picker file need
+not match the video name. Manual choices survive stop/restart of the same video.
+CLI preferences do not change these UI defaults.
+
+**Yeet** starts at zero; **Yeet from last position** appears when a usable
+checkpoint exists. The UI saves progress but never resumes implicitly.
+**Subtitle delay** is in signed milliseconds: positive later, negative earlier.
+It resets for a new file, survives stop/restart, and is fixed for each session,
+including burn-in. Subtitle selection/delay cannot change during preparation or
+playback. Multiple-file, directory, remote-URL and active-session drops are ignored.
+
+## GUI preferences
+
+`$XDG_CONFIG_HOME/yeet/kde-ui.ini` (normally `~/.config/yeet/kde-ui.ini`) stores
+`lastDeviceId` in the General group. The player and converter share it; an accepted
+start/convert with a device records it. Merely changing a selection does not.
+The helper snapshots [device rules](device-compatibility.md) per operation and
+never reads `[cli.*]` preferences.
 
 ```ini
 [conversion]
 autoClose=true
 ```
 
-`autoClose` defaults to true and closes successful conversions after five seconds.
-Set it to false to leave completed conversions open. It is read when a conversion
-window opens. This setting is independent of the CLI preferences and device override TOML files and has no
-effect on CLI operation. The remembered device remains in the INI's General group.
-
-## Interaction
-
-Both windows share a selected-video panel: a framed container with 16-pixel
-internal padding, a bold **Selected video** heading at the top left, and the
-filename below. Long names wrap; the full path is available as a tooltip. Window
-margins and section spacing match between the player and converter. The player's
-**Open video…** button sits outside the panel, below it on the right. The panel
-stays visible through selection, preparation, and playback.
-
-On startup, inspect the file and discover receivers asynchronously. Show a device
-selector that restores the last-used device if available, a single subtitle list containing None,
-embedded tracks, and exact-basename external SRT, WebVTT, ASS, and SSA files. A separate file picker
-starts beside the source and can choose supported external subtitle files.
-On opening a new video, preselect the backend's recommendation using the CLI's
-existing ranking with fixed English-then-Dutch language order, then a matching
-SRT fallback. Unsupported tracks are skipped; ambiguous sidecars leave None selected
-and show a warning. Manual subtitle choices, including None, survive stopping and
-restarting the same video. CLI configuration and flags do not affect these defaults.
-The **Subtitle delay: [input] ms** row accepts signed milliseconds (positive is
-later, negative is earlier). It defaults to zero for each newly opened video,
-survives stop/restart, and applies when starting or resuming playback. It is
-disabled during preparation and playback, like subtitle selection.
-
-A single local video can also be dragged onto the idle window. Dropping opens it
-without playback; drops during preparation/playback, multiple files, directories,
-and remote URLs are ignored. The source file is never moved.
-
-Yeet starts at zero. Yeet from last position appears when a usable checkpoint
-exists. Both require a valid selected receiver. There are three separate screens:
-
-1. **Selection:** choose the receiver, subtitle track/file, and starting position.
-2. **Preparation:** show conversion/remuxing progress and Cancel. While probing,
-   preparing subtitles, connecting, or loading, show an indeterminate indicator.
-   Direct playback and cache hits pass through this screen briefly.
-3. **Playing:** show pause/play, stop, position, and a seek slider. Space toggles
-   pause/play while the window is active, without repeating when held down.
-
-In the regular player, no conversion starts before pressing a Yeet button. Progress is a structured
-fraction from the backend; the frontend does not parse FFmpeg or CLI output.
-Disable subtitle selection during preparation and playback. Stop waits for cleanup
-and returns to startup choices. The helper stays available for another session.
-The bottom-row Quit button and Ctrl+Q use the normal window-close cleanup path.
-Ctrl+Q also works during preparation and playback. Closing the UI or losing its input pipe cancels work, releases resources, and
-exits the helper. Helper failure must be visible in the UI.
+Auto-close defaults to five seconds after successful conversion, including reuse
+or already-compatible input. Set false to retain the window with **Auto-close
+disabled** shown. Errors/cancellation stay open. The setting is read when the
+window opens and has no CLI effect.
 
 ## Convert-only window
-
-Open a video with **Yeet (convert only)**, or run:
 
 ```sh
 ./target/kde/yeet-kde --convert-only /path/to/video.mkv
 ```
 
-Without a filename this mode opens a file picker. It shows the filename, target
-selection, and separate Source and Target sections before starting work. During
-conversion it shows progress and Cancel.
-Source and Target headings are bold and left-aligned. Both sections use fixed
-Container, Video, Resolution and Audio rows, with regular-weight labels and
-values. Selected video and Available file captions are bold too. The target
-shows the planned format before cache lookup, then fills in probed output details
-without changing the layout. Container aliases are normalized (for example, MP4).
-The window discovers video-capable devices and preselects the last-used device
-when found, sharing `lastDeviceId` with the player. Audio-only receivers are omitted.
-The **Broad compatibility (no device)** entry remains available when there is no
-receiver or discovery fails. Refresh repeats discovery; changing the selection
-updates a read-only preview of the actual planned format. Conversion starts only
-when **Convert** is clicked. The target selector and Refresh are disabled once
-work starts. Close/CTRL+Q is available during selection too.
+Without a filename, a native picker opens. Choose a discovered video receiver or
+**Broad compatibility (no device)**, review the source/target format preview,
+and click **Convert**. The last-used device is preselected if present; audio-only
+receivers are omitted. Refresh rescans, and empty/failed discovery still permits
+Broad compatibility. Changing the target updates a read-only preview; stale
+responses cannot overwrite a newer choice.
 
-A selected receiver uses its model from discovery, the bundled database and local
-`devices.toml` overrides, exactly as automatic casting does. Unknown models and
-Broad compatibility use MP4, SDR H.264 up to 1080p30/level 4.1, and optional
-mono/stereo AAC-LC. Compatible streams are copied when possible; an already
-compatible MP4 needs no conversion. Encoded audio is stereo AAC at 192 kbps/48 kHz.
-Discovery does not launch a Cast app or start playback. Conversion itself never
-connects to the receiver or creates an HTTP listener or resume checkpoint.
-The helper acquires the same best-effort sleep inhibitor used by casting once
-conversion is started; preview does not inhibit sleep or prepare files.
-CLI automation preferences do not influence conversion. See
-[device overrides](device-compatibility.md#user-overrides).
+A device uses its advertised model and bundled-plus-user database rules, exactly
+as automatic casting does. Unknown models/Broad compatibility use conservative
+H.264/stereo AAC MP4. Conversion resolves the policy and inspects again, so changes
+since preview are validated. Malformed overrides fail visibly; Broad compatibility
+bypasses them. The selected device need not remain online during conversion.
 
-The selected device must be in this helper's discovery results, but does not need
-to remain online while conversion runs. The model policy is captured again on
-Convert, so file/override changes since preview are validated before preparation.
-Malformed overrides fail visibly; choosing Broad compatibility bypasses them.
-`--no-discovery` skips the initial scan for development; Refresh is still available.
+**Source** and **Target** are bold left-aligned headings; Container, Video,
+Resolution and Audio labels/values are regular weight. Planned and probed output
+use the same rows. The framed selected-video panel has consistent padding and a
+bold heading, filename below, and a full-path tooltip. Long labels wrap without
+clipping. Controls stay at the bottom.
 
-Completed output is validated and kept beside the canonical source, with the
-existing user-cache fallback if the directory is not writable. Existing conversions
-with the same recipe are reused. The original is kept. Subtitles are not copied or
-burned into this offline output: open the original in the player to retain Yeet's
-subtitle selection. The result path is displayed on completion.
+Once work starts, target/Refresh are disabled and Cancel waits for cleanup before
+becoming Close. Window close/Ctrl+Q also waits for cleanup. Preview has no encoder,
+cache publication or sleep lock; conversion holds sleep inhibition and keeps
+validated output with the usual adjacent-file/user-cache behavior. Neither
+conversion nor preview starts playback, connects to the receiver, serves HTTP,
+selects subtitles or writes resume checkpoints.
 
-Cancel waits for cleanup before becoming Close. Closing the window or Ctrl+Q also
-cancels active work and waits for helper exit. On success, Close is available.
-With the default GUI setting, a one-line five-second countdown closes successful
-conversions. With `conversion/autoClose=false` in the GUI INI file, the footer
-says **Auto-close disabled**, and successful conversions stay open. Errors and
-cancellation always stay open until explicitly closed.
-An already-compatible source and cache reuse are successes.
-
-The player and convert-only share preparation/cache recipes for the same resolved
-policy. Opening the original reuses its conversion when the recipe matches. A
-different receiver or subtitle burn-in can require a different recipe.
-
-## Transport contract
-
-Use UTF-8 newline-delimited JSON over private stdin/stdout pipes. Logs go to stderr.
-Every request has an integer `id` and a `method`, with typed `params` as needed.
-Responses echo the id and carry either a result or a structured error. Progress
-is an asynchronous event with a session identifier, phase, position, and message.
-A protocol-version handshake rejects incompatible versions. Messages and queues
-are bounded. No shell command construction or parsing of CLI prose is involved.
-
-Operations: handshake, inspect (metadata/subtitles/checkpoint), discover, start
-(explicit file/device/subtitle/position), pause, play, seek, stop, and shutdown.
-Only one playback session or offline conversion runs per helper. Commands for expired sessions must not
-affect a later session. Queries never trigger playback. Seek validation and
-receiver ownership checks belong in the backend. Lifecycle acknowledgements and
-session events distinguish a request being accepted from playback actually starting.
-
-## Implementation and validation
-
-1. Separate CLI policy/configuration from explicit backend requests; preserve CLI
-   defaults and expose read-only checkpoint lookup and subtitle enumeration.
-2. Add a controllable core session and the private Rust helper. Exercise the
-   protocol and lifecycle against simulated receivers, including cleanup on EOF.
-3. Add the Qt/KDE window, native file dialogs, and desktop Open With entry.
-4. Build on Fedora, exercise the GUI locally without contacting a receiver, and
-   provide a short user-run TV checklist. Keep original private names out of Git.
-
-Development packages on Fedora: `gcc-c++ cmake ninja-build extra-cmake-modules
-qt6-qtbase-devel kf6-kcoreaddons-devel kf6-ki18n-devel`.
-
-References: [QProcess](https://doc.qt.io/qt-6/qprocess.html),
-[Qt Widgets](https://doc.qt.io/qt-6/qtwidgets-index.html).
+Subtitles are not copied or burned into convert-only output. Open the original
+in the player to select them. Casting and convert-only reuse the same recipe for
+the same resolved policy; another device or bitmap burn-in may need another recipe.
 
 ## Build and launch
 
-From the repository root:
+Fedora development packages: `gcc-c++ cmake ninja-build extra-cmake-modules
+qt6-qtbase-devel kf6-kcoreaddons-devel kf6-ki18n-devel`. CMake requires Qt >= 6.6,
+KDE Frameworks >= 6 and C++17. From the repository root:
 
 ```sh
 cmake -S apps/yeet-kde -B target/kde -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build target/kde
-./target/kde/yeet-kde samples/preferences/embedded.mkv --http-port 8010
+./target/kde/yeet-kde /path/to/video.mkv --http-port 8010
 ```
 
-CMake also builds and copies the Rust helper beside the frontend. Re-run the build
-after either Rust or C++ changes. Launch without a file to use the native picker.
-The `--http-port 8010` override uses a fixed port for an existing firewall rule;
-omit it to let the OS choose a port. No firewall rules are changed automatically.
-The Rust CLI remains `yeet FILE` and has no Qt dependency. `yeet-kde FILE` is the UI.
-There is no Python runtime dependency for either application; the Qt tests use a
-small Python mock helper.
+CMake builds/copies the Rust helper beside the UI; rebuild after Rust or C++ changes.
+Omit the file to use Open video; omit `--http-port` for an OS-assigned serving port.
+A fixed port helps with an existing firewall rule; the app does not create one.
+`--backend PATH` selects a test helper. `--no-discovery` skips the initial scan in
+both windows; Refresh remains available. The Rust CLI has no Qt dependency;
+Python is used only by the native test fixture.
 
-For an optional local install, configure with `-DCMAKE_INSTALL_PREFIX="$HOME/.local"`
-and run `cmake --install target/kde`. This installs the frontend under `bin`, the
-helper under the KDE libexec directory (`lib64/libexec/yeet` on this Fedora
-build), and both application/Open With desktop entries. Ensure the
-install's `bin` directory is in the desktop session's PATH. Installation does not
-change the default association for video files.
+For local installation, configure `-DCMAKE_INSTALL_PREFIX="$HOME/.local"`, rebuild
+and run `cmake --install target/kde`. CMake installs the UI in `bin`, the helper in
+the KDE libexec directory, and both desktop entries. Ensure the install's `bin` is
+in the desktop session's PATH. This does not change the default video player.
+RPM packaging/clean-system validation is still open.
 
 ### Register the development build with KDE
 
-A user-local `org.yeet.Yeet.desktop` entry now points directly to the current
-`target/kde/yeet-kde` executable, using HTTP port 8010. Yeet appears in the
-application launcher and Dolphin's **Open With** menu. This does not replace the
-default video player. It advertises MP4/M4V, MKV, WebM, AVI, MOV, MPEG/TS, FLV,
-WMV, and Ogg video; playback remains subject to codec support and preparation.
-
-The development launcher is outside Git. To register it again after moving the
-checkout, run these commands from the repository root after building:
+The development setup uses user-local desktop entries pointing at the checkout.
+To register or repair them after moving it, run from the repository root:
 
 ```sh
 desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
@@ -226,77 +133,49 @@ update-desktop-database "${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 kbuildsycoca6
 ```
 
-The [version 1 protocol reference](backend-protocol.md) defines the frontend boundary.
-Developer overrides `--backend PATH` and `--no-discovery` allow offline UI checks.
+The entries advertise the MIME types in the committed desktop files, including
+MP4 and MKV. An Open With association is not a codec-compatibility guarantee.
 
 ## Automated checks
 
-```sh
-cargo fmt --check
-cargo clippy --locked --workspace --all-targets -- -D warnings
-cargo test --locked --workspace -- --include-ignored
-/usr/bin/ctest --test-dir target/kde --output-on-failure
-```
+Use [README checks](../README.md#checks). The CTest target runs offscreen with
+Fusion; focused native tests have also passed with KDE Breeze. Set
+`YEET_UI_SCREENSHOTS` to save test screenshots. Native tests use a Python mock
+helper, plus a read-only inspection check through the real Rust helper.
 
-The Rust suite covers the helper protocol, shared subtitle ranking, conversion,
-and casting. Native window tests cover the player and convert-only lifecycle; the native checks run with both Fusion and KDE Breeze styles. Formatting,
-Clippy, the CMake build, desktop-entry validation, and installation into a temporary
-prefix also passed. The Rust checks include real FFmpeg fixtures and local simulated Cast receivers.
-The new coverage verifies explicit controls, invalid seeks, ownership/cleanup,
-protocol framing, version rejection, ignored CLI config, read-only inspection,
-and EOF cancelling/reaping an active probe. The native tests exercise the three
-screens, device persistence, suggested/manual subtitle choices, explicit resume,
-Space controls, drag-and-drop, repeated sessions,
-stale events, cancellation, and helper shutdown. Another native check inspects
-through the actual Rust helper. These checks do not cast to a TV.
-
-Set `YEET_UI_SCREENSHOTS` to a local output directory when running CTest to save
-selection, preparation, and playing screenshots from the simulated UI test, including convert-only progress and completion.
+Coverage includes explicit start, preview/device persistence, subtitle choices,
+resume, Space, drag-and-drop, preparation, controls, stale events, cancellation,
+helper exit, format rows and auto-close. Rust tests exercise protocol framing,
+version rejection, bounded requests, seek/ownership/lifecycle behavior and real
+FFmpeg conversion/cache fixtures. Automated tests never contact TVs.
 
 ## Convert-only checks
 
-Automated checks use short generated media to exercise remuxing, audio conversion,
-full video conversion, reuse, already-compatible input, and unchanged sources.
-Protocol checks cancel active encoders by explicit cancellation, shutdown, and EOF,
-verify child reaping and partial-output removal, and reject concurrent operations.
-Native tests cover device selection, remembered targets, baseline fallback after
-empty/failed discovery, stale preview rejection, explicit start, progress, terminal
-errors, cancellation, early close,
-window close, consistent cached-output format rows, and successful completion
-remaining open with auto-close disabled, plus default auto-close and countdown
-layout. None of these tests contacts a TV.
-
-For a manual check, open a video via Dolphin's convert-only entry. Confirm the
-last-used receiver is selected and no conversion starts yet. Switch between the
-receiver and Broad compatibility and review the format preview, then click Convert.
-Check progress, output location and that it remains open after success when
-auto-close is disabled. Cancel a second conversion and confirm
-that it stays open with Close after cleanup. Real listening remains useful for
-subjective dialogue clarity; synthetic channel tests cannot judge a movie's mix.
+Open a video through Dolphin's convert-only entry. Confirm no work starts before
+Convert, the last-used device is selected if available, and switching to Broad
+compatibility updates the preview. Convert and check the result path; reopen the
+original to verify reuse. Cancel a second uncached conversion and confirm Close
+appears after cleanup. Auto-close depends on the GUI setting above. Device-targeted
+conversion/cache sharing and discovery-failure fallback have automated coverage;
+subjective dialogue quality still requires listening.
 
 ## TV checklist
 
-1. Open `samples/preferences/embedded.mkv`. Confirm no playback starts, English is selected, and
-   the last-used TV is selected if available (choose it on the first run).
-   Then press **Yeet**. Confirm picture, sound, and captions.
-2. Pause and resume using the window buttons and Space. Seek forwards and backwards; also seek
-   while paused. Confirm playback and captions stay in sync.
-3. After at least 20 seconds, stop. Confirm the TV stops and selection returns.
-   Use **Yeet from last position**, then stop and use **Yeet** to verify the
-   difference between resuming and starting at zero.
-4. Select an external subtitle with the picker. It should open beside the video.
-   Confirm captions and then close the window during playback; the helper and
-   owned playback should stop.
-5. To see actual conversion progress, use an uncached conversion candidate or
-   copy the generated PGS fixture `samples/subtitle-check/embedded-pgs-cues.mkv`
-   into a fresh temporary folder under `samples`, open that copy, and select its
-   PGS track. Confirm the preparation screen advances before playback starts.
-   Repeat with another fresh copy and press Cancel during conversion; confirm
-   selection returns and no incomplete prepared output remains.
+1. Generate `samples/preferences/embedded.mkv` with
+   `bash scripts/generate-subtitle-fixture.sh samples/preferences 60`. Open it;
+   confirm English and the last-used eligible TV are selected, without playback.
+   Press **Yeet** and confirm picture, sound and captions.
+2. Pause/resume with buttons and Space. Seek both directions, including while
+   paused; confirm caption/audio sync. Longer copied-HEVC checks are separate.
+3. Stop after at least 20 seconds; confirm the TV stops and choices return.
+   Try **Yeet from last position**, then **Yeet** to verify resume versus restart.
+4. Choose an external subtitle and test positive/negative delay. Close during
+   playback and confirm owned playback/helper resources stop.
+5. With an uncached input requiring conversion (or a selected PGS track), confirm
+   progress before playback. Cancel a fresh preparation and check no partial
+   output remains. The local PGS fixture is not shipped; see [subtitle checks](preferences-and-subtitles.md#verification-and-tv-checklist).
+6. Reopen, confirm device persistence, and drop a local video onto the idle player.
+   It should refresh choices without starting playback.
 
-6. Reopen the app and verify the last-used device is restored after discovery.
-   Drop another local video onto the idle window; it should open with suggested
-   subtitles while waiting for **Yeet** to be pressed.
-
-Successful prepared outputs remain reusable, as in the CLI. Subtitle switching
-during playback, a settings window, packaging, and non-KDE frontends are deferred.
+Subtitle switching during playback, a settings window, MPRIS, single-instance
+behavior, packaging and non-KDE frontends remain in [the roadmap](plan.md).
