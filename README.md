@@ -114,7 +114,7 @@ preferences for the KDE frontend use `gui.toml`. XDG locations are supported. Se
 [device overrides](docs/device-compatibility.md#user-overrides).
 
 
-## Limits and networking
+## Limitations
 
 PQ/HLG colour tags alone do not prevent direct playback or video copying. Werp
 preserves the video and its colour signalling on those paths; the receiver may
