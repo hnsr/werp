@@ -1,6 +1,6 @@
 //! Private frontend helper. stdout is exclusively protocol JSON; stderr is logging.
 use clap::Parser;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 use tokio::{
@@ -44,6 +44,13 @@ enum Command {
         file: PathBuf,
     },
     Discover,
+    GetGuiPreferences {
+        path: PathBuf,
+    },
+    SetGuiLastDevice {
+        path: PathBuf,
+        device_id: String,
+    },
     PreviewConversion {
         file: PathBuf,
         device_id: Option<String>,
@@ -77,6 +84,67 @@ enum Command {
         session_id: u64,
     },
     Shutdown,
+}
+
+#[derive(Default, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+struct GuiPreferences {
+    last_device_id: String,
+    conversion: ConversionPreferences,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+struct ConversionPreferences {
+    auto_close: bool,
+}
+impl Default for ConversionPreferences {
+    fn default() -> Self {
+        Self { auto_close: true }
+    }
+}
+
+fn read_gui(path: &std::path::Path) -> Result<GuiPreferences, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(GuiPreferences::default());
+        }
+        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
+    };
+    if text.len() > 65536 {
+        return Err("GUI config exceeds 64 KiB".into());
+    }
+    toml::from_str(&text).map_err(|error| format!("invalid {}: {error}", path.display()))
+}
+
+fn write_gui(path: &std::path::Path, preferences: &GuiPreferences) -> Result<(), String> {
+    let parent = path.parent().ok_or("invalid GUI config path")?;
+    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    let text = toml::to_string_pretty(preferences).map_err(|error| error.to_string())?;
+    let temporary = parent.join(format!(".gui.toml.{}.tmp", std::process::id()));
+    let result = (|| -> std::io::Result<()> {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        if let Ok(metadata) = std::fs::metadata(path) {
+            file.set_permissions(metadata.permissions())?;
+        }
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result.map_err(|error| format!("cannot write {}: {error}", path.display()))
+}
+
+fn gui_result(preferences: &GuiPreferences) -> Value {
+    json!({"last_device_id":preferences.last_device_id,
+           "conversion_auto_close":preferences.conversion.auto_close})
 }
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -314,6 +382,21 @@ async fn run(args: Args) -> Result<(), String> {
                     match request.command {
                         Command::Hello { .. } => send(&output,error(Some(id),"invalid_request","already connected")).await?,
                         Command::Shutdown => { shutdown_id = Some(id); break; }
+                        Command::GetGuiPreferences { path } => {
+                            let reply = match read_gui(&path) {
+                                Ok(preferences) => ok(id,gui_result(&preferences)),
+                                Err(message) => error(Some(id),"config_error",message),
+                            };
+                            send(&output,reply).await?;
+                        }
+                        Command::SetGuiLastDevice { path, device_id } => {
+                            let reply = read_gui(&path).and_then(|mut preferences| {
+                                preferences.last_device_id = device_id;
+                                write_gui(&path,&preferences)?;
+                                Ok(gui_result(&preferences))
+                            });
+                            send(&output,match reply { Ok(value) => ok(id,value), Err(message) => error(Some(id),"config_error",message) }).await?;
+                        }
                         Command::Inspect { file } => {
                             if queries.len() >= 16 { send(&output,error(Some(id),"busy","too many queries")).await?; continue; }
                             pending.insert(id);

@@ -46,15 +46,17 @@ playback. Multiple-file, directory, remote-URL and active-session drops are igno
 
 ## KDE frontend preferences
 
-`$XDG_CONFIG_HOME/werp/kde-ui.ini` (normally `~/.config/werp/kde-ui.ini`) stores
-`lastDeviceId` in the General group. The player and converter share it; an accepted
+`$XDG_CONFIG_HOME/werp/gui.toml` (normally `~/.config/werp/gui.toml`) stores
+the KDE GUI preferences. The player and converter share the last device; an accepted
 start/convert with a device records it. Merely changing a selection does not.
 The helper snapshots [device rules](device-compatibility.md) per operation and
 never reads `[cli.*]` preferences.
 
-```ini
+```toml
+last_device_id = "your-device-id"
+
 [conversion]
-autoClose=true
+auto_close = true
 ```
 
 Auto-close defaults to five seconds after successful conversion, including reuse

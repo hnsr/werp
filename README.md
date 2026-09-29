@@ -8,7 +8,7 @@ receiver.
 - Native application written in Rust
 - Minimize or entirely avoid remuxing or transcoding when possible (uses ffmpeg)
 - Device capability DB + user-configuration to allow more video to be streamed directly
-- Embedded or external subtitles (SubRip)
+- Embedded or external subtitles (SRT, WebVTT, ASS, and SSA in UTF-8 or BOM-marked UTF-16)
 - Control playback through standard media keys/controls (MPRIS)
 - Inhibit sleep/suspend while playing
 
@@ -97,7 +97,7 @@ options, or a path such as `./devices` for filenames that match subcommands.
 CLI preferences live in `~/.config/werp/config.toml`: automatic subtitles
 (English then Dutch), preferred devices and automatic resume. The GUI does not
 apply these CLI settings. Device rules live separately in `devices.toml`; GUI
-preferences for the KDE frontend use `kde-ui.ini`. XDG locations are supported. See
+preferences for the KDE frontend use `gui.toml`. XDG locations are supported. See
 [configuration and resume](docs/preferences-and-subtitles.md) and
 [device overrides](docs/device-compatibility.md#user-overrides).
 

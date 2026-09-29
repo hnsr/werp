@@ -1,8 +1,8 @@
 #pragma once
 #include "backend.h"
+#include "guisettings.h"
 #include <QMainWindow>
 #include <QTimer>
-#include <QSettings>
 class QComboBox;
 class QLabel;
 class QProgressBar;
@@ -26,7 +26,7 @@ private:
     void refreshActions();
     QJsonObject targetParams() const;
     QString m_file;
-    QSettings m_settings;
+    GuiSettings m_settings;
     QComboBox *m_devices;
     QPushButton *m_refresh, *m_convert;
     QLabel *m_discoveryStatus;

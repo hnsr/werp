@@ -87,6 +87,48 @@ impl Drop for Helper {
         let _ = self.child.wait();
     }
 }
+
+#[test]
+fn gui_preferences_are_separate_from_cli_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let gui = dir.path().join("settings/gui.toml");
+    let cli = dir.path().join("settings/config.toml");
+    fs::create_dir_all(gui.parent().unwrap()).unwrap();
+    fs::write(&cli, "[cli.playback]\nauto_resume = false\n").unwrap();
+    let mut helper = Helper::new(None, &state);
+    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.send(json!({"id":2,"method":"get_gui_preferences","params":{"path":gui}}));
+    let initial = helper.read();
+    assert_eq!(initial["result"]["last_device_id"], "");
+    assert_eq!(initial["result"]["conversion_auto_close"], true);
+    fs::write(
+        &gui,
+        "last_device_id = \"living-room\"\n[conversion]\nauto_close = false\n",
+    )
+    .unwrap();
+    helper.send(
+        json!({"id":3,"method":"set_gui_last_device","params":{"path":gui,"device_id":"bedroom"}}),
+    );
+    let saved = helper.read();
+    assert_eq!(saved["result"]["last_device_id"], "bedroom");
+    assert_eq!(saved["result"]["conversion_auto_close"], false);
+    assert!(fs::read_to_string(&gui).unwrap().contains("bedroom"));
+    assert_eq!(
+        fs::read_to_string(&cli).unwrap(),
+        "[cli.playback]\nauto_resume = false\n"
+    );
+    fs::write(&gui, "[conversion]\nauto_clsoe = false\n").unwrap();
+    helper.send(
+        json!({"id":4,"method":"set_gui_last_device","params":{"path":gui,"device_id":"tv"}}),
+    );
+    assert_eq!(helper.read()["error"]["code"], "config_error");
+    assert!(fs::read_to_string(&gui).unwrap().contains("auto_clsoe"));
+    helper.send(json!({"id":5,"method":"shutdown"}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.wait();
+}
 #[test]
 fn handshake_inspection_framing_validation_and_explicit_shutdown() {
     let dir = tempfile::tempdir().unwrap();

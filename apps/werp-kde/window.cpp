@@ -11,7 +11,6 @@
 #include <QMimeData>
 #include <QMimeDatabase>
 #include <QShortcut>
-#include <QStandardPaths>
 #include <QUrl>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -63,7 +62,7 @@ static QString payload(const QJsonObject &value) { return QString::fromUtf8(QJso
 Window::Window(const QString &backend, const QString &file, bool discoverOnStart, const QStringList &backendArguments, const QString &settingsFile)
     : m_backend(backend,this,backendArguments),
       m_mpris(this),
-      m_settings(settingsFile.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/werp/kde-ui.ini" : settingsFile,QSettings::IniFormat),
+      m_settings(settingsFile),
       m_autoDiscover(discoverOnStart) {
     setupUi();
     connectSignals();
@@ -250,7 +249,11 @@ void Window::connectSignals() {
         m_retry->hide();
         showError({});
         if (!m_file.isEmpty()) inspect();
-        if (m_autoDiscover) discover();
+        m_settings.load(m_backend,[this](const QString &error) {
+            if (m_activity == Activity::Closing) return;
+            if (!error.isEmpty()) showError(error);
+            if (m_autoDiscover) discover();
+        });
         refreshActions();
     });
     connect(&m_backend,&Backend::event,this,&Window::handleEvent);
@@ -362,8 +365,7 @@ void Window::discover() {
                 if (auto *model=qobject_cast<QStandardItemModel *>(m_devices->model())) model->item(m_devices->count()-1)->setEnabled(false);
             }
         }
-        m_settings.sync();
-        for (const auto &candidate : {previous,m_settings.value("lastDeviceId").toString()}) {
+        for (const auto &candidate : {previous,m_settings.lastDeviceId()}) {
             const int index=m_devices->findData(candidate);
             if (index>0 && (m_devices->model()->flags(m_devices->model()->index(index,0)) & Qt::ItemIsEnabled)) {
                 m_devices->setCurrentIndex(index); break;
@@ -398,8 +400,10 @@ void Window::startPlayback(bool resume) {
     m_backend.request("start",params,[this,deviceId](const QJsonObject &reply) {
         if (m_activity == Activity::Closing) return;
         if (!check(reply)) { m_activity=Activity::Idle; m_pages->setCurrentIndex(0); refreshActions(); return; }
-        m_settings.setValue("lastDeviceId",deviceId); m_settings.sync();
-        if (m_settings.status()!=QSettings::NoError) showError(i18n("Could not remember the selected device."));
+        m_settings.saveLastDevice(m_backend,deviceId,[this](const QString &error) {
+            if (!error.isEmpty() && m_activity != Activity::Closing)
+                showError(i18n("Could not remember the selected device: %1",error));
+        });
         m_session=Protocol::Reply(reply).resultId("session_id"); m_cancel->setEnabled(true); m_stop->setEnabled(true);
     });
 }

@@ -1,9 +1,9 @@
 #pragma once
 #include "backend.h"
+#include "guisettings.h"
 #include "mpris.h"
 #include <QMainWindow>
 #include <QJsonObject>
-#include <QSettings>
 class QShortcut; class QDragEnterEvent; class QDragMoveEvent; class QDropEvent;
 class QComboBox; class QLabel; class QPushButton; class QSlider; class QProgressBar; class QStackedWidget;
 class SelectedVideoPanel;
@@ -35,7 +35,7 @@ private:
     void sendControl(const QString &method, QJsonObject params = {});
     Backend m_backend;
     Mpris m_mpris;
-    QSettings m_settings;
+    GuiSettings m_settings;
     QShortcut *m_togglePlayback;
     QString m_file, m_directory;
     qint64 m_session = 0;

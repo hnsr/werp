@@ -13,8 +13,6 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QShortcut>
-#include <QSettings>
-#include <QStandardPaths>
 #include <QVBoxLayout>
 
 namespace {
@@ -43,8 +41,7 @@ QLabel *label(QWidget *parent, const char *name, const QString &text={}) {
 }
 ConversionWindow::ConversionWindow(const QString &backend,const QString &file,const QStringList &arguments,const QString &settingsFile,bool discoverOnStart)
     : m_file(QFileInfo(file).absoluteFilePath()),
-      m_settings(settingsFile.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/werp/kde-ui.ini" : settingsFile,QSettings::IniFormat) {
-    m_autoClose=m_settings.value("conversion/autoClose",true).toBool();
+      m_settings(settingsFile) {
     setupUi();
     m_backend=new Backend(backend,this,arguments);
     connectSignals(discoverOnStart);
@@ -137,8 +134,13 @@ void ConversionWindow::connectSignals(bool discoverOnStart) {
         }
     });
     connect(m_backend,&Backend::connected,this,[this,discoverOnStart] {
-        if (discoverOnStart) discover();
-        else preview();
+        m_settings.load(*m_backend,[this,discoverOnStart](const QString &error) {
+            if (m_activity == Activity::Closing) return;
+            m_autoClose=m_settings.conversionAutoClose();
+            if (!error.isEmpty()) m_status->setText(error);
+            if (discoverOnStart) discover();
+            else preview();
+        });
     });
     connect(m_backend,&Backend::event,this,[this](const QJsonObject &message) {
         if (m_activity == Activity::Closing || m_activity == Activity::Finished
@@ -190,8 +192,7 @@ void ConversionWindow::discover() {
         } else {
             m_discoveryStatus->setText(i18n("Device search failed: %1. Broad compatibility is still available.",response.error()));
         }
-        m_settings.sync();
-        const auto candidate=hadSelection ? previous : m_settings.value("lastDeviceId").toString();
+        const auto candidate=hadSelection ? previous : m_settings.lastDeviceId();
         const int index=m_devices->findData(candidate);
         if (index>=0) m_devices->setCurrentIndex(index);
         m_devices->setProperty("discovered",true);
@@ -229,7 +230,7 @@ void ConversionWindow::startConversion() {
         if (!response.ok()) { fail(response.error()); return; }
         m_operation=response.resultId("operation_id");
         if (m_activity == Activity::Starting) m_activity=Activity::Working;
-        if (!device.isEmpty()) { m_settings.setValue("lastDeviceId",device); m_settings.sync(); }
+        if (!device.isEmpty()) m_settings.saveLastDevice(*m_backend,device);
     });
 }
 QGroupBox *ConversionWindow::createFormatSection(const QString &title,const QString &name,FormatFields &fields) {

@@ -33,6 +33,11 @@ class WindowTest : public QObject {
         for (const auto &call : calls(path)) if (call["method"]=="start") result << call["params"].toObject();
         return result;
     }
+    static void writeGui(const QString &path, const QByteArray &contents) {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(contents),contents.size());
+    }
     static void screenshot(QWidget &window,const QString &name) {
         const auto output=qEnvironmentVariable("WERP_UI_SCREENSHOTS");
         if (!output.isEmpty()) { QDir().mkpath(output); QVERIFY(window.grab().save(output+"/"+name+".png")); }
@@ -93,8 +98,8 @@ private slots:
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        const auto settings=dir.filePath("ui.ini");
-        QSettings preferences(settings,QSettings::IniFormat); preferences.setValue("lastDeviceId","tv"); preferences.sync();
+        const auto settings=dir.filePath("ui.toml");
+        writeGui(settings,"last_device_id = \"tv\"\n");
         ConversionWindow window(helper,dir.filePath("slowpreview long.mkv"),{},settings); window.show();
         auto *devices=window.findChild<QComboBox *>("conversionDevices");
         auto *start=window.findChild<QPushButton *>("conversionStart");
@@ -128,7 +133,7 @@ private slots:
             QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
             QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
             QFile devicesFile(helper+".devices.json"); QVERIFY(devicesFile.open(QIODevice::WriteOnly)); devicesFile.write(payload); devicesFile.close();
-            ConversionWindow window(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.ini")); window.show();
+            ConversionWindow window(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.toml")); window.show();
             auto *start=window.findChild<QPushButton *>("conversionStart");
             QTRY_VERIFY(start->isEnabled());
             QCOMPARE(window.findChild<QComboBox *>("conversionDevices")->count(),1);
@@ -145,8 +150,8 @@ private slots:
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        const auto settings=dir.filePath("ui.ini");
-        QSettings preferences(settings,QSettings::IniFormat); preferences.setValue("conversion/autoClose",false); preferences.sync();
+        const auto settings=dir.filePath("ui.toml");
+        writeGui(settings,"[conversion]\nauto_close = false\n");
         ConversionWindow window(helper,dir.filePath("complete video.mkv"),{},settings); window.show(); startConversion(window);
         const auto button=window.findChild<QPushButton *>("conversionButton");
         const auto progress=window.findChild<QProgressBar *>("conversionProgress");
@@ -188,7 +193,7 @@ private slots:
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        ConversionWindow window(helper,dir.filePath("complete.mkv"),{},dir.filePath("default-ui.ini")); window.show(); startConversion(window);
+        ConversionWindow window(helper,dir.filePath("complete.mkv"),{},dir.filePath("default-ui.toml")); window.show(); startConversion(window);
         QTRY_COMPARE(window.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
         auto *countdown=window.findChild<QLabel *>("conversionCountdown");
         QCOMPARE(countdown->text(),QString("Closing in 5 seconds…"));
@@ -205,7 +210,7 @@ private slots:
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        ConversionWindow window(helper,dir.filePath("reuse video.mkv"),{},dir.filePath("ui.ini")); window.show(); startConversion(window,true);
+        ConversionWindow window(helper,dir.filePath("reuse video.mkv"),{},dir.filePath("ui.toml")); window.show(); startConversion(window,true);
         QTRY_COMPARE(window.findChild<QProgressBar *>("conversionProgress")->value(),42);
         QStringList before;
         for (const auto *name : {"conversionTargetContainer","conversionTargetVideo","conversionTargetResolution","conversionTargetAudio"})
@@ -229,8 +234,8 @@ private slots:
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        const auto settings=dir.filePath("ui.ini");
-        QSettings preferences(settings,QSettings::IniFormat); preferences.setValue("conversion/autoClose",false); preferences.sync();
+        const auto settings=dir.filePath("ui.toml");
+        writeGui(settings,"[conversion]\nauto_close = false\n");
         ConversionWindow window(helper,dir.filePath("wrapped reuse Example.Series.S01E01.1080p.10bit.WEBRip.6CH.x265.HEVC.mkv"),{},settings);
         window.show(); startConversion(window,true);
         QTRY_COMPARE(window.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
@@ -249,7 +254,7 @@ private slots:
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        ConversionWindow cancelled(helper,dir.filePath("long video.mkv"),{},dir.filePath("ui.ini")); cancelled.show(); startConversion(cancelled);
+        ConversionWindow cancelled(helper,dir.filePath("long video.mkv"),{},dir.filePath("ui.toml")); cancelled.show(); startConversion(cancelled);
         auto *button=cancelled.findChild<QPushButton *>("conversionButton");
         QTRY_COMPARE(cancelled.findChild<QProgressBar *>("conversionProgress")->value(),42);
         QTest::mouseClick(button,Qt::LeftButton);
@@ -258,15 +263,15 @@ private slots:
         QVERIFY(cancelled.findChild<QLabel *>("conversionCountdown")->text().isEmpty());
         QTest::qWait(100); QCOMPARE(button->text(),QString("Close")); // Ignore stale progress.
         QTest::mouseClick(button,Qt::LeftButton); QTRY_VERIFY(!cancelled.isVisible());
-        ConversionWindow failed(helper,dir.filePath("fail.mkv"),{},dir.filePath("ui.ini")); failed.show(); startConversion(failed);
+        ConversionWindow failed(helper,dir.filePath("fail.mkv"),{},dir.filePath("ui.toml")); failed.show(); startConversion(failed);
         QTRY_COMPARE(failed.findChild<QPushButton *>("conversionButton")->text(),QString("Close"));
         QVERIFY(failed.findChild<QLabel *>("conversionStatus")->text().contains("Test conversion failure"));
         QVERIFY(failed.findChild<QLabel *>("conversionCountdown")->text().isEmpty());
         screenshot(failed,"conversion-failed"); failed.close(); QTRY_VERIFY(!failed.isVisible());
-        ConversionWindow active(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.ini")); active.show(); startConversion(active);
+        ConversionWindow active(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.toml")); active.show(); startConversion(active);
         QTRY_COMPARE(active.findChild<QProgressBar *>("conversionProgress")->value(),42);
         active.close(); QTRY_VERIFY(!active.isVisible());
-        ConversionWindow early(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.ini")); early.show();
+        ConversionWindow early(helper,dir.filePath("long.mkv"),{},dir.filePath("ui.toml")); early.show();
         QTest::mouseClick(early.findChild<QPushButton *>("conversionButton"),Qt::LeftButton);
         QTRY_VERIFY(!early.isVisible());
     }
@@ -275,7 +280,7 @@ private slots:
         const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        const auto settings=dir.filePath("ui.ini");
+        const auto settings=dir.filePath("ui.toml");
         Window window(helper,dir.filePath("test video.mkv"),true,{},settings); window.show();
         auto *devices=window.findChild<QComboBox *>("devices");
         auto *subtitles=window.findChild<QComboBox *>("subtitles");
@@ -343,7 +348,8 @@ private slots:
         bool sawSeek=false;
         for (const auto &call : calls(log)) if (call["method"]=="seek") { QCOMPARE(call["params"].toObject()["position"].toDouble(),60.0); sawSeek=true; }
         QVERIFY(sawSeek);
-        QCOMPARE(QSettings(settings,QSettings::IniFormat).value("lastDeviceId").toString(),QString("tv"));
+        QFile guiSettings(settings); QVERIFY(guiSettings.open(QIODevice::ReadOnly));
+        QVERIFY(guiSettings.readAll().contains("last_device_id = \"tv\""));
         window.openFile(dir.filePath("another video.mp4")); QCOMPARE(delay->value(),0);
         QSignalSpy exited(window.findChild<Backend *>(),&Backend::exited);
         QTest::mouseClick(window.findChild<QPushButton *>("quit"),Qt::LeftButton);
@@ -359,8 +365,8 @@ private slots:
         const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
         QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        const auto settings=dir.filePath("ui.ini");
-        QSettings saved(settings,QSettings::IniFormat); saved.setValue("lastDeviceId","speaker"); saved.sync();
+        const auto settings=dir.filePath("ui.toml");
+        writeGui(settings,"last_device_id = \"speaker\"\n");
         Window window(helper,{},true,{},settings); window.show();
         auto *devices=window.findChild<QComboBox *>("devices");
         auto *subtitles=window.findChild<QComboBox *>("subtitles");
@@ -404,7 +410,7 @@ private slots:
         QFile launch(wrapper); QVERIFY(launch.open(QIODevice::WriteOnly));
         launch.write("#!/bin/sh\nexec \""); launch.write(WERP_REAL_HELPER); launch.write("\" --no-inhibit-sleep --ffprobe \""); launch.write(probe.toUtf8()); launch.write("\"\n"); launch.close();
         QVERIFY(QFile::setPermissions(wrapper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-        Window window(wrapper,file,false,{},dir.filePath("ui.ini")); window.show();
+        Window window(wrapper,file,false,{},dir.filePath("ui.toml")); window.show();
         QTRY_VERIFY_WITH_TIMEOUT(window.findChild<QComboBox *>("subtitles")->isEnabled(),5000);
         QVERIFY(!window.findChild<QPushButton *>("werp")->isEnabled());
         QCOMPARE(window.findChild<QStackedWidget *>("pages")->currentIndex(),0);
