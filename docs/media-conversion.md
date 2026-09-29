@@ -40,7 +40,7 @@ selected profile. Silent inputs remain silent. Known HDR, ambiguous multiple
 audio/video tracks, and missing required metadata fail visibly; tone mapping and
 explicit audio-track selection are not implemented.
 
-[GUI convert-only](kde-ui.md#convert-only-window) uses the selected device's rules,
+[GUI convert-only](gui.md#convert-only-window) uses the selected device's rules,
 or Baseline for **Broad compatibility**, without launching a receiver. It leaves
 subtitles with the original file. During casting, text subtitles are served as
 WebVTT; selected image subtitles require full video encoding with burn-in.

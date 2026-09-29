@@ -104,7 +104,7 @@ The GUI uses model rules automatically for its selected device. Convert-only's
 **Broad compatibility** choice uses Baseline and skips device overrides. The GUI
 has no equivalent of `--config`, `--no-config` or a casting profile selector.
 Inspection and discovery also do not load device overrides. See the
-[GUI launch options](kde-ui.md#launch-options) for flags the GUI actually accepts.
+[GUI launch options](gui.md#launch-options) for flags the GUI actually accepts.
 
 ## Observation fields
 

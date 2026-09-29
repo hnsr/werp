@@ -83,7 +83,7 @@ MP4 and MKV. An Open With association is not a codec-compatibility guarantee.
 The GUI accepts `--backend PATH` to select a helper executable and
 `--no-discovery` to skip the initial device scan in either window; Refresh still
 works. These are development/testing flags, separate from the
-[normal GUI options](docs/kde-ui.md#launch-options).
+[normal GUI options](docs/gui.md#launch-options).
 
 `yeet-backend` is normally launched by the GUI, not managed as a separate app.
 For integration/testing it accepts `--http-port PORT` (default `0`, OS-assigned),
@@ -216,7 +216,7 @@ Convert, the last-used device is selected if available, and switching to Broad
 compatibility updates the preview. Convert and check the result path; reopen the
 original to verify reuse. Cancel a second uncached conversion and confirm Close
 appears after cleanup. Auto-close depends on the
-[GUI preference](docs/kde-ui.md#kde-frontend-preferences). Device-targeted conversion/cache sharing and discovery-failure fallback have automated coverage;
+[GUI preference](docs/gui.md#kde-frontend-preferences). Device-targeted conversion/cache sharing and discovery-failure fallback have automated coverage;
 subjective dialogue quality still requires listening.
 
 ### GUI playback

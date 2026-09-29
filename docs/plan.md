@@ -126,7 +126,7 @@ way to perform them, but that does not count as validation.
 | [Media conversion](media-conversion.md) | Path selection, profiles, encoding, storage and downmix |
 | [Preferences and subtitles](preferences-and-subtitles.md) | CLI config, subtitle selection/delay and resume |
 | [Device database](device-compatibility.md) | Model matching, overrides and TOML schema |
-| [GUI guide](kde-ui.md) | Interaction, launch options and settings |
+| [GUI guide](gui.md) | Interaction, launch options and settings |
 | [Development guide](../DEVELOPMENT.md) | Setup, builds, local installation, contributor workflows and validation |
 | [Backend protocol](backend-protocol.md) | Exact private frontend contract |
 | [Sleep prevention](../README.md#sleep-prevention) | Linux support and validation limits |

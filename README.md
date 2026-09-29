@@ -46,7 +46,7 @@ overrides) or **Broad compatibility** for conservative H.264/stereo AAC output.
 Review the source/target preview and press **Convert**. Successful output is
 retained; auto-close defaults to five seconds and is configurable in the GUI INI.
 
-See the [GUI guide](docs/kde-ui.md) for interaction, launch options and settings.
+See the [GUI guide](docs/gui.md) for interaction, launch options and settings.
 
 ## CLI
 

@@ -1,7 +1,7 @@
 # Preferences, subtitles, device selection, and resume
 
 Current CLI preferences and shared subtitle/resume behavior. GUI choices and
-independent defaults are described in the [GUI guide](kde-ui.md).
+independent defaults are described in the [GUI guide](gui.md).
 
 ## Configuration
 
