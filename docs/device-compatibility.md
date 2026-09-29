@@ -119,6 +119,24 @@ H.264/HEVC remux, captions, completion, reuse and cancellation coverage.
 Expanded-path seeking and long-duration sync remain deferred; original MKV
 playback is not established.
 
+### Initial full-conversion hardware checks
+
+On KPN DIW7022, full conversion of sample-004 (H.264/six-channel AAC) produced
+working video/audio; phone seek, pause/resume and stop passed. No subtitles were
+selected, and channel balance/full-duration playback were not separately checked.
+A 30-second forced-conversion fixture subsequently passed with SRT and WebVTT,
+natural completion and exit 0.
+
+Separate natural-completion and phone-stop runs left an empty preparation directory
+and no HTTP listener, although the first phone stop returned timeout errors/exit 1.
+After the [receiver-stop fix](decisions/001-cast-library.md#follow-up-fixes), phone
+stop reported `Playback stopped on receiver.` and exit 0 without timeout/cleanup
+warnings; filesystem/port checks were not repeated in that transcript.
+See the [inventory](media-inventory.md#user-playback-results) for audio-only
+conversion and its unresolved initial startup failure, and the later
+[batch checks](automatic-playback.md#hardware-batch-result) for broader coverage.
+Detailed seek/subtitle synchronization and long-duration stability remain unverified.
+
 ## Maintaining the bundled database
 
 Edit `crates/yeet-core/data/devices.toml` and rebuild the app. Add an exact model ID

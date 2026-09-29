@@ -65,6 +65,15 @@ foreign events and session-zero IDLE do not. A follow-up 30-second run exited 0
 and closed its HTTP port. Simulated tests cover terminal events during polling,
 immediate disconnect, errors and takeover.
 
+Phone-initiated stop initially timed out despite successful local cleanup.
+App-channel CLOSE, failed polls and stale BUFFERING/empty replies now trigger
+checks for the owned receiver application's exit. Confirmed exit or owned
+CANCELLED media status ends normally and skips redundant STOP; a timeout alone
+never proves a normal stop. An unqueryable receiver or an app still running
+remains an error. Simulated tests cover foreign closes and still-running apps.
+This improves lifecycle handling, but is not a proven fix for the separate
+intermittent startup media exit recorded in the device evidence.
+
 ## TLS behaviour
 
 Cast devices use certificates that do not follow ordinary public-web trust.

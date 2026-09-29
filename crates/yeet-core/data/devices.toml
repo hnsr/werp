@@ -83,7 +83,7 @@ status = "passed"
 path = "transcode"
 format = "Output MP4; H.264 High Level 4.1, at most 1080p30/yuv420p SDR; stereo AAC-LC at 48 kHz"
 result = "Forced-conversion playback and phone pause/play/seek/stop were confirmed. Consolidated hardware batch also passed full conversion, including AV1/E-AC-3 input."
-evidence = ["docs/transcode-validation.md#hardware-feedback-and-remaining-checks", "docs/automatic-playback.md#hardware-batch-result"]
+evidence = ["docs/device-compatibility.md#initial-full-conversion-hardware-checks", "docs/automatic-playback.md#hardware-batch-result"]
 
 [[devices.observations]]
 id = "external-text-subtitles"
@@ -115,7 +115,7 @@ status = "passed"
 path = "controls"
 format = "Natural completion, interruption/resume, restart, SIGINT/SIGTERM, receiver stop and prepared-output reuse"
 result = "User-confirmed lifecycle checks include cleanup, resume checkpoints and the short-clip batch. Coverage differs by path; see linked evidence."
-evidence = ["docs/device-compatibility.md#original-cli-hardware-checks", "docs/preferences-and-subtitles.md#verification-and-tv-checklist", "docs/automatic-playback.md#hardware-batch-result", "docs/transcode-validation.md#hardware-feedback-and-remaining-checks"]
+evidence = ["docs/device-compatibility.md#original-cli-hardware-checks", "docs/preferences-and-subtitles.md#verification-and-tv-checklist", "docs/automatic-playback.md#hardware-batch-result", "docs/device-compatibility.md#initial-full-conversion-hardware-checks"]
 
 [[devices.observations]]
 id = "intermittent-startup-exit"
@@ -131,7 +131,7 @@ status = "intermittent"
 path = "controls"
 format = "Phone-based Cast playback controls"
 result = "Earlier pause/play/seek/stop checks worked; controls later stopped appearing. Broader seeking and long-duration checks were deferred."
-evidence = ["docs/automatic-playback.md#reproduce-the-guided-hardware-batch", "docs/transcode-validation.md#hardware-feedback-and-remaining-checks"]
+evidence = ["docs/automatic-playback.md#reproduce-the-guided-hardware-batch", "docs/device-compatibility.md#initial-full-conversion-hardware-checks"]
 
 [[devices.observations]]
 id = "h264-5994-60fps"

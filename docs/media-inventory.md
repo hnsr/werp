@@ -133,8 +133,8 @@ For sample-041, the successful saved-output log had HTTP 206, positions through
 about 298.6 seconds and pause/resume, ending paused. The later integrated run
 reported good sound, exit 130 after Ctrl+C, an empty preparation directory and a
 closed HTTP port. The user had seen similar intermittent receiver startup issues,
-but this is not proof of the earlier failure's cause or of a fix. See
-[audio-conversion evidence](transcode-validation.md#audio-only-preparation).
+but this is not proof of the earlier failure's cause or of a fix. See the
+[receiver-stop handling](decisions/001-cast-library.md#follow-up-fixes).
 
 The [M5 batch](automatic-playback.md#hardware-batch-result) later confirmed the
 short-clip direct/remux/audio/full-conversion matrix with captions and reuse.

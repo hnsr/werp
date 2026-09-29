@@ -131,6 +131,12 @@ with its matching sidecar. Original files are never modified.
 
 ## Local verification
 
+Earlier FFmpeg fixtures verified full conversion from FFV1/PCM surround and
+1922×1082/60 fps input, including downscaling, faststart, duration and source
+preservation. Audio-only H.264/AC-3 conversion preserved the encoded video hash,
+produced non-silent AAC and retained relative stream start times within 50 ms.
+These are local preparation checks, not perceptual sync evidence on a receiver.
+
 See [README checks](../README.md#checks) for the current test commands. Automated
 coverage distinguishes simulated/local verification from TV observations.
 
