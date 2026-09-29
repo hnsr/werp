@@ -160,6 +160,9 @@ struct PlaybackArgs {
     /// Select automatically, or require one preparation path
     #[arg(long, value_enum, default_value_t = ModeArg::Auto)]
     mode: ModeArg,
+    /// Development only: serve the original file without compatibility checks or conversion
+    #[arg(long, conflicts_with_all = ["mode", "profile"])]
+    force_direct: bool,
     /// Receiver compatibility profile (auto uses the model database; explicit profiles override its rules)
     #[arg(long, value_enum, default_value_t = ProfileArg::Auto)]
     profile: ProfileArg,
@@ -353,6 +356,7 @@ async fn execute(
             no_resume,
             restart,
             mode,
+            force_direct,
             profile,
             no_cache,
             no_inhibit_sleep,
@@ -389,6 +393,7 @@ async fn execute(
                 werp_core::subtitles::Request::Auto
             };
             request.mode = mode.into();
+            request.force_direct = force_direct;
             request.profile = profile.into();
             if !no_config && request.profile == werp_core::playback::Profile::Auto {
                 request.device_database = werp_core::devices::load(None)?;
@@ -407,7 +412,9 @@ async fn execute(
             request.ffmpeg = ffmpeg;
             eprintln!("Preparing: Inspecting media");
             let info = media::inspect(&request.file, &request.probe, cancel).await?;
-            werp_core::transcode::validate_input(&info)?;
+            if !force_direct {
+                werp_core::transcode::validate_input(&info)?;
+            }
             request.target = Some(match target {
                 selection::Target::Host(address) => Target::Host(address),
                 target => {
@@ -618,6 +625,25 @@ mod tests {
                 value.parse::<i32>().unwrap()
             );
         }
+    }
+
+    #[test]
+    fn force_direct_is_explicit_and_conflicts_with_selection_options() {
+        let cli = Cli::try_from_args(["werp", "movie.mkv", "--force-direct"]).unwrap();
+        assert!(cli.playback.force_direct);
+        assert!(
+            !Cli::try_from_args(["werp", "movie.mkv"])
+                .unwrap()
+                .playback
+                .force_direct
+        );
+        for option in ["--mode", "--profile"] {
+            assert!(
+                Cli::try_from_args(["werp", "movie.mkv", "--force-direct", option, "auto"])
+                    .is_err()
+            );
+        }
+        assert!(Cli::try_from_args(["werp", "devices", "--force-direct"]).is_err());
     }
 
     #[test]

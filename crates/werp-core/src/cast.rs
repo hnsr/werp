@@ -157,6 +157,7 @@ impl CastSession {
     pub async fn load(
         &mut self,
         video: &str,
+        content_type: &str,
         subtitles: Option<&str>,
         title: &str,
         start_position: f64,
@@ -173,7 +174,14 @@ impl CastSession {
             .request(
                 MEDIA,
                 &app.transport_id,
-                load_payload(&app.session_id, video, subtitles, title, start_position),
+                load_payload(
+                    &app.session_id,
+                    video,
+                    content_type,
+                    subtitles,
+                    title,
+                    start_position,
+                ),
                 cancel,
             )
             .await?;
@@ -548,6 +556,7 @@ fn owned_terminal(
 fn load_payload(
     session: &str,
     video: &str,
+    content_type: &str,
     subtitles: Option<&str>,
     title: &str,
     start_position: f64,
@@ -555,7 +564,7 @@ fn load_payload(
     let mut payload = json!({
         "type":"LOAD", "sessionId":session, "autoplay":true, "currentTime":start_position,
         "media":{
-            "contentId":video, "contentType":"video/mp4", "streamType":"BUFFERED",
+            "contentId":video, "contentType":content_type, "streamType":"BUFFERED",
             "metadata":{"metadataType":0,"title":title}
         }
     });

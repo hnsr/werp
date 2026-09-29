@@ -80,6 +80,22 @@ MP4 and MKV. An Open With association is not a codec-compatibility guarantee.
 
 ## Development launch options
 
+The CLI's `--force-direct` serves the original video without format compatibility
+checks, media conversion or prepared-file reuse. Use it to trial formats outside
+the device database, including HDR-tagged files; it does not change colour metadata
+or guarantee correct rendering. File inspection, text subtitles, HTTP range
+requests, playback controls and cleanup still apply. Image subtitle burn-in is
+rejected; select a text track or use `--no-subtitles`.
+
+```sh
+werp /path/to/video.mp4 --force-direct --device "Living Room" --no-subtitles --no-resume
+```
+
+This flag conflicts with `--mode` and `--profile`, never falls back to conversion,
+and is unavailable in the GUI or its backend protocol. Normal `--mode direct`
+continues to enforce compatibility checks. Cache options have no effect on a
+forced trial. Unknown containers are sent as `application/octet-stream`.
+
 The GUI accepts `--backend PATH` to select a helper executable and
 `--no-discovery` to skip the initial device scan in either window; Refresh still
 works. These are development/testing flags, separate from the

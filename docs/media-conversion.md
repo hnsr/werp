@@ -24,6 +24,9 @@ an automatic retry with different encoding.
 CLI `--mode direct|remux|audio|transcode` requires that path or fails if its
 constraints cannot be met. `--mode auto` is the default.
 
+The CLI also has a [development-only bypass](../DEVELOPMENT.md#development-launch-options)
+for testing original files outside these compatibility rules.
+
 `--profile auto` uses the discovered model's bundled rules plus optional
 [user overrides](device-compatibility.md#user-overrides). Unknown models and
 `--host` use Baseline. Explicit profiles bypass model rules:

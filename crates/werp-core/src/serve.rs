@@ -35,6 +35,7 @@ impl MediaServer {
     pub async fn start(
         address: SocketAddr,
         video: &Path,
+        content_type: &str,
         subtitles: Option<&Path>,
     ) -> Result<Self, WerpError> {
         for path in std::iter::once(video).chain(subtitles) {
@@ -48,7 +49,12 @@ impl MediaServer {
         let mut random = [0u8; 16];
         getrandom::fill(&mut random).map_err(|e| WerpError::Serve(e.to_string()))?;
         let token: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
-        let video_path = format!("/{token}/video.mp4");
+        let video_name = if content_type == "video/mp4" {
+            "video.mp4"
+        } else {
+            "video"
+        };
+        let video_path = format!("/{token}/{video_name}");
         let subtitle_path = format!("/{token}/subtitles.vtt");
         let requests = Arc::new(AtomicU64::new(0));
         let video_requests = Arc::new(AtomicU64::new(0));
@@ -60,7 +66,12 @@ impl MediaServer {
         let expected_subtitles = subtitle_path.clone();
         let mut router = Router::new().route_service(
             &video_path,
-            ServeFile::new_with_mime(video, &"video/mp4".parse().unwrap()),
+            ServeFile::new_with_mime(
+                video,
+                &content_type
+                    .parse()
+                    .map_err(|e| WerpError::Serve(format!("invalid media MIME type: {e}")))?,
+            ),
         );
         if let Some(subtitles) = subtitles {
             router = router.route_service(

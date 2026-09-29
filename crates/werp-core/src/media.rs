@@ -33,6 +33,39 @@ pub struct MediaInfo {
     pub streams: Vec<StreamInfo>,
 }
 
+impl MediaInfo {
+    /// Container MIME for unchecked original-file trials, not a compatibility claim.
+    pub fn content_type(&self) -> &'static str {
+        let formats: Vec<_> = self.container.split(',').collect();
+        if formats.contains(&"mp4") {
+            "video/mp4"
+        } else if formats.contains(&"matroska") {
+            // ffprobe uses the same demuxer name for Matroska and WebM.
+            if self
+                .path
+                .extension()
+                .is_some_and(|s| s.eq_ignore_ascii_case("webm"))
+            {
+                "video/webm"
+            } else {
+                "video/x-matroska"
+            }
+        } else if formats.contains(&"webm") {
+            "video/webm"
+        } else {
+            match self.container.as_str() {
+                "mpegts" => "video/mp2t",
+                "mpeg" => "video/mpeg",
+                "avi" => "video/x-msvideo",
+                "ogg" => "video/ogg",
+                "asf" => "video/x-ms-asf",
+                "flv" => "video/x-flv",
+                _ => "application/octet-stream",
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct StreamInfo {
     pub index: u32,

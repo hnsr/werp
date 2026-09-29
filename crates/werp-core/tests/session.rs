@@ -77,6 +77,7 @@ struct Transcript {
     loads: usize,
     stops: Vec<i64>,
     video: Vec<u8>,
+    content_type: String,
     subtitles: Option<Vec<u8>>,
     url: String,
     polls: usize,
@@ -99,7 +100,7 @@ async fn send(stream: &mut (impl AsyncWrite + Unpin), message: &Envelope) -> std
     stream.flush().await
 }
 
-async fn download(url: &str) -> Vec<u8> {
+async fn download(url: &str, content_type: &str) -> Vec<u8> {
     let (host, path) = url
         .strip_prefix("http://")
         .unwrap()
@@ -113,6 +114,10 @@ async fn download(url: &str) -> Vec<u8> {
     let header = String::from_utf8_lossy(&bytes[..header_end]);
     assert!(header.starts_with("HTTP/1.1 200"), "{header}");
     assert!(header.contains("access-control-allow-origin: *"));
+    assert!(
+        header.contains(&format!("content-type: {content_type}\r\n")),
+        "{header}"
+    );
     bytes[header_end..].to_vec()
 }
 
@@ -174,14 +179,15 @@ async fn receiver_at(
                     if mode == Mode::Reject {
                         json!({"type":"LOAD_FAILED","detailedErrorCode":104})
                     } else {
-                        log.video = download(&log.url).await;
+                        log.content_type = payload["media"]["contentType"].as_str().unwrap().into();
+                        log.video = download(&log.url, &log.content_type).await;
                         if let Some(url) = payload
                             .pointer("/media/tracks/0/trackContentId")
                             .and_then(Value::as_str)
                         {
                             assert_eq!(payload["activeTrackIds"], json!([1]));
                             if mode != Mode::MissingSubtitles {
-                                log.subtitles = Some(download(url).await);
+                                log.subtitles = Some(download(url, "text/vtt").await);
                             }
                             tracks = true;
                         } else {
@@ -534,6 +540,153 @@ fn fake_probe(directory: &Path, metadata: &str) -> PathBuf {
     fs::write(directory.join("fake ffprobe.json"), metadata).unwrap();
     fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
     program
+}
+
+#[tokio::test]
+async fn force_direct_serves_original_formats_and_keeps_session_cleanup() {
+    for (container, extension, mime, mode) in [
+        (
+            "mov,mp4,m4a,3gp,3g2,mj2",
+            "mp4",
+            "video/mp4",
+            Mode::Complete,
+        ),
+        ("matroska,webm", "mkv", "video/x-matroska", Mode::Complete),
+        ("matroska,webm", "webm", "video/webm", Mode::Complete),
+        (
+            "unrecognized",
+            "bin",
+            "application/octet-stream",
+            Mode::Complete,
+        ),
+        ("mp4", "mp4", "video/mp4", Mode::Hold),
+        ("mp4", "mp4", "video/mp4", Mode::Reject),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let video = dir.path().join(format!("original.{extension}"));
+        let bytes = b"original media including HDR signalling";
+        fs::write(&video, bytes).unwrap();
+        let mut metadata: Value = serde_json::from_str(include_str!("fixtures/h264.json")).unwrap();
+        metadata["format"]["format_name"] = container.into();
+        metadata["streams"][0]["color_transfer"] = "smpte2084".into();
+        metadata["streams"][0]["codec_name"] = "av1".into();
+        metadata["streams"][0]["width"] = 3840.into();
+        metadata["streams"][0]["height"] = 2160.into();
+        metadata["streams"][0]["r_frame_rate"] = "120/1".into();
+        metadata["streams"][1]["codec_name"] = "dts".into();
+        let probe = fake_probe(dir.path(), &metadata.to_string());
+        let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
+        let mut request = CastRequest::new(video.clone());
+        request.inhibit_sleep = false;
+        request.save_position = false;
+        request.target = Some(Target::Host(address));
+        request.probe.executable = probe;
+        request.ffmpeg = dir.path().join("missing-ffmpeg");
+        // This path cannot be a cache directory. A forced trial must never touch it.
+        request.cache.directory = Some(video.clone());
+        let (progress, _) = watch::channel(SessionState::default());
+        let error = session::run(request.clone(), progress, &CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("tone mapping"));
+        request.force_direct = true;
+        let captions = dir.path().join("captions.vtt");
+        fs::write(&captions, "WEBVTT\n\n00:00.000 --> 00:01.000\nHello\n").unwrap();
+        request.subtitles = werp_core::subtitles::Request::External(captions);
+        let token = CancellationToken::new();
+        let (progress, mut updates) = watch::channel(SessionState::default());
+        let cancel = async {
+            if mode == Mode::Hold {
+                loop {
+                    if updates.borrow_and_update().phase == Phase::Playing {
+                        token.cancel();
+                        break;
+                    }
+                    if updates.changed().await.is_err() {
+                        break;
+                    }
+                }
+            }
+        };
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(6), async {
+            tokio::join!(session::run(request, progress, &token), cancel)
+        })
+        .await
+        .unwrap();
+        let log = tokio::time::timeout(Duration::from_secs(1), receiver)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(log.loads, 1, "no retry or conversion fallback");
+        match mode {
+            Mode::Complete => assert!(result.is_ok(), "{result:?}"),
+            Mode::Hold => {
+                assert!(matches!(result, Err(WerpError::Cancelled)));
+                assert_eq!(log.stops, vec![7]);
+            }
+            Mode::Reject => assert!(result.is_err()),
+            _ => unreachable!(),
+        }
+        if mode != Mode::Reject {
+            assert_eq!(log.video, bytes);
+            assert_eq!(log.content_type, mime);
+            assert!(
+                String::from_utf8(log.subtitles.unwrap())
+                    .unwrap()
+                    .contains("Hello")
+            );
+        }
+        assert_eq!(fs::read(&video).unwrap(), bytes);
+        assert!(
+            !fs::read_dir(dir.path()).unwrap().any(|p| p
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".werp-"))
+        );
+        let host = log
+            .url
+            .strip_prefix("http://")
+            .unwrap()
+            .split('/')
+            .next()
+            .unwrap();
+        assert!(
+            TcpStream::connect(host).await.is_err(),
+            "server survived cleanup"
+        );
+    }
+}
+
+#[tokio::test]
+async fn force_direct_rejects_burn_in_and_still_requires_a_regular_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("movie.mp4");
+    fs::write(&video, "original").unwrap();
+    let mut metadata: Value = serde_json::from_str(include_str!("fixtures/h264.json")).unwrap();
+    metadata["streams"].as_array_mut().unwrap().push(json!({
+        "index": 2, "codec_type": "subtitle", "codec_name": "hdmv_pgs_subtitle"
+    }));
+    let mut request = CastRequest::new(video);
+    request.force_direct = true;
+    request.inhibit_sleep = false;
+    request.save_position = false;
+    request.target = Some(Target::Host("127.0.0.1:1".parse().unwrap()));
+    request.probe.executable = fake_probe(dir.path(), &metadata.to_string());
+    request.ffmpeg = dir.path().join("missing-ffmpeg");
+    request.subtitles = werp_core::subtitles::Request::Embedded(2);
+    let (progress, _) = watch::channel(SessionState::default());
+    let error = session::run(request.clone(), progress, &CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, WerpError::Subtitles(_)));
+    assert!(error.to_string().contains("--force-direct cannot burn in"));
+    request.file = dir.path().into();
+    let (progress, _) = watch::channel(SessionState::default());
+    assert!(matches!(
+        session::run(request, progress, &CancellationToken::new()).await,
+        Err(WerpError::NotRegularFile(_))
+    ));
 }
 
 #[tokio::test]

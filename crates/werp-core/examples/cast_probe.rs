@@ -125,6 +125,7 @@ async fn run(args: Args, token: &CancellationToken) -> Result<(), WerpError> {
     let server = MediaServer::start(
         SocketAddr::new(bind, args.http_port),
         &video,
+        "video/mp4",
         Some(&subtitles),
     )
     .await?;
@@ -143,6 +144,7 @@ async fn run(args: Args, token: &CancellationToken) -> Result<(), WerpError> {
         let initial = session
             .load(
                 &server.video_url,
+                "video/mp4",
                 server.subtitle_url.as_deref(),
                 "Werp M1 test",
                 0.0,

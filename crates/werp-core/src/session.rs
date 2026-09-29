@@ -43,6 +43,9 @@ pub struct CastRequest {
     pub probe: ProbeOptions,
     pub ffmpeg: PathBuf,
     pub mode: Mode,
+    /// CLI development escape hatch; deliberately not exposed by the GUI protocol.
+    /// Serve original bytes, bypassing format admission and all media preparation.
+    pub force_direct: bool,
     pub profile: Profile,
     pub device_database: crate::devices::Database,
     pub cache: CacheOptions,
@@ -67,6 +70,7 @@ impl CastRequest {
             probe: ProbeOptions::default(),
             ffmpeg: "ffmpeg".into(),
             mode: Mode::Auto,
+            force_direct: false,
             profile: Profile::Auto,
             device_database: Default::default(),
             cache: CacheOptions::default(),
@@ -224,7 +228,9 @@ pub async fn run_controlled(
             Some("Inspecting media".into()),
         );
         let info = media::inspect(&request.file, &request.probe, cancel).await?;
-        transcode::validate_input(&info)?;
+        if !request.force_direct {
+            transcode::validate_input(&info)?;
+        }
         progress.send_modify(|state| state.duration_seconds = info.duration_seconds);
         let start_position = request.start_position;
         if !start_position.is_finite() || start_position < 0.0 || info.duration_seconds.is_some_and(|d| start_position >= d) {
@@ -255,6 +261,9 @@ pub async fn run_controlled(
             selected = subtitles::select(&request.subtitles, &info, &request.file, &subtitle_preferences) => selected?,
         };
         let bitmap_index = match &subtitle { Some(subtitles::Selection::Bitmap { index }) => Some(*index), _ => None };
+        if request.force_direct && bitmap_index.is_some() {
+            return Err(WerpError::Subtitles("--force-direct cannot burn in image subtitles; choose a text track or --no-subtitles".into()));
+        }
         let mode = if bitmap_index.is_some() {
             if !matches!(request.mode, Mode::Auto | Mode::Transcode) {
                 return Err(WerpError::Subtitles("image subtitles require video burn-in; use --mode auto or transcode, choose a text track, or --no-subtitles".into()));
@@ -262,8 +271,14 @@ pub async fn run_controlled(
             notice(&progress, "Image subtitles selected: burning into video requires full transcoding".into());
             Mode::Transcode
         } else { request.mode };
-        let plan = playback::select(&info, mode, policy)?;
-        notice(&progress, format!("Selected {:?} ({policy:?} profile): {}", plan.mode, plan.reason));
+        let plan = if request.force_direct {
+            notice(&progress, "Forced direct playback: compatibility checks bypassed; serving the original file without conversion or cache reuse. Receiver playback and colour correctness are unverified.".into());
+            playback::Plan { mode: Mode::Direct, policy, reason: "forced original-file playback" }
+        } else {
+            let plan = playback::select(&info, mode, policy)?;
+            notice(&progress, format!("Selected {:?} ({policy:?} profile): {}", plan.mode, plan.reason));
+            plan
+        };
         if request.profile == Profile::Experimental {
             tracing::warn!("Experimental direct play/profile: receiver audio/video support is not guaranteed; check audible output and picture");
         }
@@ -322,6 +337,7 @@ pub async fn run_controlled(
             ).await?);
         }
         let media_path = prepared_media.as_ref().map_or(&info.path, |prepared| &prepared.info.path);
+        let content_type = if request.force_direct { info.content_type() } else { "video/mp4" };
         let bind = match request.bind_address {
             Some(ip) => ip,
             None => address_toward(address).await?,
@@ -344,6 +360,7 @@ pub async fn run_controlled(
             MediaServer::start(
                 SocketAddr::new(bind, request.http_port),
                 media_path,
+                content_type,
                 prepared.as_ref().map(|s| s.path.as_path()),
             )
             .await?,
@@ -372,6 +389,7 @@ pub async fn run_controlled(
         let mut current = cast
             .load(
                 &serving.video_url,
+                content_type,
                 serving.subtitle_url.as_deref(),
                 &title,
                 start_position,

@@ -37,9 +37,14 @@ async fn serves_selected_resources_ranges_head_and_subtitle_cors() {
     let subtitles = dir.path().join("captions");
     fs::write(&video, b"0123456789").unwrap();
     fs::write(&subtitles, b"WEBVTT\n\n").unwrap();
-    let server = MediaServer::start("127.0.0.1:0".parse().unwrap(), &video, Some(&subtitles))
-        .await
-        .unwrap();
+    let server = MediaServer::start(
+        "127.0.0.1:0".parse().unwrap(),
+        &video,
+        "video/mp4",
+        Some(&subtitles),
+    )
+    .await
+    .unwrap();
     let full = request(&server.video_url, "GET", "").await;
     assert!(full.starts_with("HTTP/1.1 200"));
     assert!(full.ends_with("0123456789"));

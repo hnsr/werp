@@ -2,6 +2,45 @@ use std::process::Command;
 
 #[cfg(unix)]
 #[test]
+fn force_direct_bypasses_cli_hdr_preflight_but_keeps_subtitle_validation() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("hdr.mp4");
+    fs::write(&file, "original").unwrap();
+    let probe = dir.path().join("probe");
+    fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut metadata: serde_json::Value =
+        serde_json::from_str(include_str!("../../werp-core/tests/fixtures/h264.json")).unwrap();
+    metadata["streams"][0]["color_transfer"] = "smpte2084".into();
+    fs::write(dir.path().join("probe.json"), metadata.to_string()).unwrap();
+    for forced in [false, true] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_werp"));
+        command
+            .args(["--no-config", "--no-resume", "--no-inhibit-sleep"])
+            .arg(&file)
+            .arg("--ffprobe")
+            .arg(&probe)
+            .args(["--host", "127.0.0.1", "--subtitles"])
+            .arg(dir.path().join("missing.vtt"));
+        if forced {
+            command.arg("--force-direct");
+        }
+        let output = command.output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success());
+        if forced {
+            assert!(stderr.contains("Forced direct playback"), "{stderr}");
+            assert!(stderr.contains("missing.vtt"), "{stderr}");
+            assert!(!stderr.contains("tone mapping"), "{stderr}");
+        } else {
+            assert!(stderr.contains("tone mapping"), "{stderr}");
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn experimental_profile_reaches_preflight_and_preserves_other_checks() {
     use std::{fs, os::unix::fs::PermissionsExt};
     let dir = tempfile::tempdir().unwrap();
