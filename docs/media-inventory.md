@@ -136,7 +136,7 @@ closed HTTP port. The user had seen similar intermittent receiver startup issues
 but this is not proof of the earlier failure's cause or of a fix. See the
 [receiver-stop handling](decisions/001-cast-library.md#follow-up-fixes).
 
-The [device batch coverage](device-compatibility.md#batch-coverage) later confirmed the
+The [device observations](../crates/yeet-core/data/devices.toml) later confirmed the
 short-clip direct/remux/audio/full-conversion matrix with captions and reuse.
 This supersedes the original proposed test order. Expanded-path seeking,
 long-duration sync and the two HDR review cases remain open; full-conversion

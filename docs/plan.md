@@ -97,7 +97,7 @@ Python helper.
 | --- | --- | --- |
 | M0 — workspace and inspection | Complete | None in the original scope. |
 | M1 — Cast feasibility | Complete | Broader receivers remain separate validation. |
-| M2 — usable CLI and external subtitles | Complete | Optional loading-cancellation/signal-port regression checks; [recorded evidence](device-compatibility.md#original-cli-hardware-checks) distinguishes remaining validation gaps. |
+| M2 — usable CLI and external subtitles | Complete | Optional loading-cancellation/signal-port regression checks; not individually recorded for all original runs. |
 | M3 — controls and robustness | Shared controls and GUI implemented; terminal controls parked | Interactive CLI input, volume control, and any bounded reconnection design. |
 | M4 — subtitle/audio selection | Current subtitle scope accepted | Explicit audio-track selection; further subtitle expansion only when a real file exposes a gap. |
 | M5 — preparation and reuse | Implemented; short-clip hardware matrix passed | Long-duration and expanded-path seek checks; optional cache maintenance. |
