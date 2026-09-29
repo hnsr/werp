@@ -3,15 +3,18 @@
 Native GUI application (currently only Qt/KDE) for casting videos to a Chromecast-compatible
 receiver.
 
+<img width="385" height="299" alt="select" src="https://github.com/user-attachments/assets/dbbd2a52-b511-481c-9502-4bd512a1c551" />
+<img width="385" height="299" alt="playing" src="https://github.com/user-attachments/assets/09ddd668-ef34-42d5-b043-65accf92f472" />
+
 ## Features
 
 - Native application written in Rust
 - Minimize or entirely avoid remuxing or transcoding when possible (uses ffmpeg)
-- Device capability DB + user-configuration to allow more videos to be streamed directly
+- Device capability DB (WIP) + user-configuration to allow more videos to be streamed directly
 - Embedded or external subtitles (SRT, WebVTT, ASS, and SSA in UTF-8 or BOM-marked UTF-16)
 - Control playback through standard media keys/controls (MPRIS)
-- Resume from last position
 - Inhibit sleep/suspend while playing
+- Resume from last position
 
 See [media conversion](docs/media-conversion.md) for media conversion details. Conversion is a one-off operation
 done before casting starts. See also [storage and reuse](docs/media-conversion.md#storage-and-reuse).
