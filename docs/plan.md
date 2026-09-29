@@ -125,4 +125,4 @@ manual acceptance checklist; reproduce and investigate issues as they arise.
 | [Development guide](../DEVELOPMENT.md) | Setup, builds, local installation, contributor workflows and validation |
 | [Backend protocol](backend-protocol.md) | Exact private frontend contract |
 | [Sleep prevention](../README.md#sleep-prevention) | Linux support and validation limits |
-| [Media inventory](media-inventory.md) | Historical 75-file scan and early trials |
+| [Media inventory](media-inventory.md) | Retained 74-file inventory and playback observations |

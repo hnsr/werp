@@ -1,12 +1,13 @@
 # Local media inventory
 
-This is the initial inventory and early trial history. It is not a live inventory of the Downloads directory. Current policy is described
+This is the initial inventory and early trial history, with the deleted original
+removed. It is not a live inventory of the Downloads directory. Current policy is described
 in [media conversion](media-conversion.md); original hypotheses below are
 retained separately from observed outcomes.
 
-Scanned 2026-09-17 using ffprobe 8.1.2. Recursively found and successfully probed
-**75 videos (88.63 GiB): 45 Matroska/MKV and 30 MP4**. No probe failures.
-Also found **230 external SRT files**; their contents and matching video/language
+Based on the 2026-09-17 scan using ffprobe 8.1.2, the retained inventory contains
+**74 videos (86.75 GiB): 45 Matroska/MKV and 29 MP4**. No probe failures occurred.
+The original scan also found **230 external SRT files**; their contents and matching video/language
 associations were not checked. Archives were not unpacked. Source media was not
 modified, copied, decoded in full, or cast to a receiver during the scan.
 Subsequent user playback checks are recorded below.
@@ -16,7 +17,7 @@ Subsequent user playback checks are recorded below.
 | Set | Files | Meaning |
 | --- | ---: | --- |
 | `samples/library/no-transcode-candidates/` | 73 | Worth testing without video or audio encoding: 28 original MP4 candidates and 45 MKV candidates that may need stream-copy remuxing. Includes one low-confidence AV1 case. |
-| `samples/library/likely-transcode-or-review/` | 2 | Unusual 8-bit H.264 with PQ/BT.2020 signalling. Review colour correctness before choosing conversion or a metadata repair. |
+| `samples/library/likely-transcode-or-review/` | 1 | Unusual 8-bit H.264 with PQ/BT.2020 signalling. Review colour correctness before choosing conversion or a metadata repair. |
 
 These sets are metadata-based hypotheses, not blanket playback guarantees.
 The CSV records the original scan assessment; subsequent playback evidence is
@@ -54,13 +55,12 @@ work only on the development machine and point to ignored local symlinks.
 | MP4 | H264 High, 8-bit | AAC LC, 6 ch | 7 | Original MP4 | [sample-004](../samples/library/no-transcode-candidates/sample-004_h264-high-8bit_1920x1040_23.976fps_aac-lc-6ch.mp4) |
 | MP4 | H264 High, 8-bit | AC3, 6 ch | 8 | Original MP4 | [sample-041](../samples/library/no-transcode-candidates/sample-041_h264-high-8bit_1920x804_24fps_ac3-6ch.mp4) |
 | MP4 | H264 High, 8-bit **PQ/BT.2020** | AAC LC, 2 ch | 1 | Review HDR; possible encoding | [sample-021](../samples/library/likely-transcode-or-review/sample-021_h264-high-8bit_1280x720_23.976fps_aac-lc-2ch_pq-bt2020.mp4) |
-| MP4 | H264 High, 8-bit **PQ/BT.2020** | AAC LC, 6 ch | 1 | Review HDR; possible encoding | [sample-073](../samples/library/likely-transcode-or-review/sample-073_h264-high-8bit_1920x1038_23.976fps_aac-lc-6ch_pq-bt2020.mp4) |
 | MP4 | HEVC Main 10, 10-bit | AAC LC, 6 ch | 7 | Original MP4 | [sample-005](../samples/library/no-transcode-candidates/sample-005_hevc-main-10-10bit_1920x1080_23.976fps_aac-lc-6ch.mp4) |
 
 ## What the metadata tells us
 
-- **40 H.264 files:** all High profile, 8-bit 4:2:0, level 3.0–4.1.
-  Two have the unusual HDR signalling described below; 38 do not.
+- **39 H.264 files:** all High profile, 8-bit 4:2:0, level 3.0–4.1.
+  One has the unusual HDR signalling described below; 38 do not.
 - **34 HEVC files:** 10 Main/8-bit and 24 Main 10/10-bit, all level 4.0.
   None reports PQ or HLG transfer characteristics. Missing colour metadata is
   not proof of SDR, and 10-bit alone is not proof of HDR.
@@ -69,7 +69,7 @@ work only on the development machine and point to ignored local symlinks.
   native Cast support remains unverified and current automatic mode converts it.
 - All videos are at most 1920×1080, about 23.976 or 24 fps, with one video and
   one audio stream. No 4K, high-frame-rate, DTS, or TrueHD cases were found.
-- **Audio:** 47 AAC-LC (20 stereo, 27 six-channel), 14 HE-AAC six-channel,
+- **Audio:** 46 AAC-LC (20 stereo, 26 six-channel), 14 HE-AAC six-channel,
   9 AC-3 six-channel, and 5 E-AC-3 six-channel (3 report Dolby Atmos).
   All are sampled at 48 kHz. A codec listed in metadata does not establish
   successful receiver output, correct downmix, or preservation of Atmos.
@@ -84,11 +84,11 @@ Bitrate values are container averages, not measured peaks. The local
 `samples/library/inventory.json` retains whitelisted stream metadata, including
 language tags, dispositions, and any reported side data, without source names.
 
-### The two HDR review cases
+### The HDR-tagged sample
 
-`sample-021` (1280×720, AAC stereo) and `sample-073` (1920×1038, AAC six-channel)
-combine H.264 High/yuv420p with `smpte2084` transfer and BT.2020 primaries.
-Their colour correctness was not verified. If the pixels genuinely represent HDR and
+`sample-021` (1280×720, AAC stereo) combines H.264 High/yuv420p with
+`smpte2084` transfer and BT.2020 primaries. Its colour correctness was not
+verified. If the pixels genuinely represent HDR and
 the receiver cannot render that combination, tone mapping plus video encoding
 may be necessary. If the signalling is wrong, a metadata/bitstream correction
 might suffice. Do not apply tone mapping or strip HDR metadata automatically.
@@ -141,7 +141,7 @@ The [device observations](../crates/werp-core/data/devices.toml) later confirmed
 short-clip direct/remux/audio/full-conversion matrix with captions and reuse.
 With sample-024 confirmed, every SDR format group in this inventory has a
 representative successful playback path; this does not mean every file was tested.
-Manual acceptance checklists are retired. The two HDR cases remain unsupported;
+Manual acceptance checklists are retired. The HDR-tagged sample remains unsupported;
 full-conversion success for AV1 does not establish native AV1 playback.
 Original-file, remux and encoding results are distinct observations.
 
