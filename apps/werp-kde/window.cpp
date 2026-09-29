@@ -62,6 +62,7 @@ static QString timestamp(double seconds) {
 static QString payload(const QJsonObject &value) { return QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)); }
 Window::Window(const QString &backend, const QString &file, bool discoverOnStart, const QStringList &backendArguments, const QString &settingsFile)
     : m_backend(backend,this,backendArguments),
+      m_mpris(this),
       m_settings(settingsFile.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/werp/kde-ui.ini" : settingsFile,QSettings::IniFormat),
       m_autoDiscover(discoverOnStart) {
     setupUi();
@@ -201,6 +202,20 @@ void Window::setupUi() {
     m_togglePlayback->setEnabled(false);
 }
 void Window::connectSignals() {
+    connect(&m_mpris,&Mpris::raiseRequested,this,[this] { showNormal(); raise(); activateWindow(); });
+    connect(&m_mpris,&Mpris::quitRequested,this,&Window::close);
+    connect(&m_mpris,&Mpris::playRequested,this,[this] {
+        if (m_activity == Activity::Paused) sendControl("play");
+        else if (m_activity == Activity::Idle) startPlayback(false);
+    });
+    connect(&m_mpris,&Mpris::pauseRequested,this,[this] {
+        if (m_activity == Activity::Playing) sendControl("pause");
+    });
+    connect(&m_mpris,&Mpris::stopRequested,this,&Window::stopPlayback);
+    connect(&m_mpris,&Mpris::seekRequested,this,[this](double seconds) {
+        if (m_activity == Activity::Playing || m_activity == Activity::Paused)
+            sendControl("seek",{{"position",qBound(0.0,seconds,qMax(0.0,m_duration-0.1))}});
+    });
     connect(m_togglePlayback,&QShortcut::activated,m_pause,&QPushButton::click);
     m_pause->setToolTip(i18n("Pause or play (Space)"));
     connect(m_open,&QPushButton::clicked,this,[this] {
@@ -243,6 +258,7 @@ void Window::connectSignals() {
         if (m_activity == Activity::Closing) return;
         m_activity=Activity::Idle;
         m_session=0;
+        m_mpris.clear();
         m_discovering=false;
         m_togglePlayback->setEnabled(false);
         m_pages->setCurrentIndex(0);
@@ -260,6 +276,7 @@ void Window::connectSignals() {
 void Window::openFile(const QString &file) {
     if (busy()) { showError(i18n("Stop playback before opening another video.")); return; }
     ++m_generation; m_file=QFileInfo(file).absoluteFilePath(); m_directory=QFileInfo(m_file).absolutePath();
+    m_mpris.setMedia(m_file,0);
     m_selectedVideo->setFile(m_file);
     m_selectedVideo->setActiveSubtitle({});
     m_subtitleDelay->setValue(0);
@@ -284,6 +301,7 @@ void Window::inspect() {
         const Protocol::Inspection result(Protocol::Reply(reply).result());
         const auto media=result.media;
         m_duration=media["duration_seconds"].toDouble(); m_directory=QFileInfo(media["path"].toString()).absolutePath();
+        m_mpris.setMedia(m_file,m_duration);
         m_resume=result.resumePosition.isDouble() ? result.resumePosition.toDouble() : -1;
         const auto selected=m_applySuggestedSubtitle && !result.suggestedSubtitles.isEmpty()
             ? payload(result.suggestedSubtitles) : m_subtitles->currentData().toString();
@@ -364,6 +382,7 @@ void Window::refreshActions() {
     m_browse->setEnabled(idle && m_inspected);
     const bool canStart=idle && !m_discovering && m_inspected && !m_devices->currentData().toString().isEmpty();
     m_start->setEnabled(canStart); m_resumeButton->setVisible(m_resume>=0); m_resumeButton->setEnabled(canStart && m_resume>=0);
+    m_mpris.setCanPlay(canStart || m_activity == Activity::Paused || m_activity == Activity::Playing);
     m_resumeButton->setToolTip(i18n("Resume at %1",timestamp(m_resume)));
     m_refresh->setEnabled(idle && !m_discovering); m_seek->setEnabled((m_activity == Activity::Playing || m_activity == Activity::Paused) && m_duration>0);
 }
@@ -371,6 +390,7 @@ void Window::startPlayback(bool resume) {
     if (!m_inspected || busy() || m_devices->currentData().toString().isEmpty()) return;
     m_selectedVideo->setActiveSubtitle({});
     m_activity=Activity::Starting; showError({}); m_prepareLabel->setText(i18n("Preparing playback…")); m_progress->setRange(0,0);
+    m_mpris.setCanPlay(false);
     m_cancel->setEnabled(false); m_pages->setCurrentIndex(1); refreshActions();
     const auto deviceId=m_devices->currentData().toString();
     const auto subtitle=QJsonDocument::fromJson(m_subtitles->currentData().toString().toUtf8()).object();
@@ -392,6 +412,7 @@ void Window::sendControl(const QString &method,QJsonObject params) {
 void Window::stopPlayback() {
     if (!m_session) return;
     m_activity=Activity::Stopping;
+    m_mpris.clear();
     m_togglePlayback->setEnabled(false);
     m_stop->setEnabled(false); m_cancel->setEnabled(false); m_pause->setEnabled(false); m_seek->setEnabled(false);
     m_backend.request("stop",Protocol::sessionParams(m_session),[this](const QJsonObject &reply) { check(reply); });
@@ -401,6 +422,7 @@ void Window::handleEvent(const QJsonObject &message) {
     if (message["session_id"].toInteger()!=m_session || !m_session) return;
     if (message["event"]=="ended") {
         m_activity=Activity::Idle; m_session=0; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); m_pause->setEnabled(true); m_selectedVideo->setActiveSubtitle({});
+        m_mpris.clear();
         if (!message["error"].isNull()) showError(message["error"].toString());
         inspect(); refreshActions(); return;
     }
@@ -412,18 +434,21 @@ void Window::handleEvent(const QJsonObject &message) {
         m_activity=phase=="paused" ? Activity::Paused : Activity::Playing;
         m_pages->setCurrentIndex(2); m_pause->setText(m_activity == Activity::Paused ? i18n("Play") : i18n("Pause"));
         const auto position=state["position_seconds"].toDouble(); m_duration=state["duration_seconds"].toDouble(m_duration);
+        m_mpris.setState(m_activity == Activity::Paused ? QStringLiteral("Paused") : QStringLiteral("Playing"),position,m_duration,true);
+        m_mpris.setCanPlay(true);
         m_seek->setEnabled(m_duration>0 && m_stop->isEnabled());
         m_time->setText(timestamp(position)+" / "+timestamp(m_duration)+(phase=="buffering"?i18n(" · Buffering"):QString()));
         if (!m_dragging && m_duration>0) m_seek->setValue(static_cast<int>(100000*position/m_duration));
     } else if (phase=="preparing" || phase=="connecting" || phase=="loading") {
         m_activity=Activity::Preparing;
+        m_mpris.setState(QStringLiteral("Stopped"),0,m_duration,false);
         m_togglePlayback->setEnabled(false);
         m_pages->setCurrentIndex(1);
         const auto operation=state["preparation_operation"].toString();
         m_prepareLabel->setText(state["message"].toString(operation.isEmpty()?i18n("Starting playback…"):operation));
         if (state["preparation_fraction"].isDouble()) { m_progress->setRange(0,100); m_progress->setValue(qRound(100*state["preparation_fraction"].toDouble())); }
         else m_progress->setRange(0,0);
-    } else if (phase=="stopping") { m_activity=Activity::Stopping; m_togglePlayback->setEnabled(false); m_prepareLabel->setText(i18n("Stopping and cleaning up…")); m_cancel->setEnabled(false); }
+    } else if (phase=="stopping") { m_activity=Activity::Stopping; m_mpris.clear(); m_togglePlayback->setEnabled(false); m_prepareLabel->setText(i18n("Stopping and cleaning up…")); m_cancel->setEnabled(false); }
 }
 static QString droppedVideo(const QMimeData *data) {
     const auto urls=data->urls();
@@ -451,4 +476,5 @@ void Window::closeEvent(QCloseEvent *event) {
     event->ignore();
     if (m_activity == Activity::Closing) return;
     m_activity=Activity::Closing; setEnabled(false); m_backend.shutdown();
+    m_mpris.clear();
 }

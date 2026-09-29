@@ -30,13 +30,6 @@ frontends can reuse the backend protocol; they are not implemented yet.
 | Convert-only | Device selection, read-only format preview, explicit Convert, progress/cancel, reusable output and configurable auto-close. |
 | Device database | Bundled model rules/evidence, exact aliases and user `devices.toml` overrides shared by casting and device-targeted conversion. |
 
-The short-clip preparation matrix and core subtitle/resume workflows passed on
-KPN DIW7022. The user confirmed initial KDE playback and subsequent UI changes.
-Manual acceptance checklists are retired; future playback issues are handled as
-bugs. See the
-[device observations](../crates/werp-core/data/devices.toml) for narrower claims and
-untested cases. An automated or protocol pass alone is not a visible/audible TV pass.
-
 ## Decisions and rationale
 
 | Decision | Why |
@@ -83,7 +76,6 @@ Implementation constraints, toolchain setup and test workflows are in
 | M4 — subtitle/audio selection | Current subtitle scope accepted | Explicit audio-track selection; further subtitle expansion only when a real file exposes a gap. |
 | M5 — preparation and reuse | Implemented; short-clip hardware matrix passed | Optional cache maintenance; playback issues handled as bugs. |
 | M6 — Fedora release readiness | Open; development/local installation works | Clean-system validation, distribution packaging and supported runtime/dependency policy. |
-
 ### Open functional and release work
 
 - **Audio-track selection:** choose a source audio stream/language through the
@@ -101,11 +93,9 @@ manual acceptance checklist; reproduce and investigate issues as they arise.
 
 ### Deliberately parked or later scope
 
-- M3 terminal `pause`, `resume`, `seek`, `volume`, `status`, `stop`: keep input
-  optional/interactive, signals responsive and noninteractive stdin EOF harmless.
 - Reconnection only if it can safely reattach to the same owned session; never
   blindly relaunch the video.
-- GUI settings window, MPRIS/media keys, single-instance behavior and subtitle
+- GUI settings window, single-instance behavior and subtitle
   switching during playback. Window-close cleanup and Dolphin integration exist.
 - Stronger model identification/individual-device rules; exact aliases already
   work and matching changes were explicitly deferred.

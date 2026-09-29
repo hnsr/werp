@@ -1,20 +1,22 @@
 # Werp
 
-Cast local videos and subtitles to a Chromecast-compatible receiver using a native
-GUI application (currently Qt/KDE, support for GTK, macOS coming later).
+Native GUI application (currently only Qt/KDE) for casting videos to a Chromecast-compatible
+receiver.
 
-Werp supports embedded or external subtitles and tries to avoid or minimize
-transcoding/remuxing when possible, depending on source format and target device
-capabilities. Newer generation devices allow more video and audio codecs/profiles
-(compared to the baseline profile) and a device compatibility DB is maintained to
-document capabilities, to allow direct-play for more video formats.
+## Features
 
-See [media conversion](docs/media-conversion.md) for selection, encoding and reuse.
-Conversion is a one-off operation done before casting starts. See also 
-[storage and reuse](docs/media-conversion.md#storage-and-reuse).
+- Native application written in Rust
+- Minimize or entirely avoid remuxing or transcoding when possible (uses ffmpeg)
+- Device capability DB + user-configuration to allow more video to be streamed directly
+- Embedded or external subtitles (SubRip)
+- Control playback through standard media keys/controls (MPRIS)
+- Inhibit sleep/suspend while playing
 
-See the [project direction and roadmap](docs/plan.md) for decisions and open work,
-and the [device database](crates/werp-core/data/devices.toml) for recorded support.
+See [media conversion](docs/media-conversion.md) for media conversion details. Conversion is a one-off operation
+done before casting starts. See also [storage and reuse](docs/media-conversion.md#storage-and-reuse).
+
+See the [project direction and roadmap](docs/plan.md) for decisions and open work, and the [device database](crates/werp-core/data/devices.toml)
+for recorded device capability support (currently a work in progress)
 
 ## Requirements
 
@@ -35,10 +37,11 @@ uses HTTP.
 
 ## Design
 
-Werp consists of a platform-independent backend helper written in rust, which native
+Werp consists of a platform-independent backend helper written in Rust, which native
 GUI applications automatically launch and interface with. This allows
 the GUI applications to be written in the native language/tooling without having to use
-bindings. Werp also comes with a CLI binary for casting from the command-line.
+bindings. Werp also comes with a CLI binary for casting from the command-line, which
+is mainly intended for debugging/diagnostic purposes.
 
 On Linux, Werp uses `systemd-inhibit` to block sleep during casting and conversion,
 including preparation, paused playback and cleanup. Merely opening the GUI or
@@ -46,14 +49,13 @@ browsing devices does not acquire a lock. Screen dimming/locking remains enabled
 
 ### GUI application
 
-The current frontend uses C++/Qt and KDE Frameworks. GTK and other native
-frontends can share the same Rust backend; they are not implemented yet.
-
+The GUI application uses C++/Qt and KDE Frameworks for a native experience and is a thin
+layer on top of the shared backend, making it easy to add Gnome/GTK and macOS versions
+later.
 ```sh
 werp-kde /path/to/video.mkv
 werp-kde --convert-only /path/to/video.mkv
 ```
-
 The GUI app allows choosing target device, subtitle and other options before
 starting the chromecast session.
 

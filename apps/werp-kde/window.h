@@ -1,5 +1,6 @@
 #pragma once
 #include "backend.h"
+#include "mpris.h"
 #include <QMainWindow>
 #include <QJsonObject>
 #include <QSettings>
@@ -33,6 +34,7 @@ private:
     bool check(const QJsonObject &reply);
     void sendControl(const QString &method, QJsonObject params = {});
     Backend m_backend;
+    Mpris m_mpris;
     QSettings m_settings;
     QShortcut *m_togglePlayback;
     QString m_file, m_directory;
