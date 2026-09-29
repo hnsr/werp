@@ -193,24 +193,6 @@ pub fn validate_input(info: &MediaInfo) -> Result<(), WerpError> {
     plan(info).map(|_| ())
 }
 
-/// Copy paths preserve colour signalling; our video encoder cannot tone-map HDR.
-pub fn validate_video_transcode_input(info: &MediaInfo) -> Result<(), WerpError> {
-    validate_input(info)?;
-    if info.streams.iter().any(|s| {
-        s.kind == "video"
-            && !s.attached_picture
-            && matches!(
-                s.color_transfer.as_deref(),
-                Some("smpte2084" | "arib-std-b67")
-            )
-    }) {
-        return Err(error(
-            "HDR tone mapping is not implemented; use a path that copies the video instead of full video transcoding or subtitle burn-in",
-        ));
-    }
-    Ok(())
-}
-
 async fn check_encoders(
     ffmpeg: &Path,
     audio: bool,
@@ -320,7 +302,8 @@ pub async fn prepare(
             media::validate_audio_transcode_input(info, options.playback_policy)?
         }
         TranscodeMode::Remux => media::validate_remux_input(info, options.playback_policy)?,
-        TranscodeMode::AudioVideo => validate_video_transcode_input(info)?,
+        // Experimental for PQ/HLG-tagged input: encode normally, without tone mapping.
+        TranscodeMode::AudioVideo => {}
     }
     check_encoders(ffmpeg, input.audio.is_some(), options.mode, cancel).await?;
     let parent = match &options.directory {

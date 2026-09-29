@@ -93,9 +93,6 @@ pub fn select(info: &MediaInfo, mode: Mode, policy: DirectPlayPolicy) -> Result<
         }
         Mode::Transcode => Mode::Transcode,
     };
-    if selected == Mode::Transcode {
-        transcode::validate_video_transcode_input(info)?;
-    }
     Ok(Plan {
         mode: selected,
         policy: if selected == Mode::Transcode {
@@ -141,7 +138,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hdr_tags_allow_copy_paths_but_never_fall_back_to_video_encoding() {
+    async fn hdr_tags_follow_normal_selection_including_experimental_video_encoding() {
         for fixture in [
             include_str!("../tests/fixtures/h264.json"),
             include_str!("../tests/fixtures/hevc.json"),
@@ -170,11 +167,11 @@ mod tests {
                             .mode,
                         expected
                     );
-                    assert!(
+                    assert_eq!(
                         select(&source, Mode::Transcode, DirectPlayPolicy::Extended)
-                            .unwrap_err()
-                            .to_string()
-                            .contains("tone mapping")
+                            .unwrap()
+                            .mode,
+                        Mode::Transcode
                     );
                 }
                 let oversized = info(fixture, |j| {
@@ -182,11 +179,11 @@ mod tests {
                     j["streams"][0]["width"] = 3840.into();
                 })
                 .await;
-                assert!(
+                assert_eq!(
                     select(&oversized, Mode::Auto, DirectPlayPolicy::Extended)
-                        .unwrap_err()
-                        .to_string()
-                        .contains("tone mapping")
+                        .unwrap()
+                        .mode,
+                    Mode::Transcode
                 );
             }
         }

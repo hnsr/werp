@@ -146,7 +146,7 @@ id = "other-native-formats"
 status = "untested"
 path = "direct"
 format = "Original MKV, native AV1, HE-AAC/E-AC-3 passthrough, 4K, general HDR rendering/Dolby Vision, native image subtitle tracks"
-result = "Inventory or successful preparation is not native receiver evidence. Codec/container limits still apply. PQ/HLG tags are admitted on video-copy paths, but only the H.264/PQ-tagged sample below has user playback evidence; HDR video conversion is not implemented."
+result = "Inventory or successful preparation is not native receiver evidence. Codec/container limits still apply. PQ/HLG tags are admitted on video-copy paths, but only the H.264/PQ-tagged sample below has user playback evidence; HDR-tagged video encoding is experimental, without tone mapping or hardware validation."
 evidence = ["docs/media-inventory.md#receiver-evidence-and-limits"]
 
 [[devices.observations]]

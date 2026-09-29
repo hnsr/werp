@@ -48,7 +48,7 @@ fn cache_empty(options: &TranscodeOptions) {
 
 #[tokio::test]
 #[ignore = "requires real FFmpeg with libx264, AAC and ffprobe"]
-async fn hdr_copy_paths_preserve_video_payload_and_colour_signalling() {
+async fn hdr_copy_paths_preserve_signalling_and_experimental_encoding_completes() {
     let dir = tempfile::tempdir().unwrap();
     let cancel = CancellationToken::new();
     let probe = ProbeOptions::default();
@@ -154,6 +154,27 @@ async fn hdr_copy_paths_preserve_video_payload_and_colour_signalling() {
             prepared.close().unwrap();
             cache_empty(&options);
         }
+        let mut options = options(dir.path());
+        options.mode = TranscodeMode::AudioVideo;
+        let prepared = transcode::prepare(
+            &info,
+            Path::new("ffmpeg"),
+            &probe,
+            &options,
+            &cancel,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(prepared.info.streams[0].codec.as_deref(), Some("h264"));
+        assert_eq!(
+            prepared.info.streams[0].pixel_format.as_deref(),
+            Some("yuv420p")
+        );
+        // Successful decoding verifies the experimental path runs, not HDR colour correctness.
+        ffmpeg_output(&prepared.info.path, &["-map", "0:v:0", "-f", "null", "-"]).await;
+        prepared.close().unwrap();
+        cache_empty(&options);
         assert_eq!(fs::read(&path).unwrap(), original);
     }
 }
@@ -745,7 +766,7 @@ async fn unsupported_bitmap_burn_in_is_rejected_before_starting_ffmpeg() {
 }
 
 #[tokio::test]
-async fn preparation_rejects_hdr_ambiguity_missing_encoders_and_insufficient_space() {
+async fn preparation_rejects_dolby_vision_ambiguity_missing_encoders_and_insufficient_space() {
     let dir = tempfile::tempdir().unwrap();
     let (mut info, probe) = input(dir.path()).await;
     let options = options(dir.path());
@@ -754,22 +775,6 @@ async fn preparation_rejects_hdr_ambiguity_missing_encoders_and_insufficient_spa
         &ffmpeg,
         "printf ' V..... libx264 encoder\n A..... aac encoder\n'",
     );
-    for hdr in ["smpte2084", "arib-std-b67"] {
-        info.streams[0].color_transfer = Some(hdr.into());
-        let error = transcode::prepare(
-            &info,
-            &ffmpeg,
-            &probe,
-            &options,
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .await
-        .err()
-        .unwrap();
-        assert!(error.to_string().contains("tone mapping"));
-    }
-    info.streams[0].color_transfer = None;
     info.streams[0].dolby_vision = true;
     assert!(
         transcode::prepare(

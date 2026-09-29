@@ -349,7 +349,7 @@ fn assess_input(
 ) -> Result<DirectPlayAssessment, WerpError> {
     let unsupported = |reason: &str| {
         WerpError::UnsupportedMedia(format!(
-            "{reason}. The baseline profile requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without Dolby Vision. Opt in to H.264 Level 4.2/1080p60 with a model-specific device database override. Use automatic mode to select conversion, or --mode transcode to force H.264/AAC output for SDR sources"
+            "{reason}. The baseline profile requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without Dolby Vision. Opt in to H.264 Level 4.2/1080p60 with a model-specific device database override. Use automatic mode to select conversion, or --mode transcode to force H.264/AAC output"
         ))
     };
     if !info

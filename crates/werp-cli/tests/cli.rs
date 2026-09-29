@@ -30,18 +30,16 @@ fn force_direct_bypasses_cli_format_checks_but_keeps_subtitle_validation() {
         let output = command.output().unwrap();
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(!output.status.success());
-        if forced || codec == "h264" {
-            let notice = if forced {
-                "Forced direct playback"
-            } else {
-                "Selected Direct"
-            };
-            assert!(stderr.contains(notice), "{stderr}");
-            assert!(stderr.contains("missing.vtt"), "{stderr}");
-            assert!(!stderr.contains("tone mapping"), "{stderr}");
+        let notice = if forced {
+            "Forced direct playback"
+        } else if codec == "h264" {
+            "Selected Direct"
         } else {
-            assert!(stderr.contains("tone mapping"), "{stderr}");
-        }
+            "Selected Transcode"
+        };
+        assert!(stderr.contains(notice), "{stderr}");
+        assert!(stderr.contains("missing.vtt"), "{stderr}");
+        assert!(!stderr.contains("tone mapping"), "{stderr}");
     }
 }
 

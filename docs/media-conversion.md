@@ -48,11 +48,14 @@ because an H.264/PQ-tagged sample played without visible issues on the KPN DIW70
 this is not a guarantee of HDR rendering on every receiver. No device flag is
 required.
 
-If the video itself needs encoding, HDR-tagged sources fail instead of silently
-converting without tone mapping. This also applies to subtitle burn-in and forced
-video transcoding. Dolby Vision, ambiguous multiple audio/video tracks, and
-missing required metadata remain errors. Tone mapping and explicit audio-track
-selection are not implemented.
+Video encoding of PQ/HLG-tagged sources is also allowed experimentally, including
+automatic fallback, forced transcoding and subtitle burn-in. It uses the existing
+8-bit H.264 pipeline without tone mapping; accepting tags does not guarantee HDR
+preservation or correct SDR rendering. We removed the guard to permit practical
+trials, and will revisit colour handling if playback issues arise.
+
+Dolby Vision, ambiguous multiple audio/video tracks, and missing required metadata
+remain errors. Tone mapping and explicit audio-track selection are not implemented.
 
 [GUI convert-only](gui.md#convert-only-window) uses the selected device's rules,
 or Baseline for **Broad compatibility**, without launching a receiver. It leaves

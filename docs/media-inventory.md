@@ -91,8 +91,9 @@ language tags, dispositions, and any reported side data, without source names.
 using `--force-direct` on the KPN DIW7022 and reported no visible issues. Normal
 direct/copy paths now accept these tags without a model-specific flag; this
 observation does not establish whether the source is genuinely HDR or validate
-every receiver. Tags are preserved, not stripped or tone-mapped. HDR video
-encoding remains deferred work.
+every receiver. Direct/copy paths preserve tags. Full video encoding is now allowed
+experimentally without tone mapping; this original-file playback observation
+does not validate that conversion.
 
 ## Receiver evidence and limits
 

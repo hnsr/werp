@@ -585,10 +585,12 @@ async fn force_direct_serves_original_formats_and_keeps_session_cleanup() {
         // This path cannot be a cache directory. A forced trial must never touch it.
         request.cache.directory = Some(video.clone());
         let (progress, _) = watch::channel(SessionState::default());
-        let error = session::run(request.clone(), progress, &CancellationToken::new())
+        let mut checked = request.clone();
+        checked.cache.enabled = false;
+        let error = session::run(checked, progress, &CancellationToken::new())
             .await
             .unwrap_err();
-        assert!(error.to_string().contains("tone mapping"));
+        assert!(matches!(error, WerpError::MissingExecutable(_)));
         request.force_direct = true;
         let captions = dir.path().join("captions.vtt");
         fs::write(&captions, "WEBVTT\n\n00:00.000 --> 00:01.000\nHello\n").unwrap();

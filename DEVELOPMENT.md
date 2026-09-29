@@ -174,8 +174,9 @@ Add CI when repository hosting and supported build environments are settled.
   still release local resources even if remote STOP fails.
 - Use a trusted LAN: Cast TLS currently does not authenticate receiver identity,
   and media is served over HTTP. See the transport decision for limits.
-- Reject known HDR, ambiguous audio/video tracks and missing required metadata
-  rather than guessing a destructive conversion. No HDR tone mapping yet.
+- Reject Dolby Vision, ambiguous audio/video tracks and missing required metadata.
+  PQ/HLG-tagged video encoding is experimental and uses the ordinary 8-bit H.264
+  pipeline; no tone mapping or guaranteed HDR preservation is implemented.
 - Keep personal device names, IDs, addresses, source filenames and symlink targets
   out of commits. Public model identifiers and neutral sample IDs are suitable.
 
