@@ -151,7 +151,7 @@ repository hosting and supported build environments are settled.
 
 | Reference | Owns |
 | --- | --- |
-| [Automatic playback](automatic-playback.md) | Profiles, preparation, storage/downmix and M5 evidence |
+| [Media conversion](media-conversion.md) | Path selection, profiles, encoding, storage and downmix |
 | [Preferences and subtitles](preferences-and-subtitles.md) | CLI config, subtitle selection/delay and resume |
 | [Device database](device-compatibility.md) | Model matching, overrides and receiver evidence |
 | [KDE guide](kde-ui.md) | GUI behavior, build/install and manual checks |

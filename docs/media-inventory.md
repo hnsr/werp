@@ -1,7 +1,7 @@
 # Local media inventory
 
 This is the initial inventory and early trial history. It is not a live inventory of the Downloads directory. Current policy is described
-in [automatic playback](automatic-playback.md); original hypotheses below are
+in [media conversion](media-conversion.md); original hypotheses below are
 retained separately from observed outcomes.
 
 Scanned 2026-09-17 using ffprobe 8.1.2. Recursively found and successfully probed
@@ -136,7 +136,7 @@ closed HTTP port. The user had seen similar intermittent receiver startup issues
 but this is not proof of the earlier failure's cause or of a fix. See the
 [receiver-stop handling](decisions/001-cast-library.md#follow-up-fixes).
 
-The [M5 batch](automatic-playback.md#hardware-batch-result) later confirmed the
+The [device batch coverage](device-compatibility.md#batch-coverage) later confirmed the
 short-clip direct/remux/audio/full-conversion matrix with captions and reuse.
 This supersedes the original proposed test order. Expanded-path seeking,
 long-duration sync and the two HDR review cases remain open; full-conversion

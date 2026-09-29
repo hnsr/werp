@@ -97,13 +97,23 @@ stability, every possible codec combination, or support on every unit/firmware.
 The generic Extended profile retains its old 30 fps/Level 4.1 H.264 boundary.
 A local model override can permit 60 fps without changing other receivers.
 
+### Batch coverage
+
+On 2026-09-18, the user confirmed good picture, sound and captions across the
+12-case short-clip batch on KPN DIW7022. The database observations record the
+formats and paths: direct, H.264/HEVC remux, audio-only and full conversion,
+including a Baseline override. The batch passed natural completion, SRT/WebVTT,
+reuse with FFmpeg unavailable, and SIGINT/exit-130 temporary-output and port
+cleanup checks. This does not establish long-duration drift, expanded-path
+seeking, read-only cache fallback on hardware, or compatibility with other units.
+
 ### Original CLI hardware checks
 
 On KPN DIW7022, separate external SRT and WebVTT runs confirmed visible video,
 subtitles and correct Ctrl+C shutdown. SIGTERM during WebVTT playback reported
 cleanup and exit 143; that transcript did not include a separate port check.
 After the unsolicited-completion fix, a 30-second WebVTT run exited successfully
-and closed its HTTP port. Later [batch checks](automatic-playback.md#hardware-batch-result)
+and closed its HTTP port. Later [batch checks](#batch-coverage)
 cover SRT/WebVTT completion and cancellation/port cleanup across preparation paths.
 Interrupted loading and signal-port closure were not individually recorded for
 all original CLI runs; those remain optional regression checks, not known defects.
@@ -114,7 +124,7 @@ The user reported no problems with sample-006 (MKV, H.264 High 720×480 at
 23.976 fps, stereo AAC-LC) remuxed to MP4 on KPN DIW7022. Requested checks covered
 picture, sound, sync and Ctrl+C; the reply was a general success report without
 measurements or a cleanup transcript. No subtitles were selected. The later
-[batch checks](automatic-playback.md#hardware-batch-result) add short-clip
+[batch checks](#batch-coverage) add short-clip
 H.264/HEVC remux, captions, completion, reuse and cancellation coverage.
 Expanded-path seeking and long-duration sync remain deferred; original MKV
 playback is not established.
@@ -134,7 +144,7 @@ stop reported `Playback stopped on receiver.` and exit 0 without timeout/cleanup
 warnings; filesystem/port checks were not repeated in that transcript.
 See the [inventory](media-inventory.md#user-playback-results) for audio-only
 conversion and its unresolved initial startup failure, and the later
-[batch checks](automatic-playback.md#hardware-batch-result) for broader coverage.
+[batch checks](#batch-coverage) for broader coverage.
 Detailed seek/subtitle synchronization and long-duration stability remain unverified.
 
 ## Maintaining the bundled database

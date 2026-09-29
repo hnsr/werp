@@ -5,7 +5,8 @@ Yeet chooses direct play, MP4 remuxing, audio-only conversion or full SDR conver
 and reuses validated prepared files. Conversion finishes before playback starts.
 For MKV files with compatible video/audio, remuxing copies the streams into MP4
 without re-encoding or quality loss. H.264/AAC and device-permitted HEVC/surround
-are supported; subtitles are handled separately.
+are supported; subtitles are handled separately. See [media conversion](docs/media-conversion.md)
+for selection, encoding and reuse.
 
 The KDE player provides device/subtitle selection, preparation progress, resume,
 pause/play/seek/stop and Dolphin **Open With** integration. Convert-only previews
@@ -96,7 +97,7 @@ preferences use `kde-ui.ini`. XDG locations are supported. See
 Prepared MP4s and completion sidecars live beside the canonical source, falling
 back to the user cache if unwritable. Originals are never changed. Reuse validates
 source/output fingerprints and the recipe; this costs disk reads but avoids
-encoding. There is no automatic eviction. See [storage and reuse](docs/automatic-playback.md#storage-and-reuse).
+encoding. There is no automatic eviction. See [storage and reuse](docs/media-conversion.md#storage-and-reuse).
 
 ## Limits and networking
 
@@ -158,7 +159,7 @@ missing. Hardware checks are separate and require an intended receiver.
 | Manual check | Guide |
 | --- | --- |
 | Short clip, SRT/WebVTT, SIGTERM cleanup | [CLI cleanup check](#cli-cleanup-check) |
-| Automatic preparation matrix and reuse | [M5 batch](docs/automatic-playback.md#reproduce-the-guided-hardware-batch) |
+| Automatic preparation matrix and reuse | [Batch script](scripts/validate-m5.sh) (requires local sample aliases; explicitly casts to the named device) |
 | Subtitle selection, delay and resume | [Subtitle checklist](docs/preferences-and-subtitles.md#verification-and-tv-checklist) |
 | KDE controls and convert-only | [KDE checklists](docs/kde-ui.md#convert-only-checks) |
 | Original feasibility probe | [Transport decision](docs/decisions/001-cast-library.md#reproduction) |
