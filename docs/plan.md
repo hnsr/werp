@@ -1,4 +1,4 @@
-# Yeet: project direction and roadmap
+# Werp: project direction and roadmap
 
 Reviewed 2026-09-29. This is the single project plan, incorporating the former
 outline. Feature guides describe current behavior; validation reports preserve
@@ -33,7 +33,7 @@ frontends can reuse the backend protocol; they are not implemented yet.
 The short-clip preparation matrix and core subtitle/resume workflows passed on
 KPN DIW7022. The user confirmed initial KDE playback and subsequent UI changes;
 the complete KDE hardware checklist is not recorded as passed. See the
-[device observations](../crates/yeet-core/data/devices.toml) for narrower claims and
+[device observations](../crates/werp-core/data/devices.toml) for narrower claims and
 untested cases. An automated or protocol pass alone is not a visible/audible TV pass.
 
 ## Decisions and rationale
@@ -44,7 +44,7 @@ untested cases. An automated or protocol pass alone is not a visible/audible TV 
 | C++ / Qt 6 Widgets / KDE Frameworks 6 frontend | Native KDE integration without depending on incomplete or unstable language bindings. This supersedes the initial all-C++ application idea. |
 | Private Rust child process, versioned JSON over stdin/stdout | One app launch for the user; native frontends need no Rust ABI/bindings, sockets or separately managed daemon. The helper owns operations and cleans up on EOF. |
 | FFmpeg/ffprobe subprocesses | Use installed codec capabilities without linking to FFmpeg's C libraries. This avoids binary-library coupling; executable features and process lifecycle still require validation. |
-| oxicast behind a Yeet adapter | Its persistent asynchronous reader and raw requests supported cancellation and subtitles with less transport surgery than rust_cast. [Full decision](decisions/001-cast-library.md). |
+| oxicast behind a Werp adapter | Its persistent asynchronous reader and raw requests supported cancellation and subtitles with less transport surgery than rust_cast. [Full decision](decisions/001-cast-library.md). |
 | Complete MP4 preparation before playback | A complete seekable file works with HTTP ranges and allows validated reuse. Live encoding adds buffering/seek/lifecycle complexity and remains deferred. |
 | Model rules backed by observations | Container extensions and advertised hardware features do not establish Cast playback support. Exact model/alias matches are predictable; unknown models use Baseline. |
 | Local model overrides instead of global codec opt-ins | A permission should affect the intended model, not every receiver. Overrides may restrict or extend bundled rules without rebuilding. |
@@ -56,14 +56,14 @@ untested cases. An automated or protocol pass alone is not a visible/audible TV 
 ## Architecture and constraints
 
 ```text
-crates/yeet-core/       probing, discovery, Cast, media decisions, HTTP,
+crates/werp-core/       probing, discovery, Cast, media decisions, HTTP,
                        subtitles, conversion/cache, resume and power
-crates/yeet-cli/        yeet FILE / devices / inspect; CLI policy and signals
-crates/yeet-backend/    explicit requests over private versioned JSON IPC
-apps/yeet-kde/          native C++/Qt player and convert-only windows
+crates/werp-cli/        werp FILE / devices / inspect; CLI policy and signals
+crates/werp-backend/    explicit requests over private versioned JSON IPC
+apps/werp-kde/          native C++/Qt player and convert-only windows
 ```
 
-The core exposes Yeet types; third-party Cast types stay behind the adapter.
+The core exposes Werp types; third-party Cast types stay behind the adapter.
 Frontends render structured state and issue commands rather than interpreting
 FFmpeg output or CLI prose. Commands/queues are bounded; routine snapshots can
 coalesce, while terminal outcomes are delivered after cleanup.

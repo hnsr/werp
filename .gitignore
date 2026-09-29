@@ -2,6 +2,6 @@
 /samples/
 
 # Prepared media and completion records (never source files).
-*.yeet-*.mp4
-*.yeet-*.mp4.json
-.yeet-write-check-*/
+*.werp-*.mp4
+*.werp-*.mp4.json
+.werp-write-check-*/

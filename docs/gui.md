@@ -37,7 +37,7 @@ combined list also includes matching VTT/ASS/SSA; an explicit picker file need
 not match the video name. Manual choices survive stop/restart of the same video.
 CLI preferences do not change these UI defaults.
 
-**Yeet** starts at zero; **Yeet from last position** appears when a usable
+**Werp** starts at zero; **Werp from last position** appears when a usable
 checkpoint exists. The UI saves progress but never resumes implicitly.
 **Subtitle delay** is in signed milliseconds: positive later, negative earlier.
 It resets for a new file, survives stop/restart, and is fixed for each session,
@@ -46,7 +46,7 @@ playback. Multiple-file, directory, remote-URL and active-session drops are igno
 
 ## KDE frontend preferences
 
-`$XDG_CONFIG_HOME/yeet/kde-ui.ini` (normally `~/.config/yeet/kde-ui.ini`) stores
+`$XDG_CONFIG_HOME/werp/kde-ui.ini` (normally `~/.config/werp/kde-ui.ini`) stores
 `lastDeviceId` in the General group. The player and converter share it; an accepted
 start/convert with a device records it. Merely changing a selection does not.
 The helper snapshots [device rules](device-compatibility.md) per operation and
@@ -65,7 +65,7 @@ window opens and has no CLI effect.
 ## Convert-only window
 
 ```sh
-yeet-kde --convert-only /path/to/video.mkv
+werp-kde --convert-only /path/to/video.mkv
 ```
 
 Without a filename, a native picker opens. Choose a discovered video receiver or
@@ -100,8 +100,8 @@ the same resolved policy; another device or bitmap burn-in may need another reci
 
 ## Launch options
 
-`yeet-kde [OPTIONS] [FILE]` has its own arguments; it does not forward arbitrary
-`yeet` CLI options to the backend. Omit FILE to choose a video in the GUI.
+`werp-kde [OPTIONS] [FILE]` has its own arguments; it does not forward arbitrary
+`werp` CLI options to the backend. Omit FILE to choose a video in the GUI.
 
 | GUI option | Effect |
 | --- | --- |

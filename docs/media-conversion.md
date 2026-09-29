@@ -1,6 +1,6 @@
 # Media conversion
 
-Yeet prepares media for the selected receiver while avoiding unnecessary encoding.
+Werp prepares media for the selected receiver while avoiding unnecessary encoding.
 The Rust backend shares this behavior between CLI casting, GUI casting and
 convert-only. Receiver capabilities and observations belong in the
 [device database](device-compatibility.md).
@@ -79,8 +79,8 @@ dialogue enhancement is applied. See [FFmpeg's resampler controls](https://www.f
 Prepared files live beside the canonical source, following symlinks:
 
 ```text
-movie.yeet-<12-hex-key-tag>-<8-hex-generation>.mp4
-movie.yeet-<12-hex-key-tag>-<8-hex-generation>.mp4.json
+movie.werp-<12-hex-key-tag>-<8-hex-generation>.mp4
+movie.werp-<12-hex-key-tag>-<8-hex-generation>.mp4.json
 ```
 
 The source stem is preserved up to 219 UTF-8 bytes, keeping filenames within a
@@ -97,8 +97,8 @@ metadata against the profile. It reads source/output data from disk but avoids
 encoding; FFmpeg is unnecessary for reusing media, while ffprobe remains required.
 Missing, corrupt or mismatched entries are ignored.
 
-If the source folder is unwritable, storage falls back to `$XDG_CACHE_HOME/yeet`
-(or `~/.cache/yeet`); valid adjacent outputs can still be reused. `--cache-dir PATH`
+If the source folder is unwritable, storage falls back to `$XDG_CACHE_HOME/werp`
+(or `~/.cache/werp`); valid adjacent outputs can still be reused. `--cache-dir PATH`
 selects a directory explicitly and fails if unusable. `--no-cache` skips reuse and
 retention, using temporary output under the user cache or explicit directory.
 

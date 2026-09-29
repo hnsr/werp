@@ -1,4 +1,4 @@
-# Copy to ~/.config/yeet/config.toml (or $XDG_CONFIG_HOME/yeet/config.toml).
+# Copy to ~/.config/werp/config.toml (or $XDG_CONFIG_HOME/werp/config.toml).
 # Omitted fields use these defaults. These preferences apply only to the CLI.
 # Model capabilities belong in devices.toml; see devices.example.toml.
 

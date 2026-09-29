@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Werp (convert only)
+Comment=Prepare a compatible MP4 without casting
+Exec=werp-kde --convert-only %f
+Icon=video-display
+Terminal=false
+Categories=Qt;KDE;AudioVideo;AudioVideoEditing;
+MimeType=video/mp4;video/x-matroska;video/webm;video/vnd.avi;video/x-msvideo;video/quicktime;video/mp2t;video/mpeg;video/x-flv;video/x-ms-wmv;video/ogg;

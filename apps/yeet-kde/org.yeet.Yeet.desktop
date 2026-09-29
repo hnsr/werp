@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Yeet
-Comment=Play local videos on a Chromecast
-Exec=yeet-kde %f
-Icon=video-display
-Terminal=false
-Categories=Qt;KDE;AudioVideo;Player;
-MimeType=video/mp4;video/x-matroska;video/webm;video/vnd.avi;video/x-msvideo;video/quicktime;video/mp2t;video/mpeg;video/x-flv;video/x-ms-wmv;video/ogg;

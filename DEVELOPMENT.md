@@ -18,7 +18,7 @@ For normal usage, see [README](README.md). Run commands from the repository root
 - `ffprobe` on PATH. `ffmpeg` is needed for text subtitle conversion/extraction
   (except external WebVTT), remuxing and encoding on a cache miss. Full encoding
   needs libx264/AAC plus input decoders. Codec availability depends on the build.
-- Linux `systemd-inhibit` for best-effort sleep prevention; Yeet warns and continues
+- Linux `systemd-inhibit` for best-effort sleep prevention; Werp warns and continues
   if it is unavailable or denied.
 
 Fedora 44 with FFmpeg/ffprobe 8.1.2 is the recorded development baseline. The CLI
@@ -33,7 +33,7 @@ cargo build --locked --workspace
 cargo run --locked -- --help
 cargo run --locked -- inspect /path/to/video.mkv --json
 cargo build --release --locked
-./target/release/yeet --help
+./target/release/werp --help
 ```
 
 ### KDE frontend
@@ -43,9 +43,9 @@ qt6-qtbase-devel kf6-kcoreaddons-devel kf6-ki18n-devel`. CMake requires Qt >= 6.
 KDE Frameworks >= 6 and C++17. From the repository root:
 
 ```sh
-cmake -S apps/yeet-kde -B target/kde -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake -S apps/werp-kde -B target/kde -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build target/kde
-./target/kde/yeet-kde /path/to/video.mkv --http-port 8010
+./target/kde/werp-kde /path/to/video.mkv --http-port 8010
 ```
 
 CMake builds/copies the Rust helper beside the UI; rebuild after Rust or C++ changes.
@@ -66,11 +66,11 @@ To register or repair them after moving it, run from the repository root:
 
 ```sh
 desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
-  --set-key=Exec --set-value="\"$PWD/target/kde/yeet-kde\" --http-port 8010 %f" \
-  apps/yeet-kde/org.yeet.Yeet.desktop
+  --set-key=Exec --set-value="\"$PWD/target/kde/werp-kde\" --http-port 8010 %f" \
+  apps/werp-kde/org.werp.Werp.desktop
 desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
-  --set-key=Exec --set-value="\"$PWD/target/kde/yeet-kde\" --convert-only %f" \
-  apps/yeet-kde/org.yeet.Yeet.ConvertOnly.desktop
+  --set-key=Exec --set-value="\"$PWD/target/kde/werp-kde\" --convert-only %f" \
+  apps/werp-kde/org.werp.Werp.ConvertOnly.desktop
 update-desktop-database "${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 kbuildsycoca6
 ```
@@ -85,7 +85,7 @@ The GUI accepts `--backend PATH` to select a helper executable and
 works. These are development/testing flags, separate from the
 [normal GUI options](docs/gui.md#launch-options).
 
-`yeet-backend` is normally launched by the GUI, not managed as a separate app.
+`werp-backend` is normally launched by the GUI, not managed as a separate app.
 For integration/testing it accepts `--http-port PORT` (default `0`, OS-assigned),
 `--ffprobe PATH`, `--ffmpeg PATH` and `--no-inhibit-sleep`. GUI launch options are
 not arbitrary helper/CLI pass-through arguments. Frontend implementations use the
@@ -111,7 +111,7 @@ missing. Hardware checks are separate and require an intended receiver.
 ### GUI tests
 
 The CTest target runs offscreen with Fusion; focused native tests have also passed with KDE Breeze. Set
-`YEET_UI_SCREENSHOTS` to save test screenshots. Native tests use a Python mock
+`WERP_UI_SCREENSHOTS` to save test screenshots. Native tests use a Python mock
 helper, plus a read-only inspection check through the real Rust helper.
 
 Coverage includes explicit start, preview/device persistence, subtitle choices,
@@ -134,7 +134,7 @@ and a rendered frame visually confirmed its caption; this is not a TV result.
 
 Use an explicitly chosen receiver: casting replaces its current playback.
 Confirm picture, sound and captions on the TV; protocol success is not a visual
-or audio pass. The [device database](crates/yeet-core/data/devices.toml) records
+or audio pass. The [device database](crates/werp-core/data/devices.toml) records
 observed support and limits. The complete GUI checklist and expanded-path
 long-duration/seek validation remain outstanding.
 
@@ -159,7 +159,7 @@ cargo run --locked -- samples/short/test.mp4 \
 
 Repeat with `subtitles.srt`. Natural completion should exit 0; Ctrl+C should
 finish cleanup and exit 130. For a separate SIGTERM run, find the casting PID
-with `pgrep -a -x yeet` in another terminal and send `kill -TERM PID`; expect 143.
+with `pgrep -a -x werp` in another terminal and send `kill -TERM PID`; expect 143.
 After shutdown, `ss -H -ltn 'sport = :8010'` should show no listener. Cancellation
 can also be checked during loading. SIGKILL cannot run application cleanup.
 
@@ -224,11 +224,11 @@ subjective dialogue quality still requires listening.
 1. Generate `samples/preferences/embedded.mkv` with
    `bash scripts/generate-subtitle-fixture.sh samples/preferences 60`. Open it;
    confirm English and the last-used eligible TV are selected, without playback.
-   Press **Yeet** and confirm picture, sound and captions.
+   Press **Werp** and confirm picture, sound and captions.
 2. Pause/resume with buttons and Space. Seek both directions, including while
    paused; confirm caption/audio sync. Longer copied-HEVC checks are separate.
 3. Stop after at least 20 seconds; confirm the TV stops and choices return.
-   Try **Yeet from last position**, then **Yeet** to verify resume versus restart.
+   Try **Werp from last position**, then **Werp** to verify resume versus restart.
 4. Choose an external subtitle and test positive/negative delay. Close during
    playback and confirm owned playback/helper resources stop.
 5. With an uncached input requiring conversion (or a selected PGS track), confirm
@@ -240,12 +240,12 @@ subjective dialogue quality still requires listening.
 ### Feasibility probe
 
 The original feasibility example is retained for transport diagnosis. It requires
-an already compatible MP4/WebVTT; prefer `yeet FILE` for normal use.
+an already compatible MP4/WebVTT; prefer `werp FILE` for normal use.
 
 ```sh
 bash scripts/generate-m1-fixture.sh
-cargo run --locked -p yeet-core --example cast_probe -- --discover
-cargo run --locked -p yeet-core --example cast_probe -- \
+cargo run --locked -p werp-core --example cast_probe -- --discover
+cargo run --locked -p werp-core --example cast_probe -- \
   --device "Living Room" \
   --video samples/m1/test.mp4 --subtitles samples/m1/subtitles.vtt \
   --http-port 8010 --seconds 620 --exercise-controls
@@ -277,7 +277,7 @@ Add CI when repository hosting and supported build environments are settled.
   Cancellation means cancel **and await** the operation, not just drop its future.
 - Serve only registered media/subtitle URLs, with byte ranges and subtitle CORS.
   Choose the local address using the receiver route; never change firewall rules.
-- Stop only Yeet's owned media. A takeover ends ownership; a network failure must
+- Stop only Werp's owned media. A takeover ends ownership; a network failure must
   still release local resources even if remote STOP fails.
 - Use a trusted LAN: Cast TLS currently does not authenticate receiver identity,
   and media is served over HTTP. See the transport decision for limits.
@@ -292,7 +292,7 @@ session; see the [transport decision](docs/decisions/001-cast-library.md).
 
 ### Device database maintenance
 
-Edit `crates/yeet-core/data/devices.toml` and rebuild the app. Add canonical model
+Edit `crates/werp-core/data/devices.toml` and rebuild the app. Add canonical model
 IDs, explicit aliases and bounded permissions using the
 [device schema](docs/device-compatibility.md#observation-fields). New codec
 capabilities require core support as well as a database edit.
@@ -302,7 +302,7 @@ successful protocol exchange alone does not establish playback support. Tests do
 not upgrade untested formats to hardware passes. Validate changes with:
 
 ```sh
-cargo test --locked -p yeet-core --lib devices::tests
+cargo test --locked -p werp-core --lib devices::tests
 ```
 
 This checks schema, matching, override behavior and evidence links. Supporting

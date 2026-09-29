@@ -1,6 +1,6 @@
 # Private frontend protocol, version 1
 
-`yeet-backend` is an automatically launched child process, not a user-managed
+`werp-backend` is an automatically launched child process, not a user-managed
 daemon. A frontend owns its stdin/stdout pipes. UTF-8 JSON objects are delimited
 by a newline; embedded newlines in filenames must be JSON-escaped. Diagnostic
 logs go only to stderr. Helper launch options are documented in
@@ -14,7 +14,7 @@ pending requests. Responses can arrive out of order. Start with a handshake:
 
 ```json
 {"id":1,"method":"hello","params":{"version":1}}
-{"id":1,"ok":true,"result":{"version":1,"application":"yeet-backend"}}
+{"id":1,"ok":true,"result":{"version":1,"application":"werp-backend"}}
 ```
 
 Incompatible versions receive `protocol_version`; no operations are accepted
@@ -91,7 +91,7 @@ in `start` and can preserve manual user choices instead.
 `media` contains canonical `path`, `container`, nullable `duration_seconds`, and
 `streams`. Each stream has an `index`, `kind`, codec/profile metadata, dimensions
 or audio information, language/title, and disposition flags. The Rust definitions
-are in [`media.rs`](../crates/yeet-core/src/media.rs).
+are in [`media.rs`](../crates/werp-core/src/media.rs).
 
 Each subtitle choice has `kind` (embedded/external), nullable `index`, `path`,
 `codec`, `language`, and `title`, plus boolean `forced`, `hearing_impaired`,
@@ -195,7 +195,7 @@ Auto-close timing belongs to the frontend, not the core or protocol.
 
 Before accepting `start` or a device-targeted `preview_conversion`/`convert`, the
 helper snapshots the bundled model database merged with
-`$XDG_CONFIG_HOME/yeet/devices.toml` (normally `~/.config/yeet/devices.toml`).
+`$XDG_CONFIG_HOME/werp/devices.toml` (normally `~/.config/werp/devices.toml`).
 Invalid overrides produce `operation_failed` without starting the operation. A
 missing file retains bundled rules. Edits do not affect an active operation.
 CLI preferences are not read. Broad-compatibility conversion/preview, inspect and

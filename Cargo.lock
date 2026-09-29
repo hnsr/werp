@@ -1667,7 +1667,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "yeet-backend"
+name = "werp-backend"
 version = "0.1.0"
 dependencies = [
  "clap",
@@ -1676,11 +1676,11 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing-subscriber",
- "yeet-core",
+ "werp-core",
 ]
 
 [[package]]
-name = "yeet-cli"
+name = "werp-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
@@ -1688,11 +1688,11 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing-subscriber",
- "yeet-core",
+ "werp-core",
 ]
 
 [[package]]
-name = "yeet-core"
+name = "werp-core"
 version = "0.1.0"
 dependencies = [
  "axum",

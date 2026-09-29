@@ -27,7 +27,7 @@ ffmpeg -nostdin -v error -n \
         printf '%02d:%02d:%02d.000 --> %02d:%02d:%02d.000\n' \
             "$((second/3600))" "$((second/60%60))" "$((second%60))" \
             "$((end/3600))" "$((end/60%60))" "$((end%60))"
-        printf 'YEET subtitles working — cue %03d — %02d:%02d\n\n' \
+        printf 'WERP subtitles working — cue %03d — %02d:%02d\n\n' \
             "$((second/5+1))" "$((second/60))" "$((second%60))"
     done
 } > "$output_dir/subtitles.vtt"

@@ -1,7 +1,7 @@
-# Yeet
+# Werp
 
 Cast local videos and subtitles to a Chromecast from a Rust CLI or native GUI.
-Yeet chooses direct play, MP4 remuxing, audio-only conversion or full SDR conversion
+Werp chooses direct play, MP4 remuxing, audio-only conversion or full SDR conversion
 and reuses validated prepared files. Conversion finishes before playback starts.
 For MKV files with compatible video/audio, remuxing copies the streams into MP4
 without re-encoding or quality loss. H.264/AAC and device-permitted HEVC/surround
@@ -14,7 +14,7 @@ integration. Convert-only previews output for a selected device without starting
 centres on **KPN DIW7022**; other models use conservative defaults unless configured.
 
 See the [project direction and roadmap](docs/plan.md) for decisions and open work,
-and the [device database](crates/yeet-core/data/devices.toml) for recorded support.
+and the [device database](crates/werp-core/data/devices.toml) for recorded support.
 
 ## Requirements
 
@@ -32,13 +32,13 @@ The current frontend uses C++/Qt and KDE Frameworks. GTK and other native
 frontends can share the same Rust backend; they are not implemented yet.
 
 ```sh
-yeet-kde /path/to/video.mkv
-yeet-kde --convert-only /path/to/video.mkv
+werp-kde /path/to/video.mkv
+werp-kde --convert-only /path/to/video.mkv
 ```
 
 The app launches its Rust helper automatically. The player preselects the last-used
 device and suggests English, then Dutch subtitles. Review choices and press
-**Yeet** or **Yeet from last position**. Space toggles pause/play; Ctrl+Q closes
+**Werp** or **Werp from last position**. Space toggles pause/play; Ctrl+Q closes
 with cleanup. Opening/dropping a file does not start playback.
 
 Convert-only lets you choose a discovered device (using its model rules and local
@@ -51,17 +51,17 @@ See the [GUI guide](docs/gui.md) for interaction, launch options and settings.
 ## CLI
 
 ```sh
-yeet devices
-yeet inspect /path/to/video.mkv --json
-yeet /path/to/video.mkv --device "Living Room"
-yeet /path/to/video.mkv --device "Living Room" --subtitles /path/to/captions.srt
-yeet --help
+werp devices
+werp inspect /path/to/video.mkv --json
+werp /path/to/video.mkv --device "Living Room"
+werp /path/to/video.mkv --device "Living Room" --subtitles /path/to/captions.srt
+werp --help
 ```
 
-`yeet FILE` stays in the foreground while serving. It replaces playback on the
+`werp FILE` stays in the foreground while serving. It replaces playback on the
 selected receiver. Ctrl+C/SIGTERM cleans up owned playback, child processes,
 HTTP serving and temporary files; successful reusable outputs remain. Another
-sender's takeover ends Yeet's ownership without stopping that sender's media.
+sender's takeover ends Werp's ownership without stopping that sender's media.
 Interactive terminal playback controls remain parked; the GUI has controls.
 
 `--device` accepts an exact friendly name or ID; duplicate names require an ID.
@@ -79,7 +79,7 @@ options, or a path such as `./devices` for filenames that match subcommands.
 | `--cache-dir PATH`, `--no-cache` | Override storage or disable output reuse/retention |
 | `--config PATH`, `--no-config` | Override CLI preferences, or ignore preferences and local model overrides |
 
-CLI preferences live in `~/.config/yeet/config.toml`: automatic subtitles
+CLI preferences live in `~/.config/werp/config.toml`: automatic subtitles
 (English then Dutch), preferred devices and automatic resume. The GUI does not
 apply these CLI settings. Device rules live separately in `devices.toml`; GUI
 preferences for the KDE frontend use `kde-ui.ini`. XDG locations are supported. See
@@ -99,11 +99,11 @@ HDR tone mapping and broader platform support are deferred. Subtitle format scop
 is accepted for the sample set; advanced ASS styling and external bitmap files
 remain limited. See [subtitles](docs/preferences-and-subtitles.md).
 
-The host must stay awake and be reachable from the receiver. Yeet chooses the
+The host must stay awake and be reachable from the receiver. Werp chooses the
 local address from the receiver route and an OS-assigned HTTP
 port. For an existing firewall rule, use `--http-port 8010` (CLI or GUI);
 `--bind-address` is a CLI diagnostic override. Check firewall, VPN routes, mDNS and
-Wi-Fi isolation if discovery or downloads fail. Yeet never edits firewall rules.
+Wi-Fi isolation if discovery or downloads fail. Werp never edits firewall rules.
 
 Only registered media/subtitle resources are served, with ranges and subtitle CORS.
 Use a trusted LAN: Cast TLS does not authenticate receiver identity, and media
@@ -112,12 +112,12 @@ See [transport rationale](docs/decisions/001-cast-library.md).
 
 CLI results go to stdout; diagnostics go to stderr. Use `--verbose` or `RUST_LOG`
 for debug output. Exit codes: 0 success, 1 operation failure, 2 argument error,
-130 Ctrl+C and 143 SIGTERM on Linux. Inspection JSON is Yeet metadata, not raw
+130 Ctrl+C and 143 SIGTERM on Linux. Inspection JSON is Werp metadata, not raw
 ffprobe output or a stable public API.
 
 ## Sleep prevention
 
-On Linux, Yeet uses `systemd-inhibit` to block sleep during casting and conversion,
+On Linux, Werp uses `systemd-inhibit` to block sleep during casting and conversion,
 including preparation, paused playback and cleanup. Merely opening the GUI or
 browsing devices does not acquire a lock. Screen dimming/locking remains enabled.
 CLI/helper `--no-inhibit-sleep` opts out. Acquisition failures warn and let work
@@ -129,4 +129,4 @@ inhibitions, and disappeared after SIGINT cleanup. Automated tests cover helper
 failure, cancellation, release and signal cleanup. Actual suspend and long-video
 validation remain outstanding; standby was only a suspected cause of an earlier
 interruption. To inspect an active lock, use the KDE power applet or
-`systemd-inhibit --list --no-pager`; Yeet's entry should disappear after cleanup.
+`systemd-inhibit --list --no-pager`; Werp's entry should disappear after cleanup.

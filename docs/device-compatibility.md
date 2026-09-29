@@ -1,6 +1,6 @@
 # Device compatibility database
 
-Yeet bundles a versioned [TOML database](../crates/yeet-core/data/devices.toml)
+Werp bundles a versioned [TOML database](../crates/werp-core/data/devices.toml)
 with model-specific playback rules and observations. The CLI and GUI share it
 for casting and device-targeted conversion. Rules determine format selection;
 observations record what worked, failed or remains untested. Recording an
@@ -25,7 +25,7 @@ guards. Failed playback does not trigger a blind retry with encoding.
 
 ## User overrides
 
-Create `$XDG_CONFIG_HOME/yeet/devices.toml` (normally `~/.config/yeet/devices.toml`).
+Create `$XDG_CONFIG_HOME/werp/devices.toml` (normally `~/.config/werp/devices.toml`).
 It is separate from CLI preferences in `config.toml` and needs no rebuild.
 For example, to disable copied surround audio for a known model:
 
@@ -89,8 +89,8 @@ IDs/aliases, unsupported limits and files over 64 KiB fail visibly. The file is
 read for each automatic CLI cast and device-targeted GUI preview/start/convert;
 changes do not affect active work.
 
-The following command-line options belong to **`yeet` (the CLI) only**.
-They are not accepted by **`yeet-kde` (the current GUI)**:
+The following command-line options belong to **`werp` (the CLI) only**.
+They are not accepted by **`werp-kde` (the current GUI)**:
 
 | CLI option | Effect |
 | --- | --- |

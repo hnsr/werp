@@ -5,8 +5,8 @@ independent defaults are described in the [GUI guide](gui.md).
 
 ## Configuration
 
-Yeet reads `$XDG_CONFIG_HOME/yeet/config.toml`, falling back to
-`~/.config/yeet/config.toml` when XDG_CONFIG_HOME is unset or not absolute.
+Werp reads `$XDG_CONFIG_HOME/werp/config.toml`, falling back to
+`~/.config/werp/config.toml` when XDG_CONFIG_HOME is unset or not absolute.
 A missing default file uses built-in defaults. `--config PATH` selects an explicit
 file; a missing explicit file is an error. `--no-config` uses built-in defaults.
 Malformed values and unknown keys are errors, so spelling mistakes do not silently
@@ -40,7 +40,7 @@ receiver's merged model rules, or Baseline for its Broad compatibility option.
 
 ## Subtitle selection and rendering
 
-With automatic loading enabled, Yeet first looks for a supported embedded
+With automatic loading enabled, Werp first looks for a supported embedded
 track matching the ordered language preferences, then an exact-basename `.srt`
 beside the real source file. If necessary it also checks beside a supplied alias.
 The extension is case-insensitive; the basename must match exactly. Multiple
@@ -105,7 +105,7 @@ parked until a real file exposes a gap.
 
 ## Device selection
 
-Explicit `--device NAME/ID` or `--host IP` wins. Otherwise, Yeet tries the
+Explicit `--device NAME/ID` or `--host IP` wins. Otherwise, Werp tries the
 configured preferred list in order among reachable confirmed video receivers,
 skipping absent and audio-only devices. If no preference matches, it selects the
 sole eligible video receiver. Multiple candidates require a preference or explicit
@@ -132,8 +132,8 @@ it does not automatically reconnect or relaunch after a network failure.
 reads nor writes position state for that run. `--resume` enables it even if config
 disables it. These flags are mutually exclusive.
 
-Checkpoints live under `$XDG_STATE_HOME/yeet/resume` or
-`~/.local/state/yeet/resume`. Keys hash the canonical source path, size, and
+Checkpoints live under `$XDG_STATE_HOME/werp/resume` or
+`~/.local/state/werp/resume`. Keys hash the canonical source path, size, and
 modification time; moving/replacing a source starts fresh. Records contain only
 version, duration, and position, with private file permissions. Atomic replacement
 avoids partial JSON. Per-source locks prevent competing sessions from overwriting

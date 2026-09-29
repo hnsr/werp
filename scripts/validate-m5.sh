@@ -13,7 +13,7 @@ port=${2:-8010}
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 cargo build --locked
-binary="$root/target/debug/yeet"
+binary="$root/target/debug/werp"
 work=$(mktemp -d "$root/samples/m5-batch.XXXXXX")
 echo "Clips, retained outputs, and logs: $work"
 pid=
@@ -47,19 +47,19 @@ cat > "$work/subtitles.vtt" <<'EOF'
 WEBVTT
 
 00:00.000 --> 00:15.000
-YEET: first 15 seconds
+WERP: first 15 seconds
 
 00:15.000 --> 00:29.000
-YEET: second half
+WERP: second half
 EOF
 cat > "$work/subtitles.srt" <<'EOF'
 1
 00:00:00,000 --> 00:00:15,000
-YEET: first 15 seconds
+WERP: first 15 seconds
 
 2
 00:00:15,000 --> 00:00:29,000
-YEET: second half
+WERP: second half
 EOF
 
 if $prepare_only; then

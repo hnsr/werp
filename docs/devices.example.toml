@@ -1,4 +1,4 @@
-# Copy to ~/.config/yeet/devices.toml (or $XDG_CONFIG_HOME/yeet/devices.toml).
+# Copy to ~/.config/werp/devices.toml (or $XDG_CONFIG_HOME/werp/devices.toml).
 # Optional local overlay; no rebuild needed. See device-compatibility.md.
 schema_version = 1
 
@@ -13,7 +13,7 @@ allow_aac_surround = false
 # The bundled ceiling is 50 fps; 59.94/60 fps has not been verified on hardware.
 # h264_max_fps = 60
 
-# Add another model using the model string from `yeet devices` (not its name).
+# Add another model using the model string from `werp devices` (not its name).
 # New entries start with Baseline; explicitly enable only the desired extensions.
 [[devices]]
 id = "Example TV Model"
