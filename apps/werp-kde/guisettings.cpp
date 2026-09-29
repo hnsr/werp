@@ -1,11 +1,7 @@
 #include "guisettings.h"
 #include "protocol.h"
-#include <QStandardPaths>
 
-GuiSettings::GuiSettings(const QString &settingsFile) {
-    const QString directory = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/werp/";
-    m_path = settingsFile.isEmpty() ? directory+"gui.toml" : settingsFile;
-}
+GuiSettings::GuiSettings(const QString &settingsFile) : m_path(settingsFile) {}
 
 void GuiSettings::apply(const QJsonObject &reply) {
     const auto result = Protocol::Reply(reply).result();
@@ -14,7 +10,8 @@ void GuiSettings::apply(const QJsonObject &reply) {
 }
 
 void GuiSettings::load(Backend &backend, std::function<void(const QString &)> done) {
-    backend.request("get_gui_preferences",{{"path",m_path}},[this,done=std::move(done)](const QJsonObject &reply) {
+    QJsonObject params{{"path",m_path.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(m_path)}};
+    backend.request("get_gui_preferences",params,[this,done=std::move(done)](const QJsonObject &reply) {
         const Protocol::Reply response(reply);
         if (response.ok()) apply(reply);
         if (done) done(response.ok() ? QString() : response.error());
@@ -23,7 +20,8 @@ void GuiSettings::load(Backend &backend, std::function<void(const QString &)> do
 
 void GuiSettings::saveLastDevice(Backend &backend, const QString &deviceId,
                                  std::function<void(const QString &)> done) {
-    backend.request("set_gui_last_device",{{"path",m_path},{"device_id",deviceId}},
+    backend.request("set_gui_last_device",{{"path",m_path.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(m_path)},
+                    {"device_id",deviceId}},
                     [this,done=std::move(done)](const QJsonObject &reply) {
         const Protocol::Reply response(reply);
         if (response.ok()) apply(reply);

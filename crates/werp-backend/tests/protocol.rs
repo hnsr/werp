@@ -129,6 +129,34 @@ fn gui_preferences_are_separate_from_cli_config() {
     assert_eq!(helper.read()["ok"], true);
     helper.wait();
 }
+
+#[test]
+fn gui_preferences_use_the_backend_xdg_path_by_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let path = state.with_extension("config").join("werp/gui.toml");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        "last_device_id = \"living-room\"\n[conversion]\nauto_close = false\n",
+    )
+    .unwrap();
+    let mut helper = Helper::new(None, &state);
+    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.send(json!({"id":2,"method":"get_gui_preferences","params":{"path":null}}));
+    let loaded = helper.read();
+    assert_eq!(loaded["result"]["last_device_id"], "living-room");
+    assert_eq!(loaded["result"]["conversion_auto_close"], false);
+    helper.send(json!({"id":3,"method":"set_gui_last_device","params":{"device_id":"bedroom"}}));
+    let saved = helper.read();
+    assert_eq!(saved["result"]["last_device_id"], "bedroom");
+    assert_eq!(saved["result"]["conversion_auto_close"], false);
+    assert!(fs::read_to_string(&path).unwrap().contains("bedroom"));
+    helper.send(json!({"id":4,"method":"shutdown"}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.wait();
+}
 #[test]
 fn handshake_inspection_framing_validation_and_explicit_shutdown() {
     let dir = tempfile::tempdir().unwrap();

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """Native UI test fixture only. Never contacts a receiver."""
-import json, sys, threading, tomllib
+import json, os, sys, threading, tomllib
 from pathlib import Path
 lock = threading.Lock()
 session, position, phase, timer = 0, 0, "playing", None
@@ -48,7 +48,7 @@ for line in sys.stdin:
                 continue
             result=override
     elif method in ("get_gui_preferences","set_gui_last_device"):
-        config=Path(params["path"])
+        config=Path(params.get("path") or Path(os.environ.get("XDG_CONFIG_HOME",Path.home()/".config"))/"werp/gui.toml")
         existing=tomllib.loads(config.read_text()) if config.exists() else {}
         current={"last_device_id":existing.get("last_device_id",""),
                  "conversion_auto_close":existing.get("conversion",{}).get("auto_close",True)}

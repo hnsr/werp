@@ -45,10 +45,10 @@ enum Command {
     },
     Discover,
     GetGuiPreferences {
-        path: PathBuf,
+        path: Option<PathBuf>,
     },
     SetGuiLastDevice {
-        path: PathBuf,
+        path: Option<PathBuf>,
         device_id: String,
     },
     PreviewConversion {
@@ -102,6 +102,12 @@ impl Default for ConversionPreferences {
     fn default() -> Self {
         Self { auto_close: true }
     }
+}
+
+fn gui_path(override_path: Option<PathBuf>) -> Result<PathBuf, String> {
+    override_path
+        .or_else(|| werp_core::config::default_path().map(|path| path.with_file_name("gui.toml")))
+        .ok_or_else(|| "no config directory is available".to_string())
 }
 
 fn read_gui(path: &std::path::Path) -> Result<GuiPreferences, String> {
@@ -383,18 +389,18 @@ async fn run(args: Args) -> Result<(), String> {
                         Command::Hello { .. } => send(&output,error(Some(id),"invalid_request","already connected")).await?,
                         Command::Shutdown => { shutdown_id = Some(id); break; }
                         Command::GetGuiPreferences { path } => {
-                            let reply = match read_gui(&path) {
+                            let reply = match gui_path(path).and_then(|path| read_gui(&path)) {
                                 Ok(preferences) => ok(id,gui_result(&preferences)),
                                 Err(message) => error(Some(id),"config_error",message),
                             };
                             send(&output,reply).await?;
                         }
                         Command::SetGuiLastDevice { path, device_id } => {
-                            let reply = read_gui(&path).and_then(|mut preferences| {
+                            let reply = gui_path(path).and_then(|path| read_gui(&path).and_then(|mut preferences| {
                                 preferences.last_device_id = device_id;
                                 write_gui(&path,&preferences)?;
                                 Ok(gui_result(&preferences))
-                            });
+                            }));
                             send(&output,match reply { Ok(value) => ok(id,value), Err(message) => error(Some(id),"config_error",message) }).await?;
                         }
                         Command::Inspect { file } => {
