@@ -35,7 +35,7 @@ status = "passed"
 path = "direct"
 format = "MP4; H.264 High, 1920x1040/23.976; six-channel AAC-LC"
 result = "User reported successful playback; no discrete-surround or full-duration measurements."
-evidence = ["docs/media-inventory.md#user-playback-results", "docs/device-compatibility.md#kpn-diw7022"]
+evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
 id = "mp4-hevc-main10-aac-surround"
@@ -43,7 +43,7 @@ status = "passed"
 path = "direct"
 format = "MP4; HEVC Main 10 Level 4.0, 10-bit 4:2:0 SDR, 1920x1080/23.976; six-channel AAC-LC"
 result = "User reported successful original-file playback and subsequently passed the short-clip batch."
-evidence = ["docs/media-inventory.md#user-playback-results", "docs/device-compatibility.md#kpn-diw7022"]
+evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
 id = "mp4-h264-level42-50fps"
@@ -51,7 +51,6 @@ status = "passed"
 path = "direct"
 format = "MP4; H.264 High Level 4.2, 1920x1080/50, yuv420p, BT.709; stereo AAC-LC at 48 kHz; JPEG cover art"
 result = "User reported successful direct playback after enabling high-frame-rate admission. Local selection required no FFmpeg. Full-duration, seeking and subtitle checks were not separately reported."
-evidence = ["docs/device-compatibility.md#kpn-diw7022"]
 
 [[devices.observations]]
 id = "mp4-h264-ac3"
@@ -67,7 +66,6 @@ status = "passed"
 path = "remux"
 format = "MKV to MP4; H.264/stereo AAC-LC, HEVC Main/six-channel AAC-LC, HEVC Main 10/six-channel AAC-LC"
 result = "Initial H.264 trial and consolidated short-clip hardware batch passed with video/audio copied into MP4. This does not validate original MKV delivery."
-evidence = ["docs/device-compatibility.md#kpn-diw7022"]
 
 [[devices.observations]]
 id = "audio-to-stereo-aac"
@@ -75,7 +73,7 @@ status = "passed"
 path = "audio_conversion"
 format = "Copied H.264 with AC-3 or E-AC-3 input; copied HEVC Main 10 with HE-AAC or E-AC-3 input; output stereo AAC-LC in MP4"
 result = "Short-clip hardware batch passed. A separate integrated H.264/AC-3 conversion had good sound, Ctrl+C exit 130, empty temporary directory and closed HTTP port."
-evidence = ["docs/device-compatibility.md#kpn-diw7022", "docs/media-inventory.md#user-playback-results"]
+evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
 id = "full-video-conversion"
@@ -83,7 +81,6 @@ status = "passed"
 path = "transcode"
 format = "Output MP4; H.264 High Level 4.1, at most 1080p30/yuv420p SDR; stereo AAC-LC at 48 kHz"
 result = "Forced-conversion playback and phone pause/play/seek/stop were confirmed. Consolidated hardware batch also passed full conversion, including AV1/E-AC-3 input."
-evidence = ["docs/device-compatibility.md#kpn-diw7022"]
 
 [[devices.observations]]
 id = "external-text-subtitles"
@@ -91,7 +88,6 @@ status = "passed"
 path = "subtitles"
 format = "External SRT converted to WebVTT; external WebVTT served as a text track"
 result = "User confirmed visible video and captions, including the consolidated hardware batch."
-evidence = ["docs/device-compatibility.md#kpn-diw7022"]
 
 [[devices.observations]]
 id = "embedded-text-subtitles"
@@ -115,7 +111,7 @@ status = "passed"
 path = "controls"
 format = "Natural completion, interruption/resume, restart, SIGINT/SIGTERM, receiver stop and prepared-output reuse"
 result = "User-confirmed lifecycle checks include cleanup, resume checkpoints and the short-clip batch. Coverage differs by path; see linked evidence."
-evidence = ["docs/device-compatibility.md#kpn-diw7022", "docs/preferences-and-subtitles.md#verification-and-tv-checklist"]
+evidence = ["docs/preferences-and-subtitles.md#verification-and-tv-checklist"]
 
 [[devices.observations]]
 id = "intermittent-startup-exit"
@@ -131,7 +127,7 @@ status = "intermittent"
 path = "controls"
 format = "Phone-based Cast playback controls"
 result = "Earlier pause/play/seek/stop checks worked; controls later stopped appearing. Broader seeking and long-duration checks were deferred."
-evidence = ["docs/plan.md#open-functional-and-release-work", "docs/device-compatibility.md#kpn-diw7022"]
+evidence = ["docs/plan.md#open-functional-and-release-work"]
 
 [[devices.observations]]
 id = "h264-5994-60fps"
@@ -139,7 +135,6 @@ status = "untested"
 path = "direct"
 format = "H.264 Level 4.2 at 1080p59.94/60"
 result = "Permitted only by a local h264_max_fps = 60 model override, not by this model's observed 50 fps policy."
-evidence = ["docs/device-compatibility.md#kpn-diw7022"]
 
 [[devices.observations]]
 id = "other-native-formats"
@@ -147,7 +142,7 @@ status = "untested"
 path = "direct"
 format = "Original MKV, native AV1, HE-AAC/E-AC-3 passthrough, 4K, HDR/Dolby Vision, native image subtitle tracks"
 result = "Inventory or successful preparation is not native receiver evidence. These paths remain outside automatic direct-play admission; HDR conversion is not implemented."
-evidence = ["docs/media-inventory.md#receiver-evidence-and-limits", "docs/device-compatibility.md#kpn-diw7022"]
+evidence = ["docs/media-inventory.md#receiver-evidence-and-limits"]
 
 [[devices.observations]]
 id = "long-session-interruption"

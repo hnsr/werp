@@ -131,7 +131,7 @@ shutdown. No ordinary test discovers or controls real TVs.
 This evidence concerns one receiver and one prepared media profile. It does not
 establish all generations/codecs, full subtitle rendering or HDR. Production CLI,
 SRT, embedded subtitles and media preparation were subsequently built around this
-adapter; see the [roadmap](../plan.md) and [device evidence](../device-compatibility.md).
+adapter; see the [roadmap](../plan.md) and [device observations](../../crates/yeet-core/data/devices.toml).
 The adapter is not a stable public API. Preserve ownership, cancellation and raw
 track behavior when upgrading or replacing the transport.
 

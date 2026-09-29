@@ -63,27 +63,14 @@ changes do not affect active work.
 Explicit CLI profiles, Broad-compatibility conversion, inspection and discovery
 do not load user device overrides.
 
-## KPN DIW7022
-
-The bundled policy allows H.264 through Level 4.2/1080p50, bounded HEVC Main/Main 10
-SDR through Level 4.0/1080p30, and AAC-LC through six channels. AC-3, E-AC-3 and
-HE-AAC take the audio-conversion path; compatible MKV streams are remuxed to MP4.
-
-The database records successful direct, remux, audio-only and full-conversion
-playback, text captions, PGS burn-in, resume, reuse and lifecycle/control checks.
-These observations concern one Default Media Receiver setup, with firmware
-unrecorded. They do not establish discrete surround output, 59.94/60 fps,
-long-duration stability or seeking across every path. Intermittent startup exits,
-missing phone controls and a longer interruption remain recorded with unresolved
-causes. See the database entries for formats, results and per-observation limits.
-
 ## Maintaining the bundled database
 
 Edit the TOML database and rebuild. Add canonical model IDs, explicit aliases and
 bounded permissions. Each observation has a stable ID, status (`passed`, `failed`,
-`intermittent`, `untested`), path, format, result and repository-relative evidence
-links. Keep results scoped to what was actually observed; local conversion or
-protocol success alone does not establish visible picture or audible sound.
+`intermittent`, `untested`), path, format and result. Optional `evidence` links
+point to supporting repository documents; self-contained observations need no
+separate report. Keep results scoped to what was actually observed; local conversion
+or protocol success alone does not establish visible picture or audible sound.
 New codec capabilities require core support as well as a database edit.
 
 Keep personal device names, IDs, addresses and downloaded filenames out of the

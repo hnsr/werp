@@ -59,7 +59,8 @@ pub struct Observation {
     pub path: String,
     pub format: String,
     pub result: String,
-    /// Repository-relative evidence links, with optional heading fragments.
+    /// Optional supporting document links, with optional heading fragments.
+    #[serde(default)]
     pub evidence: Vec<String>,
 }
 
@@ -111,10 +112,9 @@ impl Database {
             for observation in &device.observations {
                 if observation.id.is_empty()
                     || !observations.insert(&observation.id)
-                    || observation.evidence.is_empty()
                     || observation.result.trim().is_empty()
                 {
-                    return Err("observations require unique IDs, evidence and a result".into());
+                    return Err("observations require unique IDs and a result".into());
                 }
             }
             if require_evidence && device.observations.is_empty() {
@@ -407,6 +407,37 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("devices.toml")
+        );
+    }
+
+    #[test]
+    fn self_contained_observations_need_no_supporting_document() {
+        let text = r#"
+            schema_version = 1
+            [[devices]]
+            id = "Local receiver"
+            [[devices.observations]]
+            id = "direct-play"
+            status = "passed"
+            path = "direct"
+            format = "H.264/stereo AAC MP4"
+            result = "Picture and sound confirmed on a short clip."
+        "#;
+        let updated = database().with_overrides(text).unwrap();
+        assert!(
+            updated.find("Local receiver").unwrap().observations[0]
+                .evidence
+                .is_empty()
+        );
+        assert!(
+            database()
+                .with_overrides(&text.replace("Picture and sound confirmed on a short clip.", ""))
+                .is_err()
+        );
+        assert!(
+            database()
+                .with_overrides(&text.replace("id = \"direct-play\"", "id = \"\""))
+                .is_err()
         );
     }
 

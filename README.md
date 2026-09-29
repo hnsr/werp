@@ -14,7 +14,7 @@ integration. Convert-only previews output for a selected device without starting
 centres on **KPN DIW7022**; other models use conservative defaults unless configured.
 
 See the [project direction and roadmap](docs/plan.md) for decisions and open work,
-and the [device database](docs/device-compatibility.md) for verified support.
+and the [device database](crates/yeet-core/data/devices.toml) for recorded support.
 
 ## Development setup
 

@@ -33,7 +33,7 @@ frontends can reuse the backend protocol; they are not implemented yet.
 The short-clip preparation matrix and core subtitle/resume workflows passed on
 KPN DIW7022. The user confirmed initial KDE playback and subsequent UI changes;
 the complete KDE hardware checklist is not recorded as passed. See the
-[device evidence](device-compatibility.md#kpn-diw7022) for narrower claims and
+[device observations](../crates/yeet-core/data/devices.toml) for narrower claims and
 untested cases. An automated or protocol pass alone is not a visible/audible TV pass.
 
 ## Decisions and rationale
@@ -154,7 +154,7 @@ repository hosting and supported build environments are settled.
 | --- | --- |
 | [Media conversion](media-conversion.md) | Path selection, profiles, encoding, storage and downmix |
 | [Preferences and subtitles](preferences-and-subtitles.md) | CLI config, subtitle selection/delay and resume |
-| [Device database](device-compatibility.md) | Model matching, overrides and receiver evidence |
+| [Device database](device-compatibility.md) | Model matching, overrides and database maintenance |
 | [GUI guide](kde-ui.md) | Shared interaction model, KDE build/install and manual checks |
 | [Backend protocol](backend-protocol.md) | Exact private frontend contract |
 | [Sleep prevention](../README.md#sleep-prevention) | Linux support and validation limits |
