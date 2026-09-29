@@ -48,6 +48,23 @@ Yeet explicitly supplies WebVTT track metadata and activates track ID 1.
   Exact names and IDs work; duplicate names require an ID. Audio-only receivers
   are listed but rejected for the video test when their capability bit is known.
 
+## Follow-up fixes
+
+An IPv6-first mDNS result could leave device listings without IPv4: mdns-sd
+0.21.3 considered the service resolved and suppressed its usual hostname query.
+Yeet explicitly resolves hostnames missing IPv4, deduplicates queries and keeps
+work within the scan deadline. Eight follow-up LAN scans returned IPv4 for both
+test devices; regressions cover IPv6-first, duplicate and unanswered lookups.
+This does not establish IPv6 transport or discovery across isolated networks.
+
+A short clip initially finished on the TV but timed out in the CLI because its
+single unsolicited `IDLE/FINISHED` event was ignored and later polls were empty.
+The adapter now consumes broadcasts alongside replies, checking session/content
+ownership for both. FINISHED establishes completion; empty status, elapsed time,
+foreign events and session-zero IDLE do not. A follow-up 30-second run exited 0
+and closed its HTTP port. Simulated tests cover terminal events during polling,
+immediate disconnect, errors and takeover.
+
 ## TLS behaviour
 
 Cast devices use certificates that do not follow ordinary public-web trust.

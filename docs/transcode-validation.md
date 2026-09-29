@@ -82,7 +82,7 @@ cargo run --locked -- samples/short/test.mp4 \
   --subtitles samples/short/subtitles.vtt --http-port 8010
 ```
 
-Generate the fixture using [M2 instructions](m2-validation.md#reproduction-and-remaining-hardware-acceptance).
+Generate the fixture using [CLI cleanup instructions](../README.md#cli-cleanup-check).
 The later [M5 batch](automatic-playback.md#hardware-batch-result) adds integrated
 completion/reuse/cancellation evidence across preparation modes. Detailed seek
 synchronization and long-duration stability remain unconfirmed; phone controls

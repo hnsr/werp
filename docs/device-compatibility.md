@@ -73,7 +73,7 @@ remain subject to those guards. No failed cast is blindly retried with encoding.
 The entry covers the Google Cast Default Media Receiver on the development unit.
 Firmware was not recorded. It separates successful playback, failures,
 intermittent behavior, and untested formats; every observation links to the
-original validation notes. The machine-readable policy is deliberately separate
+validation notes. The machine-readable policy is deliberately separate
 from these observations, so recording a test does not silently enable a format.
 
 | Area | Evidence / automatic behavior |
@@ -96,6 +96,17 @@ The 50 fps observation does not establish 59.94/60 fps support, full-duration
 stability, every possible codec combination, or support on every unit/firmware.
 The generic Extended profile retains its old 30 fps/Level 4.1 H.264 boundary.
 A local model override can permit 60 fps without changing other receivers.
+
+### Original CLI hardware checks
+
+On KPN DIW7022, separate external SRT and WebVTT runs confirmed visible video,
+subtitles and correct Ctrl+C shutdown. SIGTERM during WebVTT playback reported
+cleanup and exit 143; that transcript did not include a separate port check.
+After the unsolicited-completion fix, a 30-second WebVTT run exited successfully
+and closed its HTTP port. Later [batch checks](automatic-playback.md#hardware-batch-result)
+cover SRT/WebVTT completion and cancellation/port cleanup across preparation paths.
+Interrupted loading and signal-port closure were not individually recorded for
+all original CLI runs; those remain optional regression checks, not known defects.
 
 ## Maintaining the bundled database
 

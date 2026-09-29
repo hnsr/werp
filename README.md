@@ -140,7 +140,7 @@ missing. Hardware checks are separate and require an intended receiver.
 
 | Manual check | Guide |
 | --- | --- |
-| Short clip, SRT/WebVTT, SIGTERM cleanup | [M2 reproduction](docs/m2-validation.md#reproduction-and-remaining-hardware-acceptance) |
+| Short clip, SRT/WebVTT, SIGTERM cleanup | [CLI cleanup check](#cli-cleanup-check) |
 | Automatic preparation matrix and reuse | [M5 batch](docs/automatic-playback.md#reproduce-the-guided-hardware-batch) |
 | Subtitle selection, delay and resume | [Subtitle checklist](docs/preferences-and-subtitles.md#verification-and-tv-checklist) |
 | KDE controls and convert-only | [KDE checklists](docs/kde-ui.md#convert-only-checks) |
@@ -148,3 +148,20 @@ missing. Hardware checks are separate and require an intended receiver.
 
 Keep private media and local symlinks under ignored `samples/` or outside the
 repository. The [historical inventory](docs/media-inventory.md) uses neutral aliases.
+
+### CLI cleanup check
+
+Generate a short fixture (existing output is never overwritten), then choose an
+intended receiver:
+
+```sh
+bash scripts/generate-m1-fixture.sh samples/short 30
+cargo run --locked -- samples/short/test.mp4 \
+  --device "Living Room" --subtitles samples/short/subtitles.vtt --no-resume --http-port 8010
+```
+
+Repeat with `subtitles.srt`. Natural completion should exit 0; Ctrl+C should
+finish cleanup and exit 130. For a separate SIGTERM run, find the casting PID
+with `pgrep -a -x yeet` in another terminal and send `kill -TERM PID`; expect 143.
+After shutdown, `ss -H -ltn 'sport = :8010'` should show no listener. Cancellation
+can also be checked during loading. SIGKILL cannot run application cleanup.

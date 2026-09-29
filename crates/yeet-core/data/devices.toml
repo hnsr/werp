@@ -91,7 +91,7 @@ status = "passed"
 path = "subtitles"
 format = "External SRT converted to WebVTT; external WebVTT served as a text track"
 result = "User confirmed visible video and captions, including the consolidated hardware batch."
-evidence = ["docs/m2-validation.md#user-confirmed-hardware-checks", "docs/automatic-playback.md#hardware-batch-result"]
+evidence = ["docs/device-compatibility.md#original-cli-hardware-checks", "docs/automatic-playback.md#hardware-batch-result"]
 
 [[devices.observations]]
 id = "embedded-text-subtitles"
@@ -115,7 +115,7 @@ status = "passed"
 path = "controls"
 format = "Natural completion, interruption/resume, restart, SIGINT/SIGTERM, receiver stop and prepared-output reuse"
 result = "User-confirmed lifecycle checks include cleanup, resume checkpoints and the short-clip batch. Coverage differs by path; see linked evidence."
-evidence = ["docs/m2-validation.md#user-confirmed-hardware-checks", "docs/preferences-and-subtitles.md#verification-and-tv-checklist", "docs/automatic-playback.md#hardware-batch-result", "docs/transcode-validation.md#hardware-feedback-and-remaining-checks"]
+evidence = ["docs/device-compatibility.md#original-cli-hardware-checks", "docs/preferences-and-subtitles.md#verification-and-tv-checklist", "docs/automatic-playback.md#hardware-batch-result", "docs/transcode-validation.md#hardware-feedback-and-remaining-checks"]
 
 [[devices.observations]]
 id = "intermittent-startup-exit"

@@ -96,7 +96,7 @@ Python helper.
 | --- | --- | --- |
 | M0 — workspace and inspection | Complete | None in the original scope. |
 | M1 — Cast feasibility | Complete | Broader receivers remain separate validation. |
-| M2 — usable CLI and external subtitles | Implemented; core hardware checks passed | Some original path-specific checks remain unrecorded; later M5 tests cover completion/cleanup more broadly. |
+| M2 — usable CLI and external subtitles | Complete | Optional loading-cancellation/signal-port regression checks; [recorded evidence](device-compatibility.md#original-cli-hardware-checks) distinguishes remaining validation gaps. |
 | M3 — controls and robustness | Shared controls and KDE implemented; terminal controls parked | Interactive CLI input, volume control, and any bounded reconnection design. |
 | M4 — subtitle/audio selection | Current subtitle scope accepted | Explicit audio-track selection; further subtitle expansion only when a real file exposes a gap. |
 | M5 — preparation and reuse | Implemented; short-clip hardware matrix passed | Long-duration and expanded-path seek checks; optional cache maintenance. |
@@ -158,4 +158,4 @@ repository hosting and supported build environments are settled.
 | [Backend protocol](backend-protocol.md) | Exact private frontend contract |
 | [Sleep inhibition](sleep-inhibition.md) | Linux adapter and validation limits |
 | [Media inventory](media-inventory.md) | Historical 75-file scan and early trials |
-| [M2](m2-validation.md), [transcode](transcode-validation.md), [remux](remux-validation.md) reports | Historical observations and bug diagnoses, not current usage specifications |
+| [Transcode](transcode-validation.md) and [remux](remux-validation.md) reports | Historical observations and bug diagnoses, not current usage specifications |
