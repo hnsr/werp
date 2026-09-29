@@ -90,8 +90,7 @@ cannot select the wrong file. Existing files using older names remain reusable.
 
 The cache key includes canonical source path, source SHA-256, mode, resolved
 profile, image-subtitle track/delay for burn-in, and recipe versions. Encoded audio
-includes `stereo-matrix-v1`; output-affecting changes must update the relevant
-recipe. External text-subtitle changes do not invalidate prepared video.
+includes `stereo-matrix-v1`; recipe versions distinguish output-affecting changes. External text-subtitle changes do not invalidate prepared video.
 
 Reuse validates the completion record, output size/SHA-256 and fresh ffprobe
 metadata against the profile. It reads source/output data from disk but avoids

@@ -60,7 +60,7 @@ At the top level, `schema_version = 1` is required. Each `[[devices]]` entry has
 | `firmware` | String | Firmware version, or a note that it is unknown. |
 | `scope` | String | Setup covered by the entry and limits of its applicability. |
 | `limitations` | String array | Known restrictions or unverified capabilities. |
-| `observations` | Array of tables | Recorded outcomes; see [observation fields](#maintaining-the-bundled-database). |
+| `observations` | Array of tables | Recorded outcomes; see [observation fields](#observation-fields). |
 | `playback` | Table | Format-selection permissions listed below. |
 
 Only `id` is required in a user override. Other fields inherit existing values;
@@ -106,10 +106,9 @@ has no equivalent of `--config`, `--no-config` or a casting profile selector.
 Inspection and discovery also do not load device overrides. See the
 [GUI launch options](kde-ui.md#launch-options) for flags the GUI actually accepts.
 
-## Maintaining the bundled database
+## Observation fields
 
-Edit the TOML database and rebuild. Add canonical model IDs, explicit aliases and
-bounded permissions. Each `[[devices.observations]]` entry has:
+Each `[[devices.observations]]` entry has:
 
 | Field | Type / values | Purpose |
 | --- | --- | --- |
@@ -121,12 +120,5 @@ bounded permissions. Each `[[devices.observations]]` entry has:
 | `evidence` | Optional string array | Supporting repository-relative document links, optionally with heading fragments. |
 
 All observation fields except `evidence` are required. Self-contained observations
-need no separate report. Keep results scoped to what was actually observed;
-local conversion or protocol success alone does not establish visible picture
-or audible sound. New codec capabilities require core support as well as a database edit.
-
-Keep personal device names, IDs, addresses and downloaded filenames out of the
-database; public model identifiers and neutral sample aliases are suitable.
-Run `cargo test --locked -p yeet-core --lib devices::tests` to validate the schema,
-matching, override behavior and evidence links. Tests do not upgrade untested
-formats to hardware passes.
+need no separate report. See [database maintenance](../DEVELOPMENT.md#device-database-maintenance)
+for contribution and validation instructions.

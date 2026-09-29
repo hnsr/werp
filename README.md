@@ -16,33 +16,24 @@ centres on **KPN DIW7022**; other models use conservative defaults unless config
 See the [project direction and roadmap](docs/plan.md) for decisions and open work,
 and the [device database](crates/yeet-core/data/devices.toml) for recorded support.
 
-## Development setup
+## Requirements
 
-- Rust via rustup; `rust-toolchain.toml` pins Rust 1.96.0 with rustfmt and Clippy.
-- A native linker/C compiler, and network access for the initial Cargo download.
-- `ffprobe` on PATH. `ffmpeg` is needed for text subtitle conversion/extraction
-  (except external WebVTT), remuxing and encoding on a cache miss. Full encoding
-  needs libx264/AAC plus input decoders. Codec availability depends on the build.
-- Linux `systemd-inhibit` for best-effort sleep prevention; Yeet warns and continues
-  if it is unavailable or denied.
+`ffprobe` must be on PATH. `ffmpeg` is required for subtitle conversion/extraction,
+remuxing and encoding on a cache miss; full encoding needs libx264/AAC and input
+decoders. External WebVTT does not need conversion. Linux sleep prevention uses
+`systemd-inhibit` on a best-effort basis.
 
-Fedora 44 with FFmpeg/ffprobe 8.1.2 is the recorded development baseline. The CLI
-needs no Qt, FFmpeg development headers or Python runtime. `Cargo.lock` records
-Rust dependencies; release packaging/clean-system validation remains open.
+Distribution packaging is still pending. See [DEVELOPMENT.md](DEVELOPMENT.md)
+for dependencies, building from source, local installation and testing.
 
 ## GUI application
 
 The current frontend uses C++/Qt and KDE Frameworks. GTK and other native
 frontends can share the same Rust backend; they are not implemented yet.
 
-For the KDE frontend, install the development packages
-`gcc-c++ cmake ninja-build extra-cmake-modules qt6-qtbase-devel kf6-kcoreaddons-devel kf6-ki18n-devel`, then:
-
 ```sh
-cmake -S apps/yeet-kde -B target/kde -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build target/kde
-./target/kde/yeet-kde /path/to/video.mkv
-./target/kde/yeet-kde --convert-only /path/to/video.mkv
+yeet-kde /path/to/video.mkv
+yeet-kde --convert-only /path/to/video.mkv
 ```
 
 The app launches its Rust helper automatically. The player preselects the last-used
@@ -55,18 +46,16 @@ overrides) or **Broad compatibility** for conservative H.264/stereo AAC output.
 Review the source/target preview and press **Convert**. Successful output is
 retained; auto-close defaults to five seconds and is configurable in the GUI INI.
 
-See the [GUI guide](docs/kde-ui.md) for KDE installation, file associations, settings
-and manual checks, and the [private protocol](docs/backend-protocol.md) for frontend development.
+See the [GUI guide](docs/kde-ui.md) for interaction, launch options and settings.
 
 ## CLI
 
 ```sh
-cargo run --locked -- devices
-cargo run --locked -- inspect /path/to/video.mkv --json
-cargo run --locked -- /path/to/video.mkv --device "Living Room"
-cargo run --locked -- /path/to/video.mkv --device "Living Room" --subtitles /path/to/captions.srt
-cargo build --release --locked
-./target/release/yeet --help
+yeet devices
+yeet inspect /path/to/video.mkv --json
+yeet /path/to/video.mkv --device "Living Room"
+yeet /path/to/video.mkv --device "Living Room" --subtitles /path/to/captions.srt
+yeet --help
 ```
 
 `yeet FILE` stays in the foreground while serving. It replaces playback on the
@@ -141,48 +130,3 @@ failure, cancellation, release and signal cleanup. Actual suspend and long-video
 validation remain outstanding; standby was only a suspected cause of an earlier
 interruption. To inspect an active lock, use the KDE power applet or
 `systemd-inhibit --list --no-pager`; Yeet's entry should disappear after cleanup.
-
-## Checks
-
-```sh
-cargo fmt --all -- --check
-cargo clippy --locked --workspace --all-targets -- -D warnings
-cargo test --locked --workspace
-# Explicit tests requiring installed FFmpeg/ffprobe and encoders:
-cargo test --locked --workspace -- --ignored
-# Build KDE first; native tests use a Python mock helper:
-/usr/bin/ctest --test-dir target/kde --output-on-failure
-```
-
-Automated tests use generated media, fake subprocesses and loopback TLS receivers;
-they never discover or control TVs. They need local sockets and process-signal
-permissions. An explicitly requested FFmpeg test fails if its prerequisites are
-missing. Hardware checks are separate and require an intended receiver.
-
-| Manual check | Guide |
-| --- | --- |
-| Short clip, SRT/WebVTT, SIGTERM cleanup | [CLI cleanup check](#cli-cleanup-check) |
-| Automatic preparation matrix and reuse | [Batch script](scripts/validate-m5.sh) (requires local sample aliases; explicitly casts to the named device) |
-| Subtitle selection, delay and resume | [Subtitle checklist](docs/preferences-and-subtitles.md#verification-and-tv-checklist) |
-| GUI controls and convert-only | [GUI checklists](docs/kde-ui.md#convert-only-checks) |
-| Original feasibility probe | [Transport decision](docs/decisions/001-cast-library.md#reproduction) |
-
-Keep private media and local symlinks under ignored `samples/` or outside the
-repository. The [historical inventory](docs/media-inventory.md) uses neutral aliases.
-
-### CLI cleanup check
-
-Generate a short fixture (existing output is never overwritten), then choose an
-intended receiver:
-
-```sh
-bash scripts/generate-m1-fixture.sh samples/short 30
-cargo run --locked -- samples/short/test.mp4 \
-  --device "Living Room" --subtitles samples/short/subtitles.vtt --no-resume --http-port 8010
-```
-
-Repeat with `subtitles.srt`. Natural completion should exit 0; Ctrl+C should
-finish cleanup and exit 130. For a separate SIGTERM run, find the casting PID
-with `pgrep -a -x yeet` in another terminal and send `kill -TERM PID`; expect 143.
-After shutdown, `ss -H -ltn 'sport = :8010'` should show no listener. Cancellation
-can also be checked during loading. SIGKILL cannot run application cleanup.

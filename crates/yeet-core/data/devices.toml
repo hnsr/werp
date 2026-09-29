@@ -95,7 +95,7 @@ status = "passed"
 path = "subtitles"
 format = "Embedded text extracted to WebVTT; English automatic selection and explicit Dutch selection"
 result = "User confirmed English and Dutch captions, resume, and subtitle-off behavior. Every individual text codec/track and synchronization after arbitrary seeking are not separately validated."
-evidence = ["docs/preferences-and-subtitles.md#verification-and-tv-checklist"]
+evidence = ["docs/preferences-and-subtitles.md#recorded-results"]
 
 [[devices.observations]]
 id = "pgs-burn-in"
@@ -103,7 +103,7 @@ status = "passed"
 path = "subtitles"
 format = "Embedded PGS rendered into H.264 video during full conversion"
 result = "User confirmed visible burned-in captions on a short fixture. This is not native PGS-track support."
-evidence = ["docs/preferences-and-subtitles.md#verification-and-tv-checklist"]
+evidence = ["docs/preferences-and-subtitles.md#recorded-results"]
 
 [[devices.observations]]
 id = "playback-lifecycle"
@@ -111,7 +111,7 @@ status = "passed"
 path = "controls"
 format = "Natural completion, interruption/resume, restart, SIGINT/SIGTERM, receiver stop and prepared-output reuse"
 result = "User-confirmed lifecycle checks include cleanup, resume checkpoints and the short-clip batch. Coverage differs by path; see linked evidence."
-evidence = ["docs/preferences-and-subtitles.md#verification-and-tv-checklist"]
+evidence = ["docs/preferences-and-subtitles.md#recorded-results"]
 
 [[devices.observations]]
 id = "intermittent-startup-exit"

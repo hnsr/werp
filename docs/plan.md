@@ -68,28 +68,8 @@ Frontends render structured state and issue commands rather than interpreting
 FFmpeg output or CLI prose. Commands/queues are bounded; routine snapshots can
 coalesce, while terminal outcomes are delivered after cleanup.
 
-Maintain these constraints:
-
-- Do not modify original files. Publish completed output without replacing
-  unrelated files; remove partial work on handled cancellation/errors.
-- Invoke tools with argument arrays, drain bounded diagnostics, and reap children.
-  Cancellation means cancel **and await** the operation, not just drop its future.
-- Serve only registered media/subtitle URLs, with byte ranges and subtitle CORS.
-  Choose the local address using the receiver route; never change firewall rules.
-- Stop only Yeet's owned media. A takeover ends ownership; a network failure must
-  still release local resources even if remote STOP fails.
-- Use a trusted LAN: Cast TLS currently does not authenticate receiver identity,
-  and media is served over HTTP. See the transport decision for limits.
-- Reject known HDR, ambiguous audio/video tracks and missing required metadata
-  rather than guessing a destructive conversion. No HDR tone mapping yet.
-- Keep personal device names, IDs, addresses, source filenames and symlink targets
-  out of commits. Public model identifiers and neutral sample IDs are suitable.
-
-Rust 2024 / Rust 1.96.0 are pinned; `Cargo.lock` records dependencies. Fedora 44
-with FFmpeg/ffprobe 8.1.2 is the recorded development baseline, not a promise that
-all codec builds or Fedora versions work. The CLI has no Qt or FFmpeg-header
-dependency. There is no application Python dependency; native UI tests use a mock
-Python helper.
+Implementation constraints, toolchain setup and test workflows are in
+[DEVELOPMENT.md](../DEVELOPMENT.md).
 
 ## Milestones and remaining work
 
@@ -114,7 +94,7 @@ Python helper.
   packaging, and verify desktop entries/helper lookup outside the checkout.
   Finish actionable network/firewall troubleshooting. A `doctor` command is
   conditional on recurring setup problems, not a required feature yet.
-- **Validation:** complete the [GUI TV checklist](kde-ui.md#tv-checklist), longer
+- **Validation:** complete the [GUI TV checklist](../DEVELOPMENT.md#gui-playback), longer
   playback and seek/subtitle-sync checks across copied HEVC and converted paths.
   Investigate any repeat of the intermittent startup exit/long-play interruption;
   neither has a proven root cause. Extend the device database only with scoped
@@ -139,23 +119,15 @@ way to perform them, but that does not count as validation.
   ASS rendering, external bitmap subtitles/OCR, other frontends/platforms and
   broader power integration. A persistent service is outside current scope.
 
-## Verification and documentation
-
-Use focused tests for media selection, subprocesses, HTTP ranges/CORS, Cast
-ownership, IPC, resume/cache identity and UI lifecycle. Opt-in FFmpeg tests use
-small generated fixtures. Automated tests use loopback receivers and must not
-contact TVs. Hardware runs are explicit and record what the user saw/heard,
-separately from protocol/log results. Do not maintain rolling test counts in docs.
-
-[README checks](../README.md#checks) are the entry point for commands. Add CI when
-repository hosting and supported build environments are settled.
+## Documentation
 
 | Reference | Owns |
 | --- | --- |
 | [Media conversion](media-conversion.md) | Path selection, profiles, encoding, storage and downmix |
 | [Preferences and subtitles](preferences-and-subtitles.md) | CLI config, subtitle selection/delay and resume |
-| [Device database](device-compatibility.md) | Model matching, overrides and database maintenance |
-| [GUI guide](kde-ui.md) | Shared interaction model, KDE build/install and manual checks |
+| [Device database](device-compatibility.md) | Model matching, overrides and TOML schema |
+| [GUI guide](kde-ui.md) | Interaction, launch options and settings |
+| [Development guide](../DEVELOPMENT.md) | Setup, builds, local installation, contributor workflows and validation |
 | [Backend protocol](backend-protocol.md) | Exact private frontend contract |
 | [Sleep prevention](../README.md#sleep-prevention) | Linux support and validation limits |
 | [Media inventory](media-inventory.md) | Historical 75-file scan and early trials |

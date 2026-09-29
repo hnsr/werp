@@ -3,9 +3,9 @@
 `yeet-backend` is an automatically launched child process, not a user-managed
 daemon. A frontend owns its stdin/stdout pipes. UTF-8 JSON objects are delimited
 by a newline; embedded newlines in filenames must be JSON-escaped. Diagnostic
-logs go only to stderr. The helper accepts `--http-port PORT` (default 0,
-OS-assigned), `--ffprobe PATH`, `--ffmpeg PATH`, and `--no-inhibit-sleep`
-for host integration and development. There is no shell interpretation of paths or commands.
+logs go only to stderr. Helper launch options are documented in
+[DEVELOPMENT.md](../DEVELOPMENT.md#development-launch-options). There is no shell
+interpretation of paths or commands.
 
 ## Requests and responses
 

@@ -38,8 +38,8 @@ Yeet explicitly supplies WebVTT track metadata and activates track ID 1.
 - oxicast's high-level `disconnect()` stops its internally tracked current media
   session. Yeet therefore uses raw LAUNCH/CONNECT and never populates its
   high-level application handle. This leaves disconnect as transport cleanup;
-  Yeet sends STOP itself for the owned session. Re-evaluate this assumption
-  before upgrading oxicast. A transport-only close API would be a useful upstream
+  Yeet sends STOP itself for the owned session. This assumption matters when upgrading oxicast. A transport-only close API
+  would be a useful upstream
   improvement; no upstream message or PR has been sent.
 - HTTP serving uses axum routing and tower-http file/range handling. Yeet owns
   the HTTP connection tasks and joins/aborts them during shutdown, including
@@ -135,27 +135,8 @@ adapter; see the [roadmap](../plan.md) and [device observations](../../crates/ye
 The adapter is not a stable public API. Preserve ownership, cancellation and raw
 track behavior when upgrading or replacing the transport.
 
-## Reproduction
-
-The original feasibility example is retained for transport diagnosis. It requires
-an already compatible MP4/WebVTT; prefer `yeet FILE` for normal use.
-
-```sh
-bash scripts/generate-m1-fixture.sh
-cargo run --locked -p yeet-core --example cast_probe -- --discover
-cargo run --locked -p yeet-core --example cast_probe -- \
-  --device "Living Room" \
-  --video samples/m1/test.mp4 --subtitles samples/m1/subtitles.vtt \
-  --http-port 8010 --seconds 620 --exercise-controls
-```
-
-The generator creates an ignored 12-minute silent H.264/AAC clip and numbered
-captions. Choose an intended receiver: the example replaces its playback.
-`--exercise-controls` pauses at 20 seconds, resumes at 25, seeks forward to 90
-at 40, then back to 20 at 60. Ctrl+C/SIGTERM triggers cleanup; this prototype
-counts cancellation as test success, unlike the CLI's 130/143 contract.
-The host must stay awake and allow the chosen serving port. No firewall rule is
-changed automatically. Generated media stays outside Git.
+Reproduction instructions for the diagnostic example are in
+[DEVELOPMENT.md](../../DEVELOPMENT.md#feasibility-probe).
 
 ## Sources inspected
 

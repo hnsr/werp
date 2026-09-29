@@ -12,7 +12,8 @@ The core owns media/Cast/lifecycle logic; the UI owns presentation and choices.
 See [project decisions](plan.md#decisions-and-rationale).
 
 The user confirmed initial KDE playback and subsequent UI improvements. Local
-native/protocol tests pass; the complete TV checklist below is not recorded as passed.
+native/protocol tests pass; the complete [GUI checklist](../DEVELOPMENT.md#gui-playback)
+is not recorded as passed.
 
 ## Player interaction
 
@@ -64,7 +65,7 @@ window opens and has no CLI effect.
 ## Convert-only window
 
 ```sh
-./target/kde/yeet-kde --convert-only /path/to/video.mkv
+yeet-kde --convert-only /path/to/video.mkv
 ```
 
 Without a filename, a native picker opens. Choose a discovered video receiver or
@@ -97,22 +98,7 @@ Subtitles are not copied or burned into convert-only output. Open the original
 in the player to select them. Casting and convert-only reuse the same recipe for
 the same resolved policy; another device or bitmap burn-in may need another recipe.
 
-## KDE build and launch
-
-Fedora development packages: `gcc-c++ cmake ninja-build extra-cmake-modules
-qt6-qtbase-devel kf6-kcoreaddons-devel kf6-ki18n-devel`. CMake requires Qt >= 6.6,
-KDE Frameworks >= 6 and C++17. From the repository root:
-
-```sh
-cmake -S apps/yeet-kde -B target/kde -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build target/kde
-./target/kde/yeet-kde /path/to/video.mkv --http-port 8010
-```
-
-CMake builds/copies the Rust helper beside the UI; rebuild after Rust or C++ changes.
-The Rust CLI has no Qt dependency; Python is used only by the native test fixture.
-
-### Launch options
+## Launch options
 
 `yeet-kde [OPTIONS] [FILE]` has its own arguments; it does not forward arbitrary
 `yeet` CLI options to the backend. Omit FILE to choose a video in the GUI.
@@ -121,81 +107,14 @@ The Rust CLI has no Qt dependency; Python is used only by the native test fixtur
 | --- | --- |
 | `--convert-only` | Open the converter instead of the player. |
 | `--http-port PORT` | Fix the player's serving port; default `0` chooses automatically. Has no effect in convert-only. Also supported by the CLI. |
-| `--no-discovery` | Skip the initial device scan in either window; Refresh remains available. Development/testing option. |
-| `--backend PATH` | Use a specific helper executable for development/testing. |
 | `--help`, `--version` | Show usage or version information. |
 
 A fixed port helps with an existing firewall rule; the GUI does not create one.
 CLI flags such as `--profile`, `--mode`, `--config` and `--no-config` are not GUI
 options. Both apps do use the same [device override file](device-compatibility.md#user-overrides).
 
-### Local installation
-
-For local installation, configure `-DCMAKE_INSTALL_PREFIX="$HOME/.local"`, rebuild
-and run `cmake --install target/kde`. CMake installs the UI in `bin`, the helper in
-the KDE libexec directory, and both desktop entries. Ensure the install's `bin` is
-in the desktop session's PATH. This does not change the default video player.
-RPM packaging/clean-system validation is still open.
-
-### Register the development build with KDE
-
-The development setup uses user-local desktop entries pointing at the checkout.
-To register or repair them after moving it, run from the repository root:
-
-```sh
-desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
-  --set-key=Exec --set-value="\"$PWD/target/kde/yeet-kde\" --http-port 8010 %f" \
-  apps/yeet-kde/org.yeet.Yeet.desktop
-desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
-  --set-key=Exec --set-value="\"$PWD/target/kde/yeet-kde\" --convert-only %f" \
-  apps/yeet-kde/org.yeet.Yeet.ConvertOnly.desktop
-update-desktop-database "${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-kbuildsycoca6
-```
-
-The entries advertise the MIME types in the committed desktop files, including
-MP4 and MKV. An Open With association is not a codec-compatibility guarantee.
-
-## KDE automated checks
-
-Use [README checks](../README.md#checks). The CTest target runs offscreen with
-Fusion; focused native tests have also passed with KDE Breeze. Set
-`YEET_UI_SCREENSHOTS` to save test screenshots. Native tests use a Python mock
-helper, plus a read-only inspection check through the real Rust helper.
-
-Coverage includes explicit start, preview/device persistence, subtitle choices,
-resume, Space, drag-and-drop, preparation, controls, stale events, cancellation,
-helper exit, format rows and auto-close. Rust tests exercise protocol framing,
-version rejection, bounded requests, seek/ownership/lifecycle behavior and real
-FFmpeg conversion/cache fixtures. Automated tests never contact TVs.
-
-## Convert-only checks
-
-Open a video through Dolphin's convert-only entry. Confirm no work starts before
-Convert, the last-used device is selected if available, and switching to Broad
-compatibility updates the preview. Convert and check the result path; reopen the
-original to verify reuse. Cancel a second uncached conversion and confirm Close
-appears after cleanup. Auto-close depends on the GUI setting above. Device-targeted
-conversion/cache sharing and discovery-failure fallback have automated coverage;
-subjective dialogue quality still requires listening.
-
-## TV checklist
-
-1. Generate `samples/preferences/embedded.mkv` with
-   `bash scripts/generate-subtitle-fixture.sh samples/preferences 60`. Open it;
-   confirm English and the last-used eligible TV are selected, without playback.
-   Press **Yeet** and confirm picture, sound and captions.
-2. Pause/resume with buttons and Space. Seek both directions, including while
-   paused; confirm caption/audio sync. Longer copied-HEVC checks are separate.
-3. Stop after at least 20 seconds; confirm the TV stops and choices return.
-   Try **Yeet from last position**, then **Yeet** to verify resume versus restart.
-4. Choose an external subtitle and test positive/negative delay. Close during
-   playback and confirm owned playback/helper resources stop.
-5. With an uncached input requiring conversion (or a selected PGS track), confirm
-   progress before playback. Cancel a fresh preparation and check no partial
-   output remains. The local PGS fixture is not shipped; see [subtitle checks](preferences-and-subtitles.md#verification-and-tv-checklist).
-6. Reopen, confirm device persistence, and drop a local video onto the idle player.
-   It should refresh choices without starting playback.
+Build, local installation, development flags and test checklists are in
+[DEVELOPMENT.md](../DEVELOPMENT.md).
 
 Subtitle switching during playback, a settings window, MPRIS, single-instance
 behavior, packaging and additional native frontends remain in [the roadmap](plan.md).

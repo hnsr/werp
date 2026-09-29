@@ -140,8 +140,7 @@ The [device observations](../crates/yeet-core/data/devices.toml) later confirmed
 short-clip direct/remux/audio/full-conversion matrix with captions and reuse.
 This supersedes the original proposed test order. Expanded-path seeking,
 long-duration sync and the two HDR review cases remain open; full-conversion
-success for AV1 does not establish native AV1 playback. Preserve separate
-original-file/remux/encoding results when adding evidence.
+success for AV1 does not establish native AV1 playback. Original-file, remux and encoding results are distinct observations.
 
 ## Local samples and privacy
 
@@ -151,6 +150,7 @@ original files, not copies or anonymized media. Moving an original breaks its li
 The numeric IDs identify this scan and do not promise stable rescanning order.
 
 All symlinks and detailed local artifacts live under Git-ignored `samples/`.
-**Do not force-add the symlinks:** their targets contain personal source paths.
+Symlink targets contain personal source paths; see the
+[contributor privacy rules](../DEVELOPMENT.md#local-samples-and-privacy).
 The shareable report and CSV contain only neutral aliases and technical metadata;
 no personal device name, original filename, or source path is included.

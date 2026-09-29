@@ -142,7 +142,7 @@ casting available. Empty lock files may remain after completion; they are not
 active locks. Invalid records are ignored. A crash can lose up to the last
 checkpoint interval of reported progress. No state is stored in Git or in media.
 
-## Verification and TV checklist
+## Recorded results
 
 The user ran the generated embedded-subtitle fixture on the KPN DIW7022 and
 confirmed English captions and successful resume after interruption. A subsequent
@@ -154,41 +154,5 @@ on the TV using the short image-caption fixture. Automatic Dutch preference has
 local test coverage only. This report does
 not establish subtitle synchronization after arbitrary seeking.
 
-Local tests cover TOML defaults/validation/overrides, language ranking and explicit
-selection, exact sidecar lookup, UTF-16, device preferences/errors, cancellation,
-state identity/locking, restart, disabled resume, and normal completion. Complete
-simulated sessions verify saved offsets in subsequent Cast LOAD messages after
-cancellation, failed LOAD, and disconnect. Real FFmpeg tests exercise generated
-SubRip/MP4 text/ASS tracks and preserve cue times. A local PGS sample was prepared
-and a rendered frame visually confirmed its caption; this is not a TV result.
-
-Generate a short, audible fixture without contacting a TV:
-
-```sh
-bash scripts/generate-subtitle-fixture.sh samples/preferences 60
-```
-
-The fixture includes full English at stream 3, Dutch at stream 4, and deliberately
-default/forced English at stream 2. It also creates an exact-name external SRT
-case and an alternate Dutch-first config. Run these checks when ready, substituting a selected receiver where an explicit
-device is needed:
-
-1. `cargo run --locked -- samples/preferences/embedded.mkv`: the configured
-   preferred receiver should play full English captions, not the forced track.
-   Interrupt after at least 20 seconds, then repeat the same command. Confirm the
-   resume notice and TV starting near that point with correctly timed captions.
-   Let it finish; the next run should start at zero.
-2. Add `--subtitle-track 4 --restart`: Dutch captions should appear from the start.
-   The generated `samples/preferences/dutch.toml` can also be selected with
-   `--config ... --device "Living Room"` to test automatic Dutch preference.
-3. Cast `samples/preferences/external.mp4 --no-resume`: the same-name external SRT
-   should be selected automatically. Repeat with `--no-subtitles` to confirm none.
-4. Optional image-caption check on the local prepared fixture:
-   `cargo run --locked -- samples/subtitle-check/embedded-pgs-cues.mkv --subtitle-track 4 --no-resume`.
-   The CLI should select burn-in and reuse its prepared output; confirm visible
-   captions during the short clip. This fixture is local-only.
-
-Use `--subtitle-delay-ms 1500` and then `-1500` for a signed-delay regression;
-text/image delays have local test coverage, not a complete hardware sync report.
-Long-duration and expanded-path seeking remain deferred. This checklist uses
-Ctrl+C for interruption; the GUI provides controls for later seek checks.
+Fixture generation, automated coverage and the manual checklist are in
+[DEVELOPMENT.md](../DEVELOPMENT.md#subtitles-and-resume).
