@@ -26,9 +26,6 @@ preferred = ["Living Room", "Bedroom"]
 auto_resume = true
 ```
 
-The built-in device preference list is empty. Personal device names belong in
-the user's configuration, never in tracked examples or commits.
-
 Device capabilities are configured separately in the optional
 [model database overlay](device-compatibility.md#user-overrides), shared by
 CLI and GUI casting. Global `[compatibility]` flags are removed and rejected.
@@ -140,18 +137,3 @@ one checkpoint; inability to access/lock state produces a warning and leaves
 casting available. Empty lock files may remain after completion; they are not
 active locks. Invalid records are ignored. A crash can lose up to the last
 checkpoint interval of reported progress. No state is stored in Git or in media.
-
-## Recorded results
-
-The user ran the generated embedded-subtitle fixture on the KPN DIW7022 and
-confirmed English captions and successful resume after interruption. A subsequent
-check confirmed explicit Dutch track selection with restart, and playback starting
-from zero after normal completion without the restart flag. The external fixture
-also passed automatic same-name SRT loading and a second run with no captions
-when `--no-subtitles` was supplied. The user also confirmed embedded PGS burn-in
-on the TV using the short image-caption fixture. Automatic Dutch preference has
-local test coverage only. This report does
-not establish subtitle synchronization after arbitrary seeking.
-
-Automated coverage is described in
-[DEVELOPMENT.md](../DEVELOPMENT.md#subtitle-and-resume-tests).

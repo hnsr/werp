@@ -1,11 +1,5 @@
 # Cast transport decision
 
-Date: 2026-09-17
-Status: accepted; still used by the CLI and GUI helper. Hardware evidence below
-is from M1 and has that scope.
-
-## Decision
-
 Use **oxicast 0.0.3**, pinned exactly, behind `werp-core::cast`. Use its TLS,
 framing, heartbeat, and request-correlation implementation. Werp owns receiver
 launch, media/track payloads, playback state, and session ownership. No dependency
@@ -86,54 +80,6 @@ The dependency graph enables both rustls ring and aws-lc providers. Werp selects
 ring only when the embedding application has not already installed a provider,
 avoiding rustls's ambiguous-provider panic. Both native dependency trees currently
 build; simplifying the upstream feature selection is later dependency cleanup.
-
-## Hardware evidence
-
-Target discovered by mDNS: a receiver advertising model **KPN DIW7022**,
-Cast TCP port 8009. Firmware version was not obtained. The receiver advertised
-video capability. A Google Nest Mini was also discovered but was not cast to.
-
-Development host: Fedora 44, Rust 1.96.0, FFmpeg/ffprobe 8.1.2. Default Media Receiver
-application ID: `CC1AD845`. Existing host firewall settings already allowed the
-chosen HTTP port; no firewall configuration was changed.
-
-Fixture: generated 640×360, 15 fps H.264 Constrained Baseline video, silent stereo AAC-LC at
-48 kHz, 720 seconds, MP4 with faststart. Separate UTF-8 WebVTT has a visibly
-numbered cue every five seconds. The generator is committed; media is ignored.
-
-Observed:
-
-- Discovery, receiver launch, video fetch, and subtitle fetch succeeded.
-- The user confirmed both moving video and changing subtitle text on the TV.
-- Receiver status reports `PLAYING` and `activeTrackIds: [1]`.
-- Pause held the reported position; resume advanced it again.
-- Forward seek to 90 seconds and backward seek to 20 seconds succeeded, with
-  further HTTP requests and subtitle track 1 still active.
-- The sustained run lasted 622 seconds (including a five-second pause), with no
-  reported disconnect or failed status request. Subtitles remained active.
-- Timed shutdown received a successful remote STOP response and completed local
-  cleanup in 155 ms.
-- Two subsequent runs on the latest build verified SIGINT and SIGTERM during
-  playback. They exited in 83 ms and 88 ms respectively, with successful remote
-  STOP and the HTTP port closed. The same port was reusable between runs.
-
-Automated checks use a generated TLS certificate and a loopback fake receiver.
-They exercise a refused connection, a stalled TLS handshake deadline,
-cancellation during TLS negotiation, disconnection while awaiting LAUNCH, and
-cancellation with an incomplete Cast frame. A correlated-response test ignores
-an unrelated reply and confirms disconnect does not send STOP after a foreign
-media-status broadcast. HTTP tests check full/ranged reads,
-HEAD, invalid ranges, MIME/CORS/preflight, unregistered paths, and stalled-client
-shutdown. No ordinary test discovers or controls real TVs.
-
-## Limits and later work
-
-This evidence concerns one receiver and one prepared media profile. It does not
-establish all generations/codecs, full subtitle rendering or HDR. Production CLI,
-SRT, embedded subtitles and media preparation were subsequently built around this
-adapter; see the [roadmap](../plan.md) and [device observations](../../crates/werp-core/data/devices.toml).
-The adapter is not a stable public API. Preserve ownership, cancellation and raw
-track behavior when upgrading or replacing the transport.
 
 ## Sources inspected
 
