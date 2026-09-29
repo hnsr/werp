@@ -180,7 +180,7 @@ metadata; encoded streams describe the selected codec/profile/channels, leaving
 unmeasured resolution/frame rate null. These are projected format fields, not
 probed output or selectable track indices. `target` becomes actual probed output
 metadata on success. Render `target` when available, otherwise `planned_target`,
-in the same rows. The KDE UI starts with placeholders while inspecting and does
+in the same rows. The GUI starts with placeholders while inspecting and does
 not parse `target_description` prose or hardcode the target codec. Fraction may reset to indeterminate
 for cache validation; it reaches 1 only on successful completion.
 

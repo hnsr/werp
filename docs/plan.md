@@ -11,10 +11,11 @@ Make casting a local video and subtitles to a Chromecast simple and reliable.
 Choose the least preparation needed for the receiver, preserve the original,
 and reuse completed conversions. Fedora KDE is the initial platform.
 
-The application now has a Rust CLI/backend and a native KDE player/converter.
+The application now has a Rust CLI/backend and a native GUI player/converter,
+currently implemented for KDE.
 Each CLI process or GUI helper owns at most one playback or conversion operation.
-There is no account, playlist, or separately managed service. Other frontends can
-reuse the backend protocol, but are not current support commitments.
+There is no account, playlist, or separately managed service. GTK and other native
+frontends can reuse the backend protocol; they are not implemented yet.
 
 ## Current state
 
@@ -25,7 +26,7 @@ reuse the backend protocol, but are not current support commitments.
 | Media preparation | Automatic direct play → MP4 remux → audio-only conversion → full SDR conversion; adjacent-file cache with user-cache fallback. |
 | Subtitles | External/embedded text, preferred-language selection, signed delay, and embedded bitmap burn-in. Current sample-set scope accepted. |
 | Resume and power | Persistent checkpoints and Linux sleep inhibition implemented; GUI resume is explicit. |
-| KDE player | File opening/Dolphin integration, drag-and-drop, device/subtitle selection, preparation progress, pause/play/seek/stop and keyboard shortcuts. |
+| GUI player | File opening (Dolphin integration in the KDE frontend), drag-and-drop, device/subtitle selection, preparation progress, pause/play/seek/stop and keyboard shortcuts. |
 | Convert-only | Device selection, read-only format preview, explicit Convert, progress/cancel, reusable output and configurable auto-close. |
 | Device database | Bundled model rules/evidence, exact aliases and user `devices.toml` overrides shared by casting and device-targeted conversion. |
 
@@ -97,7 +98,7 @@ Python helper.
 | M0 — workspace and inspection | Complete | None in the original scope. |
 | M1 — Cast feasibility | Complete | Broader receivers remain separate validation. |
 | M2 — usable CLI and external subtitles | Complete | Optional loading-cancellation/signal-port regression checks; [recorded evidence](device-compatibility.md#original-cli-hardware-checks) distinguishes remaining validation gaps. |
-| M3 — controls and robustness | Shared controls and KDE implemented; terminal controls parked | Interactive CLI input, volume control, and any bounded reconnection design. |
+| M3 — controls and robustness | Shared controls and GUI implemented; terminal controls parked | Interactive CLI input, volume control, and any bounded reconnection design. |
 | M4 — subtitle/audio selection | Current subtitle scope accepted | Explicit audio-track selection; further subtitle expansion only when a real file exposes a gap. |
 | M5 — preparation and reuse | Implemented; short-clip hardware matrix passed | Long-duration and expanded-path seek checks; optional cache maintenance. |
 | M6 — Fedora release readiness | Open; development/local installation works | Clean-system validation, distribution packaging and supported runtime/dependency policy. |
@@ -108,19 +109,19 @@ Python helper.
   core and frontends, preserve it through preparation, and include the choice in
   cache identity. Acceptance: a multi-audio file plays the chosen track; another
   choice cannot reuse the wrong prepared audio. Such files currently fail.
-- **Release readiness:** exercise CLI and KDE installation on clean Fedora,
+- **Release readiness:** exercise CLI and GUI installation on clean Fedora,
   establish codec requirements (`ffmpeg-free` may be insufficient), add RPM
   packaging, and verify desktop entries/helper lookup outside the checkout.
   Finish actionable network/firewall troubleshooting. A `doctor` command is
   conditional on recurring setup problems, not a required feature yet.
-- **Validation:** complete the [KDE TV checklist](kde-ui.md#tv-checklist), longer
+- **Validation:** complete the [GUI TV checklist](kde-ui.md#tv-checklist), longer
   playback and seek/subtitle-sync checks across copied HEVC and converted paths.
   Investigate any repeat of the intermittent startup exit/long-play interruption;
   neither has a proven root cause. Extend the device database only with scoped
   evidence. H.264 59.94/60 fps and DVD/DVB subtitle samples remain unverified.
 
 These items have no newly assigned execution order. Long-duration/seek checks
-were deferred when phone controls disappeared; KDE controls now provide another
+were deferred when phone controls disappeared; GUI controls now provide another
 way to perform them, but that does not count as validation.
 
 ### Deliberately parked or later scope
@@ -129,7 +130,7 @@ way to perform them, but that does not count as validation.
   optional/interactive, signals responsive and noninteractive stdin EOF harmless.
 - Reconnection only if it can safely reattach to the same owned session; never
   blindly relaunch the video.
-- KDE settings UI, MPRIS/media keys, single-instance behavior and subtitle
+- GUI settings window, MPRIS/media keys, single-instance behavior and subtitle
   switching during playback. Window-close cleanup and Dolphin integration exist.
 - Stronger model identification/individual-device rules; exact aliases already
   work and matching changes were explicitly deferred.
@@ -154,7 +155,7 @@ repository hosting and supported build environments are settled.
 | [Media conversion](media-conversion.md) | Path selection, profiles, encoding, storage and downmix |
 | [Preferences and subtitles](preferences-and-subtitles.md) | CLI config, subtitle selection/delay and resume |
 | [Device database](device-compatibility.md) | Model matching, overrides and receiver evidence |
-| [KDE guide](kde-ui.md) | GUI behavior, build/install and manual checks |
+| [GUI guide](kde-ui.md) | Shared interaction model, KDE build/install and manual checks |
 | [Backend protocol](backend-protocol.md) | Exact private frontend contract |
 | [Sleep prevention](../README.md#sleep-prevention) | Linux support and validation limits |
 | [Media inventory](media-inventory.md) | Historical 75-file scan and early trials |

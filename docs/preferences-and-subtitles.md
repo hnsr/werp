@@ -1,7 +1,7 @@
 # Preferences, subtitles, device selection, and resume
 
 Current CLI preferences and shared subtitle/resume behavior. GUI choices and
-independent defaults are described in the [KDE guide](kde-ui.md).
+independent defaults are described in the [GUI guide](kde-ui.md).
 
 ## Configuration
 
@@ -31,11 +31,11 @@ the user's configuration, never in tracked examples or commits.
 
 Device capabilities are configured separately in the optional
 [model database overlay](device-compatibility.md#user-overrides), shared by
-CLI and KDE casting. Global `[compatibility]` flags are removed and rejected.
+CLI and GUI casting. Global `[compatibility]` flags are removed and rejected.
 `--no-config` ignores both CLI preferences and local model overrides, retaining
 bundled rules. `--config PATH` changes only CLI preferences; the model overlay
 stays in the default XDG location. Explicit CLI profiles bypass model overrides.
-The KDE helper does not read CLI preferences. Convert-only uses the selected
+The GUI helper does not read CLI preferences. Convert-only uses the selected
 receiver's merged model rules, or Baseline for its Broad compatibility option.
 
 ## Subtitle selection and rendering
@@ -76,7 +76,7 @@ BOM-marked UTF-16. Conversion/extraction needs FFmpeg; external WebVTT does not.
 Empty timed cues are skipped during preparation without modifying the original
 file. Invalid timestamps and files with no non-empty cues still produce an error.
 Use `--subtitle-delay-ms 1500` to show captions 1.5 seconds later, or
-`--subtitle-delay-ms -1500` to show them earlier. The default is zero. The KDE
+`--subtitle-delay-ms -1500` to show them earlier. The default is zero. The GUI
 selection screen offers the same setting as **Subtitle delay**, in milliseconds.
 It applies when playback starts, including resume, and changes subtitle timing
 without shifting audio or video. Text cues crossing the beginning are clipped to
@@ -191,4 +191,4 @@ device is needed:
 Use `--subtitle-delay-ms 1500` and then `-1500` for a signed-delay regression;
 text/image delays have local test coverage, not a complete hardware sync report.
 Long-duration and expanded-path seeking remain deferred. This checklist uses
-Ctrl+C for interruption; KDE provides controls for later seek checks.
+Ctrl+C for interruption; the GUI provides controls for later seek checks.

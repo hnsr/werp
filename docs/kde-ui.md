@@ -1,6 +1,11 @@
-# KDE frontend
+# GUI
 
-The C++/Qt 6 Widgets application launches a private Rust helper through QProcess.
+This guide describes the GUI interaction model and the current KDE implementation.
+GTK and other native frontends can use the same backend contract; they are not
+implemented yet.
+
+The KDE frontend uses C++/Qt 6 Widgets and launches a private Rust helper through
+QProcess.
 The user opens one app, not a separately managed service. This avoids Rust GUI
 bindings and lets other native frontends reuse the [versioned protocol](backend-protocol.md).
 The core owns media/Cast/lifecycle logic; the UI owns presentation and choices.
@@ -38,7 +43,7 @@ It resets for a new file, survives stop/restart, and is fixed for each session,
 including burn-in. Subtitle selection/delay cannot change during preparation or
 playback. Multiple-file, directory, remote-URL and active-session drops are ignored.
 
-## GUI preferences
+## KDE frontend preferences
 
 `$XDG_CONFIG_HOME/yeet/kde-ui.ini` (normally `~/.config/yeet/kde-ui.ini`) stores
 `lastDeviceId` in the General group. The player and converter share it; an accepted
@@ -92,7 +97,7 @@ Subtitles are not copied or burned into convert-only output. Open the original
 in the player to select them. Casting and convert-only reuse the same recipe for
 the same resolved policy; another device or bitmap burn-in may need another recipe.
 
-## Build and launch
+## KDE build and launch
 
 Fedora development packages: `gcc-c++ cmake ninja-build extra-cmake-modules
 qt6-qtbase-devel kf6-kcoreaddons-devel kf6-ki18n-devel`. CMake requires Qt >= 6.6,
@@ -136,7 +141,7 @@ kbuildsycoca6
 The entries advertise the MIME types in the committed desktop files, including
 MP4 and MKV. An Open With association is not a codec-compatibility guarantee.
 
-## Automated checks
+## KDE automated checks
 
 Use [README checks](../README.md#checks). The CTest target runs offscreen with
 Fusion; focused native tests have also passed with KDE Breeze. Set
@@ -178,4 +183,4 @@ subjective dialogue quality still requires listening.
    It should refresh choices without starting playback.
 
 Subtitle switching during playback, a settings window, MPRIS, single-instance
-behavior, packaging and non-KDE frontends remain in [the roadmap](plan.md).
+behavior, packaging and additional native frontends remain in [the roadmap](plan.md).

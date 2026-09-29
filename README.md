@@ -1,6 +1,6 @@
 # Yeet
 
-Cast local videos and subtitles to a Chromecast from a Rust CLI or native KDE app.
+Cast local videos and subtitles to a Chromecast from a Rust CLI or native GUI.
 Yeet chooses direct play, MP4 remuxing, audio-only conversion or full SDR conversion
 and reuses validated prepared files. Conversion finishes before playback starts.
 For MKV files with compatible video/audio, remuxing copies the streams into MP4
@@ -8,9 +8,9 @@ without re-encoding or quality loss. H.264/AAC and device-permitted HEVC/surroun
 are supported; subtitles are handled separately. See [media conversion](docs/media-conversion.md)
 for selection, encoding and reuse.
 
-The KDE player provides device/subtitle selection, preparation progress, resume,
-pause/play/seek/stop and Dolphin **Open With** integration. Convert-only previews
-output for a selected device without starting playback. Recorded hardware coverage
+The GUI player provides device/subtitle selection, preparation progress, resume,
+and pause/play/seek/stop. The current KDE frontend adds Dolphin **Open With**
+integration. Convert-only previews output for a selected device without starting playback. Recorded hardware coverage
 centres on **KPN DIW7022**; other models use conservative defaults unless configured.
 
 See the [project direction and roadmap](docs/plan.md) for decisions and open work,
@@ -30,10 +30,13 @@ Fedora 44 with FFmpeg/ffprobe 8.1.2 is the recorded development baseline. The CL
 needs no Qt, FFmpeg development headers or Python runtime. `Cargo.lock` records
 Rust dependencies; release packaging/clean-system validation remains open.
 
-## KDE application
+## GUI application
 
-Install the development packages `gcc-c++ cmake ninja-build extra-cmake-modules
-qt6-qtbase-devel kf6-kcoreaddons-devel kf6-ki18n-devel`, then:
+The current frontend uses C++/Qt and KDE Frameworks. GTK and other native
+frontends can share the same Rust backend; they are not implemented yet.
+
+For the KDE frontend, install the development packages
+`gcc-c++ cmake ninja-build extra-cmake-modules qt6-qtbase-devel kf6-kcoreaddons-devel kf6-ki18n-devel`, then:
 
 ```sh
 cmake -S apps/yeet-kde -B target/kde -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -52,7 +55,7 @@ overrides) or **Broad compatibility** for conservative H.264/stereo AAC output.
 Review the source/target preview and press **Convert**. Successful output is
 retained; auto-close defaults to five seconds and is configurable in the GUI INI.
 
-See the [KDE guide](docs/kde-ui.md) for installation, file associations, settings
+See the [GUI guide](docs/kde-ui.md) for KDE installation, file associations, settings
 and manual checks, and the [private protocol](docs/backend-protocol.md) for frontend development.
 
 ## CLI
@@ -70,7 +73,7 @@ cargo build --release --locked
 selected receiver. Ctrl+C/SIGTERM cleans up owned playback, child processes,
 HTTP serving and temporary files; successful reusable outputs remain. Another
 sender's takeover ends Yeet's ownership without stopping that sender's media.
-Interactive terminal playback controls remain parked; KDE has controls.
+Interactive terminal playback controls remain parked; the GUI has controls.
 
 `--device` accepts an exact friendly name or ID; duplicate names require an ID.
 Without it, CLI preferences apply, then the sole eligible video receiver is chosen.
@@ -90,7 +93,7 @@ options, or a path such as `./devices` for filenames that match subcommands.
 CLI preferences live in `~/.config/yeet/config.toml`: automatic subtitles
 (English then Dutch), preferred devices and automatic resume. The GUI does not
 apply these CLI settings. Device rules live separately in `devices.toml`; GUI
-preferences use `kde-ui.ini`. XDG locations are supported. See
+preferences for the KDE frontend use `kde-ui.ini`. XDG locations are supported. See
 [configuration and resume](docs/preferences-and-subtitles.md) and
 [device overrides](docs/device-compatibility.md#user-overrides).
 
@@ -161,7 +164,7 @@ missing. Hardware checks are separate and require an intended receiver.
 | Short clip, SRT/WebVTT, SIGTERM cleanup | [CLI cleanup check](#cli-cleanup-check) |
 | Automatic preparation matrix and reuse | [Batch script](scripts/validate-m5.sh) (requires local sample aliases; explicitly casts to the named device) |
 | Subtitle selection, delay and resume | [Subtitle checklist](docs/preferences-and-subtitles.md#verification-and-tv-checklist) |
-| KDE controls and convert-only | [KDE checklists](docs/kde-ui.md#convert-only-checks) |
+| GUI controls and convert-only | [GUI checklists](docs/kde-ui.md#convert-only-checks) |
 | Original feasibility probe | [Transport decision](docs/decisions/001-cast-library.md#reproduction) |
 
 Keep private media and local symlinks under ignored `samples/` or outside the

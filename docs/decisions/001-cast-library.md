@@ -1,7 +1,7 @@
 # Cast transport decision
 
 Date: 2026-09-17
-Status: accepted; still used by the CLI and KDE helper. Hardware evidence below
+Status: accepted; still used by the CLI and GUI helper. Hardware evidence below
 is from M1 and has that scope.
 
 ## Decision
