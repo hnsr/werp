@@ -112,9 +112,9 @@ PQ/HLG colour tags are accepted when the video is played directly or copied;
 rendering depends on the receiver. Transcoding HDR-tagged sources, including
 subtitle burn-in, is experimental: the usual 8-bit H.264 output is produced without
 tone mapping or a guarantee of correct HDR rendering. Dolby Vision, multiple tracks
-requiring explicit audio/video selection, and missing required metadata remain errors. Live encoding,
-hardware acceleration, HDR tone mapping and broader platform support are deferred. Subtitle format scope
-is accepted for the sample set; advanced ASS styling and external bitmap files
-remain limited. DVD/VobSub and DVB image subtitles are not supported; embedded
-PGS burn-in remains supported. See [subtitles](docs/preferences-and-subtitles.md).
+requiring explicit audio/video selection, and missing required metadata remain errors.
+Live encoding, hardware acceleration, HDR tone mapping and broader platform support
+are deferred. Advanced ASS styling and external bitmap files remain limited.
+DVD/VobSub and DVB image subtitles are not supported; embedded PGS burn-in remains
+supported. See [subtitles](docs/preferences-and-subtitles.md).
 

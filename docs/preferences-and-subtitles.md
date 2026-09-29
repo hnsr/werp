@@ -90,15 +90,11 @@ explicit Direct/Remux/Audio mode fails rather than violating its no-video-encodi
 constraint. Selecting another track or disabling subtitles uses a distinct cache
 recipe, so an output with burned captions is never reused for a different choice.
 PGS burn-in passed local rendered-frame verification and user-confirmed TV
-playback. External image-subtitle files and OCR are not implemented. Existing
+playback. External image-subtitle files and OCR are not implemented.
 Burn-in on HDR-tagged sources uses experimental video transcoding without tone
 mapping; audio-track limits still apply.
 
-The [historical inventory](media-inventory.md) contained SubRip, MP4 text and PGS;
-all PGS examples also had text alternatives. That evidence informed the ranking.
-The user accepted coverage of the sample-set subtitle types, not a claim that
-every stream has been played. Further subtitle expansion is considered only when
-a real file exposes a gap.
+Further subtitle expansion is considered when a real file exposes a gap.
 
 ## Device selection
 

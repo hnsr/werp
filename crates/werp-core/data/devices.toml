@@ -27,7 +27,6 @@ status = "passed"
 path = "direct"
 format = "MP4; H.264 High, 8-bit 4:2:0; 1920x816/24, 1280x690/24, 1920x800/23.976; stereo AAC-LC"
 result = "User confirmed good picture and sound on three original files."
-evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
 id = "mp4-h264-aac-surround"
@@ -35,7 +34,6 @@ status = "passed"
 path = "direct"
 format = "MP4; H.264 High, 1920x1040/23.976; six-channel AAC-LC"
 result = "User reported successful playback; no discrete-surround or full-duration measurements."
-evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
 id = "mp4-hevc-main10-aac-surround"
@@ -43,7 +41,6 @@ status = "passed"
 path = "direct"
 format = "MP4; HEVC Main 10 Level 4.0, 10-bit 4:2:0 SDR, 1920x1080/23.976; six-channel AAC-LC"
 result = "User reported successful original-file playback and subsequently passed the short-clip batch."
-evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
 id = "mp4-h264-level42-50fps"
@@ -58,7 +55,6 @@ status = "failed"
 path = "direct"
 format = "MP4; H.264 High, 1920x804/24; six-channel AC-3 at 48 kHz"
 result = "Picture played but audio was silent. Cause may depend on receiver decoding or connected output setup. Convert AC-3 audio for automatic playback."
-evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
 id = "mkv-compatible-streams"
@@ -73,15 +69,13 @@ status = "passed"
 path = "audio_conversion"
 format = "Copied H.264 with AC-3 or E-AC-3 input; copied HEVC Main 10 with HE-AAC or E-AC-3 input; output stereo AAC-LC in MP4"
 result = "Short-clip hardware batch passed. A separate integrated H.264/AC-3 conversion had good sound, Ctrl+C exit 130, empty temporary directory and closed HTTP port."
-evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
 id = "mkv-h264-ac3-audio-conversion"
 status = "passed"
 path = "audio_conversion"
 format = "MKV; H.264 High, 8-bit, 1790x1080/24; six-channel AC-3 input; copied video and stereo AAC-LC output in MP4"
-result = "User confirmed successful playback of sample-024 with automatic preparation and subtitles disabled. This confirms the MKV/H.264/AC-3 conversion path, not native AC-3 passthrough. Full-duration playback, seeking and cleanup were not separately reported."
-evidence = ["docs/media-inventory.md#user-playback-results"]
+result = "User confirmed successful MKV/H.264/AC-3 playback with automatic preparation and subtitles disabled. This confirms the MKV/H.264/AC-3 conversion path, not native AC-3 passthrough. Full-duration playback, seeking and cleanup were not separately reported."
 
 [[devices.observations]]
 id = "full-video-conversion"
@@ -124,7 +118,6 @@ status = "intermittent"
 path = "playback"
 format = "An audio-converted file briefly played, then receiver returned to home screen"
 result = "A retry and subsequent integrated test passed. User reports similar intermittent startup pauses/exits on this receiver. Root cause is unresolved; not proof of format incompatibility."
-evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
 id = "phone-controls"
@@ -146,8 +139,7 @@ id = "other-native-formats"
 status = "untested"
 path = "direct"
 format = "Original MKV, native AV1, HE-AAC/E-AC-3 passthrough, 4K, general HDR rendering/Dolby Vision, native image subtitle tracks"
-result = "Inventory or successful preparation is not native receiver evidence. Codec/container limits still apply. PQ/HLG tags are admitted on video-copy paths, but only the H.264/PQ-tagged sample below has user playback evidence; HDR-tagged video encoding is experimental, without tone mapping or hardware validation."
-evidence = ["docs/media-inventory.md#receiver-evidence-and-limits"]
+result = "Successful preparation is not native receiver evidence. Codec/container limits still apply. PQ/HLG tags are admitted on video-copy paths, but only the H.264/PQ-tagged sample below has user playback evidence; HDR-tagged video encoding is experimental, without tone mapping or hardware validation."
 
 [[devices.observations]]
 id = "long-session-interruption"
@@ -162,5 +154,4 @@ id = "h264-pq-tagged-direct"
 status = "passed"
 path = "direct"
 format = "MP4; H.264 High 8-bit 4:2:0, 1280x720/23.976, PQ (smpte2084)/BT.2020 tags; stereo AAC-LC"
-result = "User played sample-021 unchanged using the CLI force-direct option and reported no visible issues. This supports admitting colour tags on direct/copy paths, not a claim of calibrated HDR rendering, HLG/Dolby Vision support, or compatibility with every HDR source."
-evidence = ["docs/media-inventory.md#the-hdr-tagged-sample"]
+result = "User played the H.264/PQ-tagged file unchanged using the CLI force-direct option and reported no visible issues. This supports admitting colour tags on direct/copy paths, not a claim of calibrated HDR rendering, HLG/Dolby Vision support, or compatibility with every HDR source."

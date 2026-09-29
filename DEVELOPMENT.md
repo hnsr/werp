@@ -207,6 +207,5 @@ links may target README or documents under `docs/`, with optional heading fragme
 Keep private media, neutral symlinks and detailed local artifacts under ignored
 `samples/` or outside the repository. Do not force-add symlinks: their targets
 contain personal source paths. Only public model identifiers, neutral aliases and
-technical metadata belong in committed reports; see the
-[historical inventory](docs/media-inventory.md). Preserve separate original-file,
+technical metadata belong in committed reports. Preserve separate original-file,
 remux and encoding outcomes when recording results.

@@ -465,7 +465,8 @@ async fn execute(
                         eprintln!("{}", message.escape_debug());
                     }
                     notices_printed = state.notices.len();
-                    let key = (state.phase, state.message.clone());
+                    let message = progress_message(&state);
+                    let key = (state.phase, message.clone());
                     if last.as_ref() != Some(&key)
                         && !matches!(
                             state.phase,
@@ -475,8 +476,7 @@ async fn execute(
                         eprintln!(
                             "{}{}",
                             phase_label(state.phase),
-                            state
-                                .message
+                            message
                                 .as_ref()
                                 .map(|m| format!(": {}", m.escape_debug()))
                                 .unwrap_or_default()
@@ -504,6 +504,18 @@ async fn execute(
         }
     }
     Ok(())
+}
+
+fn progress_message(state: &session::SessionState) -> Option<String> {
+    if state.phase == Phase::Preparing
+        && let (Some(operation), Some(fraction)) =
+            (&state.preparation_operation, state.preparation_fraction)
+    {
+        let percent = ((fraction.clamp(0.0, 1.0) * 100.0).floor() as u32 / 5) * 5;
+        Some(format!("{operation}: {percent}%"))
+    } else {
+        state.message.clone()
+    }
 }
 
 fn phase_label(phase: Phase) -> &'static str {
@@ -612,6 +624,33 @@ mod tests {
             vec!["werp", "cast", "movie.mkv"],
         ] {
             assert!(Cli::try_from_args(args).is_err());
+        }
+    }
+
+    #[test]
+    fn conversion_progress_is_reported_in_five_percent_steps() {
+        for operation in ["Transcoding", "Remuxing", "Audio conversion"] {
+            let mut state = session::SessionState {
+                phase: Phase::Preparing,
+                preparation_operation: Some(operation.into()),
+                ..Default::default()
+            };
+            let mut messages = Vec::new();
+            for percent in 0..=100 {
+                state.preparation_fraction = Some(f64::from(percent) / 100.0);
+                messages.push(progress_message(&state).unwrap());
+            }
+            messages.dedup();
+            assert_eq!(
+                messages,
+                (0..=100)
+                    .step_by(5)
+                    .map(|p| format!("{operation}: {p}%"))
+                    .collect::<Vec<_>>()
+            );
+            state.preparation_fraction = None;
+            state.message = Some("Checking prepared-file cache".into());
+            assert_eq!(progress_message(&state), state.message);
         }
     }
 
