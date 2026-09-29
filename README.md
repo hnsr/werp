@@ -106,9 +106,8 @@ HDR tone mapping and broader platform support are deferred. Subtitle format scop
 is accepted for the sample set; advanced ASS styling and external bitmap files
 remain limited. See [subtitles](docs/preferences-and-subtitles.md).
 
-The host must stay awake and be reachable from the receiver. Linux sleep inhibition
-covers active work, including paused playback; it does not disable screen locking.
-Yeet chooses the local address from the receiver route and an OS-assigned HTTP
+The host must stay awake and be reachable from the receiver. Yeet chooses the
+local address from the receiver route and an OS-assigned HTTP
 port. For an existing firewall rule, use `--http-port 8010` (CLI or GUI);
 `--bind-address` is a CLI diagnostic override. Check firewall, VPN routes, mDNS and
 Wi-Fi isolation if discovery or downloads fail. Yeet never edits firewall rules.
@@ -116,13 +115,28 @@ Wi-Fi isolation if discovery or downloads fail. Yeet never edits firewall rules.
 Only registered media/subtitle resources are served, with ranges and subtitle CORS.
 Use a trusted LAN: Cast TLS does not authenticate receiver identity, and media
 uses HTTP. Lost connections fail rather than automatically restarting playback.
-See [transport rationale](docs/decisions/001-cast-library.md) and
-[sleep-inhibition limits](docs/sleep-inhibition.md).
+See [transport rationale](docs/decisions/001-cast-library.md).
 
 CLI results go to stdout; diagnostics go to stderr. Use `--verbose` or `RUST_LOG`
 for debug output. Exit codes: 0 success, 1 operation failure, 2 argument error,
 130 Ctrl+C and 143 SIGTERM on Linux. Inspection JSON is Yeet metadata, not raw
 ffprobe output or a stable public API.
+
+## Sleep prevention
+
+On Linux, Yeet uses `systemd-inhibit` to block sleep during casting and conversion,
+including preparation, paused playback and cleanup. Merely opening the GUI or
+browsing devices does not acquire a lock. Screen dimming/locking remains enabled.
+CLI/helper `--no-inhibit-sleep` opts out. Acquisition failures warn and let work
+continue; forced sleep or power-policy overrides may still interrupt playback.
+This small adapter avoids desktop bindings; broader platform support is deferred.
+
+Locally verified on Fedora KDE: the lock appeared in logind and KDE's active
+inhibitions, and disappeared after SIGINT cleanup. Automated tests cover helper
+failure, cancellation, release and signal cleanup. Actual suspend and long-video
+validation remain outstanding; standby was only a suspected cause of an earlier
+interruption. To inspect an active lock, use the KDE power applet or
+`systemd-inhibit --list --no-pager`; Yeet's entry should disappear after cleanup.
 
 ## Checks
 

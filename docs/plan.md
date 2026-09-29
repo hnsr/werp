@@ -156,6 +156,6 @@ repository hosting and supported build environments are settled.
 | [Device database](device-compatibility.md) | Model matching, overrides and receiver evidence |
 | [KDE guide](kde-ui.md) | GUI behavior, build/install and manual checks |
 | [Backend protocol](backend-protocol.md) | Exact private frontend contract |
-| [Sleep inhibition](sleep-inhibition.md) | Linux adapter and validation limits |
+| [Sleep prevention](../README.md#sleep-prevention) | Linux support and validation limits |
 | [Media inventory](media-inventory.md) | Historical 75-file scan and early trials |
 | [Transcode report](transcode-validation.md) | Historical observations and bug diagnoses, not current usage specifications |

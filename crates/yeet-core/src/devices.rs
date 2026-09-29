@@ -443,7 +443,9 @@ mod tests {
             for observation in &device.observations {
                 for evidence in &observation.evidence {
                     let (path, anchor) = evidence.split_once('#').unwrap_or((evidence, ""));
-                    assert!(path.starts_with("docs/") && !path.contains(".."));
+                    assert!(
+                        (path == "README.md" || path.starts_with("docs/")) && !path.contains("..")
+                    );
                     let text =
                         std::fs::read_to_string(root.join(path)).expect("evidence file exists");
                     if !anchor.is_empty() {
