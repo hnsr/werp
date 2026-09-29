@@ -110,11 +110,26 @@ cmake --build target/kde
 ```
 
 CMake builds/copies the Rust helper beside the UI; rebuild after Rust or C++ changes.
-Omit the file to use Open video; omit `--http-port` for an OS-assigned serving port.
-A fixed port helps with an existing firewall rule; the app does not create one.
-`--backend PATH` selects a test helper. `--no-discovery` skips the initial scan in
-both windows; Refresh remains available. The Rust CLI has no Qt dependency;
-Python is used only by the native test fixture.
+The Rust CLI has no Qt dependency; Python is used only by the native test fixture.
+
+### Launch options
+
+`yeet-kde [OPTIONS] [FILE]` has its own arguments; it does not forward arbitrary
+`yeet` CLI options to the backend. Omit FILE to choose a video in the GUI.
+
+| GUI option | Effect |
+| --- | --- |
+| `--convert-only` | Open the converter instead of the player. |
+| `--http-port PORT` | Fix the player's serving port; default `0` chooses automatically. Has no effect in convert-only. Also supported by the CLI. |
+| `--no-discovery` | Skip the initial device scan in either window; Refresh remains available. Development/testing option. |
+| `--backend PATH` | Use a specific helper executable for development/testing. |
+| `--help`, `--version` | Show usage or version information. |
+
+A fixed port helps with an existing firewall rule; the GUI does not create one.
+CLI flags such as `--profile`, `--mode`, `--config` and `--no-config` are not GUI
+options. Both apps do use the same [device override file](device-compatibility.md#user-overrides).
+
+### Local installation
 
 For local installation, configure `-DCMAKE_INSTALL_PREFIX="$HOME/.local"`, rebuild
 and run `cmake --install target/kde`. CMake installs the UI in `bin`, the helper in
