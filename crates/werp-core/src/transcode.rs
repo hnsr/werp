@@ -165,13 +165,9 @@ fn plan(info: &MediaInfo) -> Result<InputPlan, WerpError> {
         return Err(error("media preparation requires exactly one video stream"));
     }
     let video = videos[0];
-    if matches!(
-        video.color_transfer.as_deref(),
-        Some("smpte2084" | "arib-std-b67")
-    ) || video.dolby_vision
-    {
+    if video.dolby_vision {
         return Err(error(
-            "HDR/Dolby Vision tone mapping is not implemented; media preparation currently supports SDR input only",
+            "Dolby Vision playback and tone mapping are not supported",
         ));
     }
     let fps = video
@@ -195,6 +191,24 @@ fn plan(info: &MediaInfo) -> Result<InputPlan, WerpError> {
 
 pub fn validate_input(info: &MediaInfo) -> Result<(), WerpError> {
     plan(info).map(|_| ())
+}
+
+/// Copy paths preserve colour signalling; our video encoder cannot tone-map HDR.
+pub fn validate_video_transcode_input(info: &MediaInfo) -> Result<(), WerpError> {
+    validate_input(info)?;
+    if info.streams.iter().any(|s| {
+        s.kind == "video"
+            && !s.attached_picture
+            && matches!(
+                s.color_transfer.as_deref(),
+                Some("smpte2084" | "arib-std-b67")
+            )
+    }) {
+        return Err(error(
+            "HDR tone mapping is not implemented; use a path that copies the video instead of full video transcoding or subtitle burn-in",
+        ));
+    }
+    Ok(())
 }
 
 async fn check_encoders(
@@ -306,7 +320,7 @@ pub async fn prepare(
             media::validate_audio_transcode_input(info, options.playback_policy)?
         }
         TranscodeMode::Remux => media::validate_remux_input(info, options.playback_policy)?,
-        TranscodeMode::AudioVideo => {}
+        TranscodeMode::AudioVideo => validate_video_transcode_input(info)?,
     }
     check_encoders(ffmpeg, input.audio.is_some(), options.mode, cancel).await?;
     let parent = match &options.directory {
@@ -375,6 +389,14 @@ pub async fn prepare(
         })).await?;
         let output = media::inspect(&path, probe, cancel).await?;
         media::assess_direct_play(&output, options.playback_policy)?;
+        if options.mode != TranscodeMode::AudioVideo {
+            let source_video = info.streams.iter().find(|s| s.index == input.video).unwrap();
+            let output_video = output.streams.iter().find(|s| s.kind == "video" && !s.attached_picture).unwrap();
+            if matches!(source_video.color_transfer.as_deref(), Some("smpte2084" | "arib-std-b67"))
+                && source_video.color_transfer != output_video.color_transfer {
+                return Err(error("copied video's colour transfer differs from the source"));
+            }
+        }
         if options.mode == TranscodeMode::Remux {
             let source_audio = info.streams.iter().find(|s| s.kind == "audio");
             let output_audio = output.streams.iter().find(|s| s.kind == "audio");

@@ -47,6 +47,118 @@ fn cache_empty(options: &TranscodeOptions) {
 }
 
 #[tokio::test]
+#[ignore = "requires real FFmpeg with libx264, AAC and ffprobe"]
+async fn hdr_copy_paths_preserve_video_payload_and_colour_signalling() {
+    let dir = tempfile::tempdir().unwrap();
+    let cancel = CancellationToken::new();
+    let probe = ProbeOptions::default();
+    for transfer in ["smpte2084", "arib-std-b67"] {
+        let path = dir.path().join(format!("{transfer}.mkv"));
+        let output = tokio::process::Command::new("ffmpeg")
+            .args([
+                "-nostdin",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=24:duration=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=sample_rate=48000:duration=1",
+                "-c:v",
+                "libx264",
+                "-vf",
+                &format!(
+                    "setparams=color_primaries=bt2020:color_trc={transfer}:colorspace=bt2020nc"
+                ),
+                "-threads",
+                "2",
+                "-color_trc",
+                transfer,
+                "-color_primaries",
+                "bt2020",
+                "-colorspace",
+                "bt2020nc",
+                "-c:a",
+                "aac",
+                "-ac",
+                "2",
+            ])
+            .arg(&path)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let original = fs::read(&path).unwrap();
+        let info = media::inspect(&path, &probe, &cancel).await.unwrap();
+        assert_eq!(info.streams[0].color_transfer.as_deref(), Some(transfer));
+        let hash_args = [
+            "-map",
+            "0:v:0",
+            "-c:v",
+            "copy",
+            "-f",
+            "streamhash",
+            "-hash",
+            "sha256",
+            "-",
+        ];
+        let original_hash = ffmpeg_output(&path, &hash_args).await;
+        for mode in [TranscodeMode::Remux, TranscodeMode::AudioOnly] {
+            let mut options = options(dir.path());
+            options.mode = mode;
+            let prepared = transcode::prepare(
+                &info,
+                Path::new("ffmpeg"),
+                &probe,
+                &options,
+                &cancel,
+                |_| {},
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                prepared.info.streams[0].color_transfer.as_deref(),
+                Some(transfer)
+            );
+            assert_eq!(
+                ffmpeg_output(&prepared.info.path, &hash_args).await,
+                original_hash
+            );
+            let colour = tokio::process::Command::new("ffprobe")
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=color_transfer,color_primaries,color_space",
+                    "-of",
+                    "json",
+                ])
+                .arg(&prepared.info.path)
+                .output()
+                .await
+                .unwrap();
+            assert!(colour.status.success());
+            let metadata: serde_json::Value = serde_json::from_slice(&colour.stdout).unwrap();
+            assert_eq!(metadata["streams"][0]["color_primaries"], "bt2020");
+            assert_eq!(metadata["streams"][0]["color_space"], "bt2020nc");
+            prepared.close().unwrap();
+            cache_empty(&options);
+        }
+        assert_eq!(fs::read(&path).unwrap(), original);
+    }
+}
+
+#[tokio::test]
 async fn remux_needs_no_encoders_and_rejects_lost_audio() {
     let dir = tempfile::tempdir().unwrap();
     let (mut info, probe) = input(dir.path()).await;
@@ -74,6 +186,21 @@ printf 'prepared media' > "$last"
     .unwrap();
     prepared.close().unwrap();
     cache_empty(&options);
+    info.streams[0].color_transfer = Some("smpte2084".into());
+    let error = transcode::prepare(
+        &info,
+        &ffmpeg,
+        &probe,
+        &options,
+        &CancellationToken::new(),
+        |_| {},
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(error.to_string().contains("colour transfer differs"));
+    cache_empty(&options);
+    info.streams[0].color_transfer = None;
     let mut silent: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/h264.json")).unwrap();
     silent["streams"].as_array_mut().unwrap().truncate(1);

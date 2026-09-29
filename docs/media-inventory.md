@@ -87,12 +87,12 @@ language tags, dispositions, and any reported side data, without source names.
 ### The HDR-tagged sample
 
 `sample-021` (1280×720, AAC stereo) combines H.264 High/yuv420p with
-`smpte2084` transfer and BT.2020 primaries. Its colour correctness was not
-verified. If the pixels genuinely represent HDR and
-the receiver cannot render that combination, tone mapping plus video encoding
-may be necessary. If the signalling is wrong, a metadata/bitstream correction
-might suffice. Do not apply tone mapping or strip HDR metadata automatically.
-HDR conversion remains deferred work.
+`smpte2084` transfer and BT.2020 primaries. The user played the original file
+using `--force-direct` on the KPN DIW7022 and reported no visible issues. Normal
+direct/copy paths now accept these tags without a model-specific flag; this
+observation does not establish whether the source is genuinely HDR or validate
+every receiver. Tags are preserved, not stripped or tone-mapped. HDR video
+encoding remains deferred work.
 
 ## Receiver evidence and limits
 
@@ -141,7 +141,7 @@ The [device observations](../crates/werp-core/data/devices.toml) later confirmed
 short-clip direct/remux/audio/full-conversion matrix with captions and reuse.
 With sample-024 confirmed, every SDR format group in this inventory has a
 representative successful playback path; this does not mean every file was tested.
-Manual acceptance checklists are retired. The HDR-tagged sample remains unsupported;
+Manual acceptance checklists are retired. The HDR-tagged sample also played successfully;
 full-conversion success for AV1 does not establish native AV1 playback.
 Original-file, remux and encoding results are distinct observations.
 

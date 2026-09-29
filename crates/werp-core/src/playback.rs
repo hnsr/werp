@@ -69,7 +69,7 @@ impl Plan {
 }
 
 pub fn select(info: &MediaInfo, mode: Mode, policy: DirectPlayPolicy) -> Result<Plan, WerpError> {
-    // Ambiguous tracks and known HDR must never silently choose a destructive fallback.
+    // Check track/metadata constraints before choosing a preparation path.
     transcode::validate_input(info)?;
     let direct = || media::assess_direct_play(info, policy).map(|_| ());
     let remux = || media::validate_remux_input(info, policy);
@@ -93,6 +93,9 @@ pub fn select(info: &MediaInfo, mode: Mode, policy: DirectPlayPolicy) -> Result<
         }
         Mode::Transcode => Mode::Transcode,
     };
+    if selected == Mode::Transcode {
+        transcode::validate_video_transcode_input(info)?;
+    }
     Ok(Plan {
         mode: selected,
         policy: if selected == Mode::Transcode {
@@ -135,6 +138,79 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn hdr_tags_allow_copy_paths_but_never_fall_back_to_video_encoding() {
+        for fixture in [
+            include_str!("../tests/fixtures/h264.json"),
+            include_str!("../tests/fixtures/hevc.json"),
+        ] {
+            for transfer in ["smpte2084", "arib-std-b67"] {
+                for (container, codec, expected) in [
+                    ("mp4", "aac", Mode::Direct),
+                    ("matroska,webm", "aac", Mode::Remux),
+                    ("matroska,webm", "ac3", Mode::Audio),
+                ] {
+                    let source = info(fixture, |j| {
+                        j["streams"][0]["color_transfer"] = transfer.into();
+                        j["format"]["format_name"] = container.into();
+                        j["streams"][1]["codec_name"] = codec.into();
+                    })
+                    .await;
+                    assert_eq!(
+                        select(&source, Mode::Auto, DirectPlayPolicy::Extended)
+                            .unwrap()
+                            .mode,
+                        expected
+                    );
+                    assert_eq!(
+                        select(&source, expected, DirectPlayPolicy::Extended)
+                            .unwrap()
+                            .mode,
+                        expected
+                    );
+                    assert!(
+                        select(&source, Mode::Transcode, DirectPlayPolicy::Extended)
+                            .unwrap_err()
+                            .to_string()
+                            .contains("tone mapping")
+                    );
+                }
+                let oversized = info(fixture, |j| {
+                    j["streams"][0]["color_transfer"] = transfer.into();
+                    j["streams"][0]["width"] = 3840.into();
+                })
+                .await;
+                assert!(
+                    select(&oversized, Mode::Auto, DirectPlayPolicy::Extended)
+                        .unwrap_err()
+                        .to_string()
+                        .contains("tone mapping")
+                );
+            }
+        }
+        let source = info(include_str!("../tests/fixtures/h264.json"), |j| {
+            j["streams"][0]["color_transfer"] = "smpte2084".into();
+        })
+        .await;
+        assert_eq!(
+            select(&source, Mode::Auto, DirectPlayPolicy::Conservative)
+                .unwrap()
+                .mode,
+            Mode::Direct
+        );
+        let dolby = info(include_str!("../tests/fixtures/hevc.json"), |j| {
+            j["streams"][0]["side_data_list"] =
+                serde_json::json!([{"side_data_type":"DOVI configuration record"}]);
+        })
+        .await;
+        assert!(
+            select(&dolby, Mode::Auto, DirectPlayPolicy::Extended)
+                .unwrap_err()
+                .to_string()
+                .contains("Dolby Vision")
+        );
     }
 
     #[tokio::test]
@@ -398,7 +474,12 @@ mod tests {
             j["streams"][0]["color_transfer"] = "smpte2084".into()
         })
         .await;
-        assert!(select(&hdr, Mode::Auto, DirectPlayPolicy::Extended).is_err());
+        assert_eq!(
+            select(&hdr, Mode::Auto, DirectPlayPolicy::Extended)
+                .unwrap()
+                .mode,
+            Mode::Direct
+        );
         let ambiguous = info(h264, |j| {
             let audio = j["streams"][1].clone();
             j["streams"].as_array_mut().unwrap().push(audio);

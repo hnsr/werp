@@ -702,6 +702,7 @@ async fn experimental_formats_require_opt_in_and_serve_original_bytes() {
         fs::write(&video, bytes).unwrap();
         let mut metadata: Value = serde_json::from_str(fixture).unwrap();
         metadata["streams"][1]["channels"] = json!(6);
+        metadata["streams"][0]["color_transfer"] = "smpte2084".into();
         let probe = fake_probe(directory.path(), &metadata.to_string());
         let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video.clone());

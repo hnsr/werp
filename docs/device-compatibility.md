@@ -20,7 +20,7 @@ or Baseline for **Broad compatibility**. Full transcoding always targets conserv
 H.264/stereo AAC.
 
 Rules work within the existing [media conversion](media-conversion.md) constraints;
-they cannot enable arbitrary codecs or bypass HDR, metadata or track-selection
+they cannot enable arbitrary codecs or bypass Dolby Vision, metadata or track-selection
 guards. Failed playback does not trigger a blind retry with encoding.
 
 ## User overrides
@@ -70,7 +70,7 @@ Under `[devices.playback]`:
 
 | Field | Values | Effect | Default for a new model |
 | --- | --- | --- | --- |
-| `allow_hevc` | Boolean | Allow bounded HEVC Main/Main 10 SDR direct/copy paths. | `false` |
+| `allow_hevc` | Boolean | Allow bounded HEVC Main/Main 10 direct/copy paths. | `false` |
 | `allow_aac_surround` | Boolean | Allow copying AAC-LC with up to six channels. | `false` |
 | `h264_max_level` | `41` or `42` | Highest H.264 level admitted for direct/copy paths (4.1 or 4.2). | `41` |
 | `h264_max_fps` | `30`, `50` or `60` | Highest H.264 frame rate admitted for direct/copy paths. | `30` |

@@ -110,7 +110,7 @@ manual acceptance checklist; reproduce and investigate issues as they arise.
 - Stronger model identification/individual-device rules; exact aliases already
   work and matching changes were explicitly deferred.
 - Cache eviction, duplicate-generation cleanup and crash-leftover collection.
-- Live transcoding, hardware acceleration, HDR/tone mapping, faithful complex
+- Live transcoding, hardware acceleration, HDR video encoding/tone mapping, faithful complex
   ASS rendering, external bitmap subtitles/OCR, other frontends/platforms and
   broader power integration. A persistent service is outside current scope.
 

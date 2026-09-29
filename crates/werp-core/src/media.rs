@@ -243,7 +243,7 @@ fn parse_rate(rate: &str) -> Option<f64> {
 pub enum DirectPlayPolicy {
     #[default]
     Conservative,
-    /// Bounded HEVC Main/Main 10 SDR, with mono/stereo AAC only.
+    /// Bounded HEVC Main/Main 10, with mono/stereo AAC only.
     Hevc,
     /// H.264 with up to six-channel AAC-LC, without HEVC admission.
     AacSurround,
@@ -349,7 +349,7 @@ fn assess_input(
 ) -> Result<DirectPlayAssessment, WerpError> {
     let unsupported = |reason: &str| {
         WerpError::UnsupportedMedia(format!(
-            "{reason}. The baseline profile requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without known HDR signalling. Opt in to H.264 Level 4.2/1080p60 with a model-specific device database override. Use automatic mode to select conversion, or --mode transcode to force SDR H.264/AAC output"
+            "{reason}. The baseline profile requires MP4-family H.264 (8-bit 4:2:0, up to 1080p/30 and level 4.1) with optional mono/stereo AAC-LC. Experimental mode also permits HEVC Main/Main 10 up to level 4.0 at 1080p30, 3–6 channel AAC-LC, and H.264 with AC-3, without Dolby Vision. Opt in to H.264 Level 4.2/1080p60 with a model-specific device database override. Use automatic mode to select conversion, or --mode transcode to force H.264/AAC output for SDR sources"
         ))
     };
     if !info
@@ -415,10 +415,6 @@ fn assess_input(
                         30.01
                     }
         })
-        || matches!(
-            video.color_transfer.as_deref(),
-            Some("smpte2084" | "arib-std-b67")
-        )
         || video.dolby_vision
     {
         return Err(unsupported(&format!(
@@ -546,7 +542,7 @@ mod tests {
             );
         }
         fixture["streams"][0]["color_transfer"] = serde_json::json!("smpte2084");
-        assert!(validate_remux_input(&read(&fixture), DirectPlayPolicy::Conservative).is_err());
+        assert!(validate_remux_input(&read(&fixture), DirectPlayPolicy::Conservative).is_ok());
     }
 
     #[test]
@@ -594,7 +590,7 @@ mod tests {
         }
         let mut hdr = fixture.clone();
         hdr["streams"][0]["color_transfer"] = serde_json::json!("smpte2084");
-        assert!(check(&hdr, DirectPlayPolicy::Experimental).is_err());
+        assert!(check(&hdr, DirectPlayPolicy::Experimental).is_ok());
         let mut multiple = fixture.clone();
         multiple["streams"]
             .as_array_mut()
@@ -664,7 +660,7 @@ mod tests {
         for transfer in ["smpte2084", "arib-std-b67"] {
             let mut hdr = fixture.clone();
             hdr["streams"][0]["color_transfer"] = serde_json::json!(transfer);
-            assert!(check(&hdr, DirectPlayPolicy::Experimental).is_err());
+            assert!(check(&hdr, DirectPlayPolicy::Experimental).is_ok());
         }
         let mut dolby = fixture.clone();
         dolby["streams"][0]["side_data_list"] =
@@ -719,7 +715,7 @@ mod tests {
         for transfer in ["smpte2084", "arib-std-b67"] {
             let mut hdr = fixture.clone();
             hdr["streams"][0]["color_transfer"] = serde_json::json!(transfer);
-            assert!(check(&hdr, DirectPlayPolicy::Experimental).is_err());
+            assert!(check(&hdr, DirectPlayPolicy::Experimental).is_ok());
         }
         let mut multiple = fixture.clone();
         multiple["streams"]

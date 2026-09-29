@@ -103,7 +103,6 @@ status = "passed"
 path = "subtitles"
 format = "Embedded text extracted to WebVTT; English automatic selection and explicit Dutch selection"
 result = "User confirmed English and Dutch captions, resume, and subtitle-off behavior. Every individual text codec/track and synchronization after arbitrary seeking are not separately validated."
-evidence = ["docs/preferences-and-subtitles.md#recorded-results"]
 
 [[devices.observations]]
 id = "pgs-burn-in"
@@ -111,15 +110,13 @@ status = "passed"
 path = "subtitles"
 format = "Embedded PGS rendered into H.264 video during full conversion"
 result = "User confirmed visible burned-in captions on a short fixture. This is not native PGS-track support."
-evidence = ["docs/preferences-and-subtitles.md#recorded-results"]
 
 [[devices.observations]]
 id = "playback-lifecycle"
 status = "passed"
 path = "controls"
 format = "Natural completion, interruption/resume, restart, SIGINT/SIGTERM, receiver stop and prepared-output reuse"
-result = "User-confirmed lifecycle checks include cleanup, resume checkpoints and the short-clip batch. Coverage differs by path; see linked evidence."
-evidence = ["docs/preferences-and-subtitles.md#recorded-results"]
+result = "User-confirmed lifecycle checks include cleanup, resume checkpoints and the short-clip batch. Coverage differs by path."
 
 [[devices.observations]]
 id = "intermittent-startup-exit"
@@ -148,8 +145,8 @@ result = "Permitted only by a local h264_max_fps = 60 model override, not by thi
 id = "other-native-formats"
 status = "untested"
 path = "direct"
-format = "Original MKV, native AV1, HE-AAC/E-AC-3 passthrough, 4K, HDR/Dolby Vision, native image subtitle tracks"
-result = "Inventory or successful preparation is not native receiver evidence. These paths remain outside automatic direct-play admission; HDR conversion is not implemented."
+format = "Original MKV, native AV1, HE-AAC/E-AC-3 passthrough, 4K, general HDR rendering/Dolby Vision, native image subtitle tracks"
+result = "Inventory or successful preparation is not native receiver evidence. Codec/container limits still apply. PQ/HLG tags are admitted on video-copy paths, but only the H.264/PQ-tagged sample below has user playback evidence; HDR video conversion is not implemented."
 evidence = ["docs/media-inventory.md#receiver-evidence-and-limits"]
 
 [[devices.observations]]
@@ -159,3 +156,11 @@ path = "playback"
 format = "Longer playback interrupted after approximately five to ten minutes"
 result = "User suspected laptop standby; cause was not confirmed. Host sleep inhibition was subsequently implemented and checked locally, but no long-video or actual-suspend validation established that it resolves this interruption."
 evidence = ["README.md#sleep-prevention", "docs/plan.md#open-functional-and-release-work"]
+
+[[devices.observations]]
+id = "h264-pq-tagged-direct"
+status = "passed"
+path = "direct"
+format = "MP4; H.264 High 8-bit 4:2:0, 1280x720/23.976, PQ (smpte2084)/BT.2020 tags; stereo AAC-LC"
+result = "User played sample-021 unchanged using the CLI force-direct option and reported no visible issues. This supports admitting colour tags on direct/copy paths, not a claim of calibrated HDR rendering, HLG/Dolby Vision support, or compatibility with every HDR source."
+evidence = ["docs/media-inventory.md#the-hdr-tagged-sample"]

@@ -2,7 +2,7 @@ use std::process::Command;
 
 #[cfg(unix)]
 #[test]
-fn force_direct_bypasses_cli_hdr_preflight_but_keeps_subtitle_validation() {
+fn force_direct_bypasses_cli_format_checks_but_keeps_subtitle_validation() {
     use std::{fs, os::unix::fs::PermissionsExt};
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("hdr.mp4");
@@ -13,8 +13,9 @@ fn force_direct_bypasses_cli_hdr_preflight_but_keeps_subtitle_validation() {
     let mut metadata: serde_json::Value =
         serde_json::from_str(include_str!("../../werp-core/tests/fixtures/h264.json")).unwrap();
     metadata["streams"][0]["color_transfer"] = "smpte2084".into();
-    fs::write(dir.path().join("probe.json"), metadata.to_string()).unwrap();
-    for forced in [false, true] {
+    for (codec, forced) in [("h264", false), ("av1", false), ("av1", true)] {
+        metadata["streams"][0]["codec_name"] = codec.into();
+        fs::write(dir.path().join("probe.json"), metadata.to_string()).unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_werp"));
         command
             .args(["--no-config", "--no-resume", "--no-inhibit-sleep"])
@@ -29,8 +30,13 @@ fn force_direct_bypasses_cli_hdr_preflight_but_keeps_subtitle_validation() {
         let output = command.output().unwrap();
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(!output.status.success());
-        if forced {
-            assert!(stderr.contains("Forced direct playback"), "{stderr}");
+        if forced || codec == "h264" {
+            let notice = if forced {
+                "Forced direct playback"
+            } else {
+                "Selected Direct"
+            };
+            assert!(stderr.contains(notice), "{stderr}");
             assert!(stderr.contains("missing.vtt"), "{stderr}");
             assert!(!stderr.contains("tone mapping"), "{stderr}");
         } else {

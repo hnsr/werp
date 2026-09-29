@@ -24,6 +24,15 @@ remuxing and encoding; full video transcoding needs libx264/AAC and input decode
 Distribution packaging is still pending. See [DEVELOPMENT.md](DEVELOPMENT.md)
 for dependencies, building from source, local installation and testing.
 
+Werp chooses  an OS-assigned HTTP port. For an existing firewall rule, use
+`--http-port 8010` (CLI or GUI); `--bind-address` is a CLI diagnostic override.
+Check firewall, VPN routes, mDNS and Wi-Fi isolation if discovery or downloads
+fail. Werp never edits firewall rules.
+
+Only registered media/subtitle resources are served, with ranges and subtitle CORS.
+Use a trusted LAN: Cast TLS does not authenticate receiver identity, and media
+uses HTTP. 
+
 ## Design
 
 Werp consists of a platform-independent backend helper written in rust, which native
@@ -99,13 +108,12 @@ acceleration, HDR tone mapping and broader platform support are deferred. DVD/Vo
 and DVB image subtitles are not supported; embedded PGS burn-in is supported.
 See [subtitles](docs/preferences-and-subtitles.md).
 
-The host must stay awake and be reachable from the receiver. Werp chooses the
-local address from the receiver route and an OS-assigned HTTP
-port. For an existing firewall rule, use `--http-port 8010` (CLI or GUI);
-`--bind-address` is a CLI diagnostic override. Check firewall, VPN routes, mDNS and
-Wi-Fi isolation if discovery or downloads fail. Werp never edits firewall rules.
+PQ/HLG colour tags are accepted when the video is played directly or copied;
+rendering depends on the receiver. Full video encoding of HDR-tagged sources
+(including subtitle burn-in), Dolby Vision, multiple tracks requiring explicit
+audio/video selection, and missing required metadata remain errors. Live encoding,
+hardware acceleration, HDR tone mapping and broader platform support are deferred. Subtitle format scope
+is accepted for the sample set; advanced ASS styling and external bitmap files
+remain limited. DVD/VobSub and DVB image subtitles are not supported; embedded
+PGS burn-in remains supported. See [subtitles](docs/preferences-and-subtitles.md).
 
-Only registered media/subtitle resources are served, with ranges and subtitle CORS.
-Use a trusted LAN: Cast TLS does not authenticate receiver identity, and media
-uses HTTP. Lost connections fail rather than automatically restarting playback.
-See [storage and reuse](docs/media-conversion.md#storage-and-reuse).

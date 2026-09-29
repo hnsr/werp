@@ -92,7 +92,7 @@ fn target_description(policy: DirectPlayPolicy) -> String {
     format!(
         "MP4 · {} · {}",
         if policy.allows_hevc() {
-            "H.264 / HEVC SDR"
+            "H.264 / HEVC"
         } else {
             "H.264"
         },

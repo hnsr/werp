@@ -58,7 +58,7 @@ for line in sys.stdin:
     elif method=="convert":
         session+=1
         source,planned=conversion_formats(params)
-        conversion_state={"phase":"preparing","source":source,"planned_target":planned,"target_description":"MP4 · H.264 / HEVC SDR · AAC-LC (up to 6 channels)","operation":"Converting to H.264 and stereo AAC in MP4","fraction":0.42,"message":"Converting video and audio","warnings":[]}
+        conversion_state={"phase":"preparing","source":source,"planned_target":planned,"target_description":"MP4 · H.264 / HEVC · AAC-LC (up to 6 channels)","operation":"Converting to H.264 and stereo AAC in MP4","fraction":0.42,"message":"Converting video and audio","warnings":[]}
         emit({"id":request["id"],"ok":True,"result":{"operation_id":session}})
         emit({"event":"conversion_state","operation_id":session,"state":conversion_state})
         def converted(file=params["file"], operation=session, snapshot=conversion_state, output_format=planned):

@@ -39,9 +39,20 @@ for testing original files outside these compatibility rules.
 
 Model rules can allow higher H.264 frame rates/levels. Normal profiles convert
 Dolby and HE-AAC audio. Full encoding always targets Baseline, regardless of the
-selected profile. Silent inputs remain silent. Known HDR, ambiguous multiple
-audio/video tracks, and missing required metadata fail visibly; tone mapping and
-explicit audio-track selection are not implemented.
+selected profile. Silent inputs remain silent.
+
+PQ (`smpte2084`) and HLG (`arib-std-b67`) colour tags do not prevent direct
+playback, remuxing or audio-only conversion. These paths preserve the video and
+its colour signalling; the receiver handles rendering. We allow tags globally
+because an H.264/PQ-tagged sample played without visible issues on the KPN DIW7022;
+this is not a guarantee of HDR rendering on every receiver. No device flag is
+required.
+
+If the video itself needs encoding, HDR-tagged sources fail instead of silently
+converting without tone mapping. This also applies to subtitle burn-in and forced
+video transcoding. Dolby Vision, ambiguous multiple audio/video tracks, and
+missing required metadata remain errors. Tone mapping and explicit audio-track
+selection are not implemented.
 
 [GUI convert-only](gui.md#convert-only-window) uses the selected device's rules,
 or Baseline for **Broad compatibility**, without launching a receiver. It leaves
