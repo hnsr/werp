@@ -3,9 +3,6 @@
 Native GUI application (currently only Qt/KDE) for casting videos to a Chromecast-compatible
 receiver.
 
-<img width="385" height="299" alt="select" src="https://github.com/user-attachments/assets/dbbd2a52-b511-481c-9502-4bd512a1c551" />
-<img width="385" height="299" alt="playing" src="https://github.com/user-attachments/assets/09ddd668-ef34-42d5-b043-65accf92f472" />
-
 ## Features
 
 - Native application written in Rust
@@ -16,11 +13,22 @@ receiver.
 - Inhibit sleep/suspend while playing
 - Resume from last position
 
-See [media conversion](docs/media-conversion.md) for media conversion details. Conversion is a one-off operation
-done before casting starts. See also [storage and reuse](docs/media-conversion.md#storage-and-reuse).
+See [media conversion](docs/media-conversion.md) for media conversion details. Conversion
+(if required) is a one-off operation done automatically before casting starts, or it can
+be done ahead of time in a separate convert-only mode. See also
+[storage and reuse](docs/media-conversion.md#storage-and-reuse).
 
 See the [project direction and roadmap](docs/plan.md) for decisions and open work, and the [device database](crates/werp-core/data/devices.toml)
 for recorded device capability support (currently a work in progress)
+
+## Screenshots
+<img width="385" height="299" alt="select" src="https://github.com/user-attachments/assets/dbbd2a52-b511-481c-9502-4bd512a1c551" /><br>
+<br>
+<img width="385" height="299" alt="playing" src="https://github.com/user-attachments/assets/09ddd668-ef34-42d5-b043-65accf92f472" /><br>
+<br>
+<img width="370" height="313" alt="convert" src="https://github.com/user-attachments/assets/3cdb80d9-623e-428c-9169-c43876d1552a" />
+
+
 
 ## Requirements
 
