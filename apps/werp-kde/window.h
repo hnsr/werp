@@ -19,6 +19,10 @@ protected:
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
 private:
+    enum class Activity { Idle, Starting, Preparing, Playing, Paused, Stopping, Closing };
+    bool busy() const { return m_activity != Activity::Idle; }
+    void setupUi();
+    void connectSignals();
     void inspect();
     void discover();
     void startPlayback(bool resume);
@@ -35,7 +39,8 @@ private:
     qint64 m_session = 0;
     int m_generation = 0;
     double m_duration = 0, m_resume = -1;
-    bool m_inspected = false, m_busy = false, m_paused = false, m_closing = false, m_dragging = false;
+    Activity m_activity = Activity::Idle;
+    bool m_inspected = false, m_dragging = false;
     bool m_autoDiscover;
     bool m_discovering = false, m_canClose = false, m_applySuggestedSubtitle = true;
     QStackedWidget *m_pages;

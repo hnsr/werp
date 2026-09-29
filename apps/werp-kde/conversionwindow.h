@@ -17,6 +17,9 @@ protected:
     bool eventFilter(QObject *watched,QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 private:
+    enum class Activity { Selecting, Starting, Working, Cancelling, Finished, Closing };
+    void setupUi();
+    void connectSignals(bool discoverOnStart);
     void discover();
     void preview();
     void startConversion();
@@ -27,7 +30,8 @@ private:
     QComboBox *m_devices;
     QPushButton *m_refresh, *m_convert;
     QLabel *m_discoveryStatus;
-    bool m_discovering = false, m_previewReady = false, m_started = false;
+    bool m_discovering = false, m_previewReady = false;
+    Activity m_activity = Activity::Selecting;
     quint64 m_previewGeneration = 0;
     void updateState(const QJsonObject &state);
     void finish(const QJsonObject &state);
@@ -45,5 +49,5 @@ private:
     bool m_autoClose = true;
     int m_seconds = 5;
     qint64 m_operation = 0;
-    bool m_finished = false, m_cancelling = false, m_closing = false, m_canClose = false;
+    bool m_canClose = false;
 };

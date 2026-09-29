@@ -17,7 +17,7 @@ add_custom_target(werp-helper ALL
         "${WERP_ROOT}/target/debug/werp-backend" "${CMAKE_CURRENT_BINARY_DIR}/werp-backend"
     WORKING_DIRECTORY "${WERP_ROOT}"
     VERBATIM)
-add_executable(werp-kde main.cpp backend.cpp backend.h window.cpp window.h conversionwindow.cpp conversionwindow.h selectedvideopanel.h)
+add_executable(werp-kde main.cpp backend.cpp backend.h protocol.h window.cpp window.h conversionwindow.cpp conversionwindow.h selectedvideopanel.h)
 add_dependencies(werp-kde werp-helper)
 target_link_libraries(werp-kde PRIVATE Qt6::Widgets KF6::CoreAddons KF6::I18n)
 target_compile_options(werp-kde PRIVATE -Wall -Wextra -Wpedantic)
@@ -27,7 +27,7 @@ file(RELATIVE_PATH WERP_HELPER_RELATIVE "${KDE_INSTALL_FULL_BINDIR}" "${KDE_INST
 target_compile_definitions(werp-kde PRIVATE WERP_HELPER_RELATIVE="${WERP_HELPER_RELATIVE}")
 install(FILES org.werp.Werp.desktop org.werp.Werp.ConvertOnly.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 enable_testing()
-add_executable(werp-window-test tests/window-test.cpp backend.cpp backend.h window.cpp window.h conversionwindow.cpp conversionwindow.h selectedvideopanel.h)
+add_executable(werp-window-test tests/window-test.cpp backend.cpp backend.h protocol.h window.cpp window.h conversionwindow.cpp conversionwindow.h selectedvideopanel.h)
 add_dependencies(werp-window-test werp-helper)
 target_link_libraries(werp-window-test PRIVATE Qt6::Widgets Qt6::Test KF6::I18n)
 target_compile_definitions(werp-window-test PRIVATE

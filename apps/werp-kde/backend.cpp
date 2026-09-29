@@ -4,6 +4,13 @@
 
 Backend::Backend(QString program, QObject *parent, const QStringList &arguments) : QObject(parent), m_program(std::move(program)) {
     m_process.setArguments(arguments);
+    m_handshakeTimer.setSingleShot(true);
+    m_handshakeTimer.setInterval(5000);
+    connect(&m_handshakeTimer, &QTimer::timeout, this, [this] {
+        if (!m_ready && !m_closing && m_process.state()==QProcess::Running) {
+            fail(tr("The backend did not complete its handshake.")); shutdown();
+        }
+    });
     connect(&m_process, &QProcess::readyReadStandardOutput, this, &Backend::receive);
     connect(&m_process, &QProcess::readyReadStandardError, this, [this] {
         m_diagnostics += QString::fromUtf8(m_process.readAllStandardError());
@@ -12,6 +19,7 @@ Backend::Backend(QString program, QObject *parent, const QStringList &arguments)
     connect(&m_process, &QProcess::started, this, [this] {
         request("hello", {{"version", 1}}, [this](const QJsonObject &reply) {
             if (reply["ok"].toBool() && reply["result"].toObject()["version"].toInt() == 1) {
+                m_handshakeTimer.stop();
                 m_ready = true;
                 emit connected();
             } else { fail(tr("The backend uses an incompatible protocol.")); shutdown(); }
@@ -21,6 +29,7 @@ Backend::Backend(QString program, QObject *parent, const QStringList &arguments)
         if (!m_closing && error == QProcess::FailedToStart) fail(tr("Could not start the backend: %1").arg(m_process.errorString()));
     });
     connect(&m_process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
+        m_handshakeTimer.stop();
         m_ready = false; m_pending.clear();
         if (!m_closing) fail(tr("The backend stopped unexpectedly (%1). %2").arg(
             status == QProcess::CrashExit ? tr("crashed") : QString::number(code), m_diagnostics));
@@ -35,14 +44,11 @@ Backend::~Backend() {
 }
 void Backend::start() {
     if (m_process.state() != QProcess::NotRunning) return;
+    ++m_generation;
     m_buffer.clear(); m_diagnostics.clear(); m_pending.clear(); m_ready = false; m_closing = false;
     m_process.setProgram(m_program);
     m_process.start();
-    QTimer::singleShot(5000,this,[this] {
-        if (!m_ready && !m_closing && m_process.state()==QProcess::Running) {
-            fail(tr("The backend did not complete its handshake.")); shutdown();
-        }
-    });
+    m_handshakeTimer.start();
 }
 void Backend::request(const QString &method, const QJsonObject &params, Callback callback) {
     if (m_process.state() != QProcess::Running) {
@@ -82,15 +88,17 @@ void Backend::receive() {
 }
 void Backend::fail(const QString &message) { m_ready = false; emit failed(message); }
 void Backend::shutdown() {
+    m_handshakeTimer.stop();
     m_closing = true; m_ready = false;
     if (m_process.state() == QProcess::NotRunning) { emit exited(); return; }
+    const auto generation=m_generation;
     request("shutdown", {});
     // EOF is also a shutdown signal if an explicit request cannot be delivered.
     m_process.closeWriteChannel();
-    QTimer::singleShot(30000, this, [this] {
-        if (m_closing && m_process.state() != QProcess::NotRunning) m_process.terminate();
+    QTimer::singleShot(30000, this, [this,generation] {
+        if (generation==m_generation && m_closing && m_process.state() != QProcess::NotRunning) m_process.terminate();
     });
-    QTimer::singleShot(35000, this, [this] {
-        if (m_closing && m_process.state() != QProcess::NotRunning) m_process.kill();
+    QTimer::singleShot(35000, this, [this,generation] {
+        if (generation==m_generation && m_closing && m_process.state() != QProcess::NotRunning) m_process.kill();
     });
 }

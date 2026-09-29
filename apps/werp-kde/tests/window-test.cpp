@@ -48,6 +48,38 @@ class WindowTest : public QObject {
         QTest::mouseClick(start,Qt::LeftButton);
     }
 private slots:
+    void retry_uses_its_own_handshake_deadline() {
+        QTemporaryDir dir;
+        const auto helper=dir.filePath("retry-helper.py");
+        QFile script(helper);
+        QVERIFY(script.open(QIODevice::WriteOnly));
+        script.write(
+            "#!/usr/bin/python3\n"
+            "import json, pathlib, sys, time\n"
+            "marker = pathlib.Path(__file__ + '.seen')\n"
+            "if not marker.exists():\n"
+            "    marker.touch()\n"
+            "    sys.exit(1)\n"
+            "for line in sys.stdin:\n"
+            "    request = json.loads(line)\n"
+            "    if request['method'] == 'hello':\n"
+            "        time.sleep(2)\n"
+            "        print(json.dumps({'id': request['id'], 'ok': True, 'result': {'version': 1}}), flush=True)\n"
+            "    elif request['method'] == 'shutdown':\n"
+            "        break\n");
+        script.close();
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+
+        Backend backend(helper);
+        QSignalSpy exited(&backend,&Backend::exited);
+        backend.start();
+        QTRY_COMPARE(exited.count(),1);
+        QTest::qWait(4000);
+        backend.start();
+        QTRY_VERIFY_WITH_TIMEOUT(backend.ready(),3500);
+        backend.shutdown();
+        QTRY_COMPARE(exited.count(),2);
+    }
     void destroying_active_backend_does_not_call_destroyed_callback_state() {
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));

@@ -3,6 +3,7 @@
 #include <QProcess>
 #include <QJsonObject>
 #include <QHash>
+#include <QTimer>
 #include <functional>
 
 class Backend : public QObject {
@@ -28,6 +29,8 @@ private:
     QByteArray m_buffer;
     QString m_diagnostics;
     QHash<qint64, Callback> m_pending;
+    QTimer m_handshakeTimer;
+    quint64 m_generation = 0;
     qint64 m_nextId = 1;
     bool m_ready = false;
     bool m_closing = false;

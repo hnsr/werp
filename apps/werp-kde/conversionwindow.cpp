@@ -1,4 +1,5 @@
 #include "conversionwindow.h"
+#include "protocol.h"
 #include "selectedvideopanel.h"
 #include <KLocalizedString>
 #include <QCloseEvent>
@@ -44,102 +45,150 @@ ConversionWindow::ConversionWindow(const QString &backend,const QString &file,co
     : m_file(QFileInfo(file).absoluteFilePath()),
       m_settings(settingsFile.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/werp/kde-ui.ini" : settingsFile,QSettings::IniFormat) {
     m_autoClose=m_settings.value("conversion/autoClose",true).toBool();
-    setWindowTitle(i18n("Convert only")); resize(740,580);
-    auto *central=new QWidget(this); setCentralWidget(central);
-    auto *layout=new QVBoxLayout(central); setWindowSpacing(layout);
+    setupUi();
+    m_backend=new Backend(backend,this,arguments);
+    connectSignals(discoverOnStart);
+    refreshActions();
+    m_backend->start();
+}
+void ConversionWindow::setupUi() {
+    setWindowTitle(i18n("Convert only"));
+    resize(740,580);
+    auto *central=new QWidget(this);
+    setCentralWidget(central);
+    auto *layout=new QVBoxLayout(central);
+    setWindowSpacing(layout);
     central->installEventFilter(this);
-    layout->addWidget(new SelectedVideoPanel(central,file));
+    layout->addWidget(new SelectedVideoPanel(central,m_file));
+
     auto *deviceRow=new QHBoxLayout;
-    auto *deviceCaption=label(central,"conversionDeviceLabel",i18n("Target device:")); bold(deviceCaption);
-    deviceCaption->setWordWrap(false); deviceRow->addWidget(deviceCaption);
-    m_devices=new QComboBox(central); m_devices->setObjectName("conversionDevices");
+    auto *deviceCaption=label(central,"conversionDeviceLabel",i18n("Target device:"));
+    bold(deviceCaption);
+    deviceCaption->setWordWrap(false);
+    deviceRow->addWidget(deviceCaption);
+    m_devices=new QComboBox(central);
+    m_devices->setObjectName("conversionDevices");
     m_devices->addItem(i18n("Broad compatibility (no device)"),QString());
-    m_devices->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed); deviceRow->addWidget(m_devices,1);
-    m_refresh=new QPushButton(i18n("Refresh"),central); m_refresh->setObjectName("conversionRefresh"); deviceRow->addWidget(m_refresh);
+    m_devices->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    deviceRow->addWidget(m_devices,1);
+    m_refresh=new QPushButton(i18n("Refresh"),central);
+    m_refresh->setObjectName("conversionRefresh");
+    deviceRow->addWidget(m_refresh);
     layout->addLayout(deviceRow);
-    m_discoveryStatus=label(central,"conversionDiscoveryStatus"); layout->addWidget(m_discoveryStatus);
+    m_discoveryStatus=label(central,"conversionDiscoveryStatus");
+    layout->addWidget(m_discoveryStatus);
+
     auto *formats=new QHBoxLayout;
     formats->setSpacing(16);
     formats->addWidget(createFormatSection(i18n("Source"),"conversionSource",m_source),1);
     formats->addWidget(createFormatSection(i18n("Target"),"conversionTarget",m_target),1);
     layout->addLayout(formats);
     layout->addWidget(label(central,"conversionNote",i18n("Compatible streams are copied. The original file is kept; subtitles remain with the original.")));
-    auto *outputLayout=new QVBoxLayout; outputLayout->setSpacing(2);
+    auto *outputLayout=new QVBoxLayout;
+    outputLayout->setSpacing(2);
     m_outputCaption=label(central,"conversionOutputLabel",i18n("Available file:"));
-    bold(m_outputCaption); m_outputCaption->hide(); outputLayout->addWidget(m_outputCaption);
-    m_output=label(central,"conversionOutput"); outputLayout->addWidget(m_output); layout->addLayout(outputLayout);
-    m_warnings=label(central,"conversionWarnings"); layout->addWidget(m_warnings);
+    bold(m_outputCaption);
+    m_outputCaption->hide();
+    outputLayout->addWidget(m_outputCaption);
+    m_output=label(central,"conversionOutput");
+    outputLayout->addWidget(m_output);
+    layout->addLayout(outputLayout);
+    m_warnings=label(central,"conversionWarnings");
+    layout->addWidget(m_warnings);
     layout->addStretch();
-    m_status=label(central,"conversionStatus",i18n("Starting backend…")); layout->addWidget(m_status);
-    m_progress=new QProgressBar(central); m_progress->setObjectName("conversionProgress"); m_progress->setRange(0,0); layout->addWidget(m_progress);
+    m_status=label(central,"conversionStatus",i18n("Starting backend…"));
+    layout->addWidget(m_status);
+    m_progress=new QProgressBar(central);
+    m_progress->setObjectName("conversionProgress");
+    m_progress->setRange(0,0);
+    layout->addWidget(m_progress);
+
     auto *bottom=new QHBoxLayout;
     m_countdown=label(central,"conversionCountdown");
     m_countdown->setWordWrap(false);
     m_countdown->setSizePolicy(QSizePolicy::MinimumExpanding,QSizePolicy::Preferred);
     bottom->addWidget(m_countdown,1);
-    m_convert=new QPushButton(i18n("Convert"),central); m_convert->setObjectName("conversionStart"); bottom->addWidget(m_convert);
-    m_button=new QPushButton(i18n("Close"),central); m_button->setObjectName("conversionButton"); bottom->addWidget(m_button); layout->addLayout(bottom);
-    auto *quit=new QShortcut(QKeySequence::Quit,this); connect(quit,&QShortcut::activated,this,&QWidget::close);
-    connect(m_button,&QPushButton::clicked,this,[this] { if (m_finished || !m_started) close(); else cancel(); });
+    m_convert=new QPushButton(i18n("Convert"),central);
+    m_convert->setObjectName("conversionStart");
+    bottom->addWidget(m_convert);
+    m_button=new QPushButton(i18n("Close"),central);
+    m_button->setObjectName("conversionButton");
+    bottom->addWidget(m_button);
+    layout->addLayout(bottom);
+}
+void ConversionWindow::connectSignals(bool discoverOnStart) {
+    auto *quit=new QShortcut(QKeySequence::Quit,this);
+    connect(quit,&QShortcut::activated,this,&QWidget::close);
+    connect(m_button,&QPushButton::clicked,this,[this] {
+        if (m_activity == Activity::Selecting || m_activity == Activity::Finished) close();
+        else cancel();
+    });
     connect(m_convert,&QPushButton::clicked,this,&ConversionWindow::startConversion);
     connect(m_refresh,&QPushButton::clicked,this,&ConversionWindow::discover);
     connect(m_devices,&QComboBox::currentIndexChanged,this,&ConversionWindow::preview);
     m_autoCloseTimer.setInterval(1000);
     m_autoCloseTimer.setTimerType(Qt::PreciseTimer);
     connect(&m_autoCloseTimer,&QTimer::timeout,this,[this] {
-        if (--m_seconds<=0) { m_autoCloseTimer.stop(); close(); }
-        else m_countdown->setText(i18np("Closing in %1 second…","Closing in %1 seconds…",m_seconds));
+        if (--m_seconds<=0) {
+            m_autoCloseTimer.stop();
+            close();
+        } else {
+            m_countdown->setText(i18np("Closing in %1 second…","Closing in %1 seconds…",m_seconds));
+        }
     });
-    m_backend=new Backend(backend,this,arguments);
-    connect(m_backend,&Backend::connected,this,[this,discoverOnStart] { if (discoverOnStart) discover(); else preview(); });
+    connect(m_backend,&Backend::connected,this,[this,discoverOnStart] {
+        if (discoverOnStart) discover();
+        else preview();
+    });
     connect(m_backend,&Backend::event,this,[this](const QJsonObject &message) {
-        if (m_closing || m_finished || !m_operation || message["operation_id"].toInteger()!=m_operation) return;
+        if (m_activity == Activity::Closing || m_activity == Activity::Finished
+            || !m_operation || message["operation_id"].toInteger()!=m_operation) return;
         const auto event=message["event"].toString();
         if (event=="conversion_state") updateState(message["state"].toObject());
         else if (event=="conversion_ended") finish(message["state"].toObject());
     });
-    connect(m_backend,&Backend::failed,this,[this](const QString &error) { if (!m_closing) fail(error); });
-    connect(m_backend,&Backend::exited,this,[this] {
-        if (m_closing) { m_canClose=true; QTimer::singleShot(0,this,&QWidget::close); }
+    connect(m_backend,&Backend::failed,this,[this](const QString &error) {
+        if (m_activity != Activity::Closing && m_activity != Activity::Finished) fail(error);
     });
-    refreshActions();
-    m_backend->start();
+    connect(m_backend,&Backend::exited,this,[this] {
+        if (m_activity != Activity::Closing) return;
+        m_canClose=true;
+        QTimer::singleShot(0,this,&QWidget::close);
+    });
 }
 QJsonObject ConversionWindow::targetParams() const {
-    QJsonObject params{{"file",m_file}};
-    const auto device=m_devices->currentData().toString();
-    if (!device.isEmpty()) params.insert("device_id",device);
-    return params;
+    return Protocol::conversionParams(m_file,m_devices->currentData().toString());
 }
 void ConversionWindow::refreshActions() {
-    const bool ready=m_backend->ready() && !m_started && !m_finished && !m_closing;
+    const bool ready=m_backend->ready() && m_activity == Activity::Selecting;
     m_devices->setEnabled(ready && !m_discovering);
     m_refresh->setEnabled(ready && !m_discovering);
     m_convert->setEnabled(ready && !m_discovering && m_previewReady);
 }
 void ConversionWindow::discover() {
-    if (!m_backend->ready() || m_discovering || m_started || m_finished || m_closing) return;
+    if (!m_backend->ready() || m_discovering || m_activity != Activity::Selecting) return;
     m_discovering=true; m_previewReady=false; ++m_previewGeneration;
     refreshActions(); m_progress->setRange(0,0);
     m_discoveryStatus->setText(i18n("Searching for devices…"));
     m_status->setText(i18n("Choose a target before converting."));
     m_backend->request("discover",{},[this](const QJsonObject &reply) {
-        if (m_closing || m_finished) return;
+        if (m_activity != Activity::Selecting) return;
         m_discovering=false;
         const auto previous=m_devices->currentData().toString();
         // Retain an explicit broad-compatibility choice across refreshes.
         const bool hadSelection=m_devices->property("discovered").toBool();
         const QSignalBlocker block(m_devices);
         m_devices->clear(); m_devices->addItem(i18n("Broad compatibility (no device)"),QString());
-        if (reply["ok"].toBool()) {
-            for (const auto value : reply["result"].toObject()["devices"].toArray()) {
-                const auto device=value.toObject();
-                if (device["capabilities"].isDouble() && !(device["capabilities"].toInt() & 1)) continue;
-                m_devices->addItem(device["name"].toString()+" · "+device["model"].toString(),device["id"].toString());
+        const Protocol::Reply response(reply);
+        if (response.ok()) {
+            for (const auto value : response.result()["devices"].toArray()) {
+                const Protocol::Device device(value.toObject());
+                if (device.audioOnly) continue;
+                m_devices->addItem(device.label(),device.id);
             }
             m_discoveryStatus->setText(m_devices->count()==1 ? i18n("No video devices found. Use broad compatibility or try Refresh.") : i18n("The selected device determines the format; playback will not start."));
         } else {
-            m_discoveryStatus->setText(i18n("Device search failed: %1. Broad compatibility is still available.",reply["error"].toObject()["message"].toString()));
+            m_discoveryStatus->setText(i18n("Device search failed: %1. Broad compatibility is still available.",response.error()));
         }
         m_settings.sync();
         const auto candidate=hadSelection ? previous : m_settings.value("lastDeviceId").toString();
@@ -150,18 +199,19 @@ void ConversionWindow::discover() {
     });
 }
 void ConversionWindow::preview() {
-    if (!m_backend->ready() || m_discovering || m_started || m_finished || m_closing) return;
+    if (!m_backend->ready() || m_discovering || m_activity != Activity::Selecting) return;
     const auto generation=++m_previewGeneration;
     m_previewReady=false; refreshActions(); m_progress->setRange(0,0);
     m_status->setText(i18n("Inspecting media and determining target…"));
     for (auto *field : {m_target.container,m_target.video,m_target.resolution,m_target.audio}) field->setText(i18n("Determining…"));
     m_backend->request("preview_conversion",targetParams(),[this,generation](const QJsonObject &reply) {
-        if (generation!=m_previewGeneration || m_started || m_finished || m_closing) return;
+        if (generation!=m_previewGeneration || m_activity != Activity::Selecting) return;
         m_progress->setRange(0,100); m_progress->setValue(0);
-        if (!reply["ok"].toBool()) {
-            m_status->setText(reply["error"].toObject()["message"].toString());
+        const Protocol::Reply response(reply);
+        if (!response.ok()) {
+            m_status->setText(response.error());
         } else {
-            updateState(reply["result"].toObject());
+            updateState(response.result());
             m_progress->setRange(0,100); m_progress->setValue(0);
             m_previewReady=true;
         }
@@ -169,14 +219,16 @@ void ConversionWindow::preview() {
     });
 }
 void ConversionWindow::startConversion() {
-    if (!m_previewReady || m_discovering || m_started || m_finished || m_closing) return;
-    m_started=true; ++m_previewGeneration; refreshActions(); m_convert->hide();
+    if (!m_previewReady || m_discovering || m_activity != Activity::Selecting) return;
+    m_activity=Activity::Starting; ++m_previewGeneration; refreshActions(); m_convert->hide();
     m_button->setText(i18n("Cancel")); m_status->setText(i18n("Preparing conversion…")); m_progress->setRange(0,0);
     const auto device=m_devices->currentData().toString();
     m_backend->request("convert",targetParams(),[this,device](const QJsonObject &reply) {
-        if (m_closing || m_finished) return;
-        if (!reply["ok"].toBool()) { fail(reply["error"].toObject()["message"].toString()); return; }
-        m_operation=reply["result"].toObject()["operation_id"].toInteger();
+        if (m_activity == Activity::Closing || m_activity == Activity::Finished) return;
+        const Protocol::Reply response(reply);
+        if (!response.ok()) { fail(response.error()); return; }
+        m_operation=response.resultId("operation_id");
+        if (m_activity == Activity::Starting) m_activity=Activity::Working;
         if (!device.isEmpty()) { m_settings.setValue("lastDeviceId",device); m_settings.sync(); }
     });
 }
@@ -233,14 +285,14 @@ void ConversionWindow::updateState(const QJsonObject &state) {
     if (state["source"].isObject()) showFormat(state["source"].toObject(),m_source);
     if (state["target"].isObject()) showFormat(state["target"].toObject(),m_target);
     else if (state["planned_target"].isObject()) showFormat(state["planned_target"].toObject(),m_target);
-    if (!m_cancelling) m_status->setText(state["message"].toString());
+    if (m_activity != Activity::Cancelling) m_status->setText(state["message"].toString());
     if (state["fraction"].isDouble()) { m_progress->setRange(0,100); m_progress->setValue(qBound(0,qRound(state["fraction"].toDouble()*100),100)); }
     else m_progress->setRange(0,0);
     QStringList warnings; for (const auto &warning : state["warnings"].toArray()) warnings << warning.toString();
     m_warnings->setText(warnings.join("\n"));
 }
 void ConversionWindow::finish(const QJsonObject &state) {
-    m_cancelling=false; updateState(state); m_finished=true; m_operation=0; refreshActions(); m_convert->hide();
+    m_activity=Activity::Finished; updateState(state); m_operation=0; refreshActions(); m_convert->hide();
     m_progress->setRange(0,100); m_button->setText(i18n("Close")); m_button->setEnabled(true);
     if (state["error"].isString()) m_status->setText(state["error"].toString());
     if (state["phase"].toString()=="completed") {
@@ -260,19 +312,20 @@ void ConversionWindow::fail(const QString &message) {
     m_backend->shutdown(); // Also cleans up if the error was a protocol failure.
 }
 void ConversionWindow::cancel() {
-    m_cancelling=true; m_button->setEnabled(false); m_status->setText(i18n("Cancelling and cleaning up…"));
+    m_activity=Activity::Cancelling; m_button->setEnabled(false); m_status->setText(i18n("Cancelling and cleaning up…"));
     if (!m_operation) {
         // Before the start acknowledgement, shutdown still cancels a queued job.
         // Wait for helper exit before claiming cleanup is finished.
         connect(m_backend,&Backend::exited,this,[this] {
-            if (!m_closing) finish({{"phase","cancelled"},{"message",i18n("Cancelled; cleanup completed")}});
+            if (m_activity != Activity::Closing) finish({{"phase","cancelled"},{"message",i18n("Cancelled; cleanup completed")}});
         });
         m_backend->shutdown(); return;
     }
-    m_backend->request("cancel_conversion",{{"operation_id",m_operation}},[this](const QJsonObject &reply) {
+    m_backend->request("cancel_conversion",Protocol::operationParams(m_operation),[this](const QJsonObject &reply) {
         // A terminal event may already be in flight when cancellation is sent.
-        if (!reply["ok"].toBool() && reply["error"].toObject()["code"]!="invalid_operation" && !m_finished && !m_closing)
-            fail(reply["error"].toObject()["message"].toString());
+        const Protocol::Reply response(reply);
+        if (!response.ok() && response.errorCode()!="invalid_operation" && m_activity != Activity::Finished && m_activity != Activity::Closing)
+            fail(response.error());
     });
 }
 bool ConversionWindow::eventFilter(QObject *watched,QEvent *event) {
@@ -288,7 +341,7 @@ bool ConversionWindow::eventFilter(QObject *watched,QEvent *event) {
 void ConversionWindow::closeEvent(QCloseEvent *event) {
     if (m_canClose) { event->accept(); return; }
     event->ignore();
-    if (m_closing) return;
-    m_closing=true; refreshActions(); m_autoCloseTimer.stop(); m_button->setEnabled(false);
+    if (m_activity == Activity::Closing) return;
+    m_activity=Activity::Closing; refreshActions(); m_autoCloseTimer.stop(); m_button->setEnabled(false);
     m_status->setText(i18n("Closing and cleaning up…")); m_backend->shutdown();
 }
