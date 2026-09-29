@@ -265,7 +265,7 @@ void Window::connectSignals() {
         m_discovering=false;
         m_togglePlayback->setEnabled(false);
         m_pages->setCurrentIndex(0);
-        m_selectedVideo->setActiveSubtitle({});
+        m_selectedVideo->setPlaybackDetails({},{});
         showError(message);
         m_retry->show();
         refreshActions();
@@ -281,7 +281,7 @@ void Window::openFile(const QString &file) {
     ++m_generation; m_file=QFileInfo(file).absoluteFilePath(); m_directory=QFileInfo(m_file).absolutePath();
     m_mpris.setMedia(m_file,0);
     m_selectedVideo->setFile(m_file);
-    m_selectedVideo->setActiveSubtitle({});
+    m_selectedVideo->setPlaybackDetails({},{});
     m_subtitleDelay->setValue(0);
     m_inspected=false; m_applySuggestedSubtitle=true; m_resume=-1; m_duration=0; showError({});
     m_subtitles->clear(); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
@@ -361,6 +361,7 @@ void Window::discover() {
             QString text=device.label();
             if (device.audioOnly) text+=i18n(" (audio only)");
             m_devices->addItem(text,device.id);
+            m_devices->setItemData(m_devices->count()-1,device.name,Qt::UserRole+1);
             if (device.audioOnly || !device.hasAddress) {
                 if (auto *model=qobject_cast<QStandardItemModel *>(m_devices->model())) model->item(m_devices->count()-1)->setEnabled(false);
             }
@@ -390,7 +391,7 @@ void Window::refreshActions() {
 }
 void Window::startPlayback(bool resume) {
     if (!m_inspected || busy() || m_devices->currentData().toString().isEmpty()) return;
-    m_selectedVideo->setActiveSubtitle({});
+    m_selectedVideo->setPlaybackDetails({},{});
     m_activity=Activity::Starting; showError({}); m_prepareLabel->setText(i18n("Preparing playback…")); m_progress->setRange(0,0);
     m_mpris.setCanPlay(false);
     m_cancel->setEnabled(false); m_pages->setCurrentIndex(1); refreshActions();
@@ -425,7 +426,7 @@ void Window::handleEvent(const QJsonObject &message) {
     if (m_activity == Activity::Closing) return;
     if (message["session_id"].toInteger()!=m_session || !m_session) return;
     if (message["event"]=="ended") {
-        m_activity=Activity::Idle; m_session=0; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); m_pause->setEnabled(true); m_selectedVideo->setActiveSubtitle({});
+        m_activity=Activity::Idle; m_session=0; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); m_pause->setEnabled(true); m_selectedVideo->setPlaybackDetails({},{});
         m_mpris.clear();
         if (!message["error"].isNull()) showError(message["error"].toString());
         inspect(); refreshActions(); return;
@@ -433,7 +434,7 @@ void Window::handleEvent(const QJsonObject &message) {
     const auto state=message["state"].toObject(); const auto phase=state["phase"].toString();
     if (m_activity == Activity::Stopping && (phase=="playing" || phase=="paused" || phase=="buffering")) return;
     if (phase=="playing" || phase=="paused" || (phase=="buffering" && m_pages->currentIndex()==2)) {
-        m_selectedVideo->setActiveSubtitle(m_subtitles->currentText());
+        m_selectedVideo->setPlaybackDetails(m_subtitles->currentText(),m_devices->currentData(Qt::UserRole+1).toString());
         m_togglePlayback->setEnabled(m_stop->isEnabled());
         m_activity=phase=="paused" ? Activity::Paused : Activity::Playing;
         m_pages->setCurrentIndex(2); m_pause->setText(m_activity == Activity::Paused ? i18n("Play") : i18n("Pause"));

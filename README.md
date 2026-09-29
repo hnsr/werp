@@ -7,9 +7,10 @@ receiver.
 
 - Native application written in Rust
 - Minimize or entirely avoid remuxing or transcoding when possible (uses ffmpeg)
-- Device capability DB + user-configuration to allow more video to be streamed directly
+- Device capability DB + user-configuration to allow more videos to be streamed directly
 - Embedded or external subtitles (SRT, WebVTT, ASS, and SSA in UTF-8 or BOM-marked UTF-16)
 - Control playback through standard media keys/controls (MPRIS)
+- Resume from last position
 - Inhibit sleep/suspend while playing
 
 See [media conversion](docs/media-conversion.md) for media conversion details. Conversion is a one-off operation
