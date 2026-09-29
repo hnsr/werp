@@ -294,10 +294,7 @@ pub async fn prepare(
         if !info.streams.iter().any(|s| {
             s.index == index
                 && s.kind == "subtitle"
-                && matches!(
-                    s.codec.as_deref(),
-                    Some("hdmv_pgs_subtitle" | "dvd_subtitle" | "dvb_subtitle")
-                )
+                && s.codec.as_deref() == Some("hdmv_pgs_subtitle")
         }) {
             return Err(error(
                 "selected bitmap subtitle stream does not exist or is unsupported",

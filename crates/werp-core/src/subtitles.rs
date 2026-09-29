@@ -34,7 +34,7 @@ pub enum Selection {
 }
 
 fn bitmap(codec: &str) -> bool {
-    matches!(codec, "hdmv_pgs_subtitle" | "dvd_subtitle" | "dvb_subtitle")
+    codec == "hdmv_pgs_subtitle"
 }
 
 fn supported_text(codec: &str) -> bool {
@@ -728,6 +728,53 @@ mod tests {
             title: Some(title.into()),
             ..Default::default()
         }
+    }
+
+    #[tokio::test]
+    async fn unsupported_bitmap_tracks_are_skipped_and_cannot_be_selected() {
+        let dir = tempfile::tempdir().unwrap();
+        let video = dir.path().join("movie.mkv");
+        std::fs::write(&video, "video").unwrap();
+        let prefs = SubtitlePreferences::default();
+        let mut info = MediaInfo {
+            path: video.clone(),
+            container: "matroska".into(),
+            duration_seconds: Some(90.0),
+            streams: vec![
+                stream(2, "eng", "English", "dvd_subtitle"),
+                stream(3, "eng", "English", "dvb_subtitle"),
+            ],
+        };
+        assert!(preferred_embedded(&info, &prefs.languages).is_none());
+        assert_eq!(
+            select(&Request::Auto, &info, &video, &prefs).await.unwrap(),
+            None
+        );
+        for index in [2, 3] {
+            let error = select(&Request::Embedded(index), &info, &video, &prefs)
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("unsupported codec"));
+        }
+        let tracks = choices(&info, &video).await.unwrap();
+        assert_eq!(tracks.len(), 2);
+        assert!(
+            tracks
+                .iter()
+                .all(|track| !track.supported && !track.burn_in)
+        );
+        let sidecar = video.with_extension("srt");
+        std::fs::write(&sidecar, "1\n00:00:00,000 --> 00:00:01,000\nText\n").unwrap();
+        assert_eq!(
+            select(&Request::Auto, &info, &video, &prefs).await.unwrap(),
+            Some(Selection::External(sidecar))
+        );
+        info.streams
+            .push(stream(4, "eng", "English", "hdmv_pgs_subtitle"));
+        assert_eq!(
+            select(&Request::Auto, &info, &video, &prefs).await.unwrap(),
+            Some(Selection::Bitmap { index: 4 })
+        );
     }
 
     #[tokio::test]

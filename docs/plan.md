@@ -31,8 +31,9 @@ frontends can reuse the backend protocol; they are not implemented yet.
 | Device database | Bundled model rules/evidence, exact aliases and user `devices.toml` overrides shared by casting and device-targeted conversion. |
 
 The short-clip preparation matrix and core subtitle/resume workflows passed on
-KPN DIW7022. The user confirmed initial KDE playback and subsequent UI changes;
-the complete KDE hardware checklist is not recorded as passed. See the
+KPN DIW7022. The user confirmed initial KDE playback and subsequent UI changes.
+Manual acceptance checklists are retired; future playback issues are handled as
+bugs. See the
 [device observations](../crates/werp-core/data/devices.toml) for narrower claims and
 untested cases. An automated or protocol pass alone is not a visible/audible TV pass.
 
@@ -77,10 +78,10 @@ Implementation constraints, toolchain setup and test workflows are in
 | --- | --- | --- |
 | M0 — workspace and inspection | Complete | None in the original scope. |
 | M1 — Cast feasibility | Complete | Broader receivers remain separate validation. |
-| M2 — usable CLI and external subtitles | Complete | Optional loading-cancellation/signal-port regression checks; not individually recorded for all original runs. |
+| M2 — usable CLI and external subtitles | Complete | None in the original scope; manual acceptance checks retired. |
 | M3 — controls and robustness | Shared controls and GUI implemented; terminal controls parked | Interactive CLI input, volume control, and any bounded reconnection design. |
 | M4 — subtitle/audio selection | Current subtitle scope accepted | Explicit audio-track selection; further subtitle expansion only when a real file exposes a gap. |
-| M5 — preparation and reuse | Implemented; short-clip hardware matrix passed | Long-duration and expanded-path seek checks; optional cache maintenance. |
+| M5 — preparation and reuse | Implemented; short-clip hardware matrix passed | Optional cache maintenance; playback issues handled as bugs. |
 | M6 — Fedora release readiness | Open; development/local installation works | Clean-system validation, distribution packaging and supported runtime/dependency policy. |
 
 ### Open functional and release work
@@ -94,15 +95,9 @@ Implementation constraints, toolchain setup and test workflows are in
   packaging, and verify desktop entries/helper lookup outside the checkout.
   Finish actionable network/firewall troubleshooting. A `doctor` command is
   conditional on recurring setup problems, not a required feature yet.
-- **Validation:** complete the [GUI TV checklist](../DEVELOPMENT.md#gui-playback), longer
-  playback and seek/subtitle-sync checks across copied HEVC and converted paths.
-  Investigate any repeat of the intermittent startup exit/long-play interruption;
-  neither has a proven root cause. Extend the device database only with scoped
-  evidence. H.264 59.94/60 fps and DVD/DVB subtitle samples remain unverified.
 
-These items have no newly assigned execution order. Long-duration/seek checks
-were deferred when phone controls disappeared; GUI controls now provide another
-way to perform them, but that does not count as validation.
+Hardware observations remain scoped to recorded results. There is no outstanding
+manual acceptance checklist; reproduce and investigate issues as they arise.
 
 ### Deliberately parked or later scope
 

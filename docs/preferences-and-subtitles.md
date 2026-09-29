@@ -86,22 +86,21 @@ also respects the delay and uses a separate cache recipe for each offset.
 ASS/SSA conversion warns that advanced fonts, positioning, and effects are lost;
 this is readable caption support, not faithful ASS rendering.
 
-Embedded PGS/DVD/DVB image subtitles use FFmpeg overlay and full video conversion.
+Embedded PGS image subtitles use FFmpeg overlay and full video conversion.
 They are permanently visible in that prepared video; they cannot be toggled off
 on the receiver. Automatic mode selects full conversion and explains why. An
 explicit Direct/Remux/Audio mode fails rather than violating its no-video-encoding
 constraint. Selecting another track or disabling subtitles uses a distinct cache
 recipe, so an output with burned captions is never reused for a different choice.
 PGS burn-in passed local rendered-frame verification and user-confirmed TV
-playback. DVD/DVB use the same route but remain unverified with representative
-samples. External image-subtitle files and OCR are
-not implemented. Existing SDR/HDR and audio-track limits still apply.
+playback. External image-subtitle files and OCR are not implemented. Existing
+SDR/HDR and audio-track limits still apply.
 
 The [historical inventory](media-inventory.md) contained SubRip, MP4 text and PGS;
 all PGS examples also had text alternatives. That evidence informed the ranking.
 The user accepted coverage of the sample-set subtitle types, not a claim that
-every stream has been played. Further subtitle expansion/optional checks remain
-parked until a real file exposes a gap.
+every stream has been played. Further subtitle expansion is considered only when
+a real file exposes a gap.
 
 ## Device selection
 
@@ -154,5 +153,5 @@ on the TV using the short image-caption fixture. Automatic Dutch preference has
 local test coverage only. This report does
 not establish subtitle synchronization after arbitrary seeking.
 
-Fixture generation, automated coverage and the manual checklist are in
-[DEVELOPMENT.md](../DEVELOPMENT.md#subtitles-and-resume).
+Automated coverage is described in
+[DEVELOPMENT.md](../DEVELOPMENT.md#subtitle-and-resume-tests).

@@ -135,9 +135,6 @@ adapter; see the [roadmap](../plan.md) and [device observations](../../crates/we
 The adapter is not a stable public API. Preserve ownership, cancellation and raw
 track behavior when upgrading or replacing the transport.
 
-Reproduction instructions for the diagnostic example are in
-[DEVELOPMENT.md](../../DEVELOPMENT.md#feasibility-probe).
-
 ## Sources inspected
 
 - [rust_cast 0.21.0 source](https://docs.rs/crate/rust_cast/0.21.0/source/src/)

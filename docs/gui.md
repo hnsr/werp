@@ -11,9 +11,8 @@ bindings and lets other native frontends reuse the [versioned protocol](backend-
 The core owns media/Cast/lifecycle logic; the UI owns presentation and choices.
 See [project decisions](plan.md#decisions-and-rationale).
 
-The user confirmed initial KDE playback and subsequent UI improvements. Local
-native/protocol tests pass; the complete [GUI checklist](../DEVELOPMENT.md#gui-playback)
-is not recorded as passed.
+The user confirmed initial KDE playback and subsequent UI improvements. Future
+playback issues are handled as bugs; there is no pending manual acceptance checklist.
 
 ## Player interaction
 
@@ -113,7 +112,7 @@ A fixed port helps with an existing firewall rule; the GUI does not create one.
 CLI flags such as `--profile`, `--mode`, `--config` and `--no-config` are not GUI
 options. Both apps do use the same [device override file](device-compatibility.md#user-overrides).
 
-Build, local installation, development flags and test checklists are in
+Build, local installation, development flags and automated checks are in
 [DEVELOPMENT.md](../DEVELOPMENT.md).
 
 Subtitle switching during playback, a settings window, MPRIS, single-instance

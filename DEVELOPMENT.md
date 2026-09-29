@@ -7,7 +7,7 @@ For normal usage, see [README](README.md). Run commands from the repository root
 - [Local KDE installation](#local-kde-installation)
 - [Development launch options](#development-launch-options)
 - [Automated checks](#automated-checks)
-- [Hardware checks](#hardware-checks)
+- [Hardware validation policy](#hardware-validation-policy)
 - [Contributor guidelines](#contributor-guidelines)
 
 ## Setup and builds
@@ -130,134 +130,11 @@ cancellation, failed LOAD, and disconnect. Real FFmpeg tests exercise generated
 SubRip/MP4 text/ASS tracks and preserve cue times. A local PGS sample was prepared
 and a rendered frame visually confirmed its caption; this is not a TV result.
 
-## Hardware checks
+## Hardware validation policy
 
-Use an explicitly chosen receiver: casting replaces its current playback.
-Confirm picture, sound and captions on the TV; protocol success is not a visual
-or audio pass. The [device database](crates/werp-core/data/devices.toml) records
-observed support and limits. The complete GUI checklist and expanded-path
-long-duration/seek validation remain outstanding.
-
-| Check | Instructions |
-| --- | --- |
-| Completion, SRT/WebVTT, signal cleanup | [CLI cleanup](#cli-cleanup-check) |
-| Preparation matrix and reuse | [Conversion batch](#conversion-batch) |
-| Language selection, delay and resume | [Subtitles and resume](#subtitles-and-resume) |
-| GUI player and converter | [GUI playback](#gui-playback), [convert-only](#convert-only) |
-| Transport diagnosis | [Feasibility probe](#feasibility-probe) |
-
-### CLI cleanup check
-
-Generate a short fixture (existing output is never overwritten), then choose an
-intended receiver:
-
-```sh
-bash scripts/generate-m1-fixture.sh samples/short 30
-cargo run --locked -- samples/short/test.mp4 \
-  --device "Living Room" --subtitles samples/short/subtitles.vtt --no-resume --http-port 8010
-```
-
-Repeat with `subtitles.srt`. Natural completion should exit 0; Ctrl+C should
-finish cleanup and exit 130. For a separate SIGTERM run, find the casting PID
-with `pgrep -a -x werp` in another terminal and send `kill -TERM PID`; expect 143.
-After shutdown, `ss -H -ltn 'sport = :8010'` should show no listener. Cancellation
-can also be checked during loading. SIGKILL cannot run application cleanup.
-
-### Conversion batch
-
-```sh
-bash scripts/validate-m5.sh "Living Room"
-```
-
-The optional second argument sets the HTTP port (default 8010). This script
-requires the ignored neutral library aliases and a receiver supporting the
-Extended profile. It builds the CLI, creates short clips under `samples/m5-batch.*`,
-and checks playback, external captions, completion, reuse and cancellation.
-Follow its prompts and inspect the TV. `--prepare-only` generates fixtures
-without casting; it does not establish hardware compatibility.
-
-### Subtitles and resume
-
-Generate a short, audible fixture without contacting a TV:
-
-```sh
-bash scripts/generate-subtitle-fixture.sh samples/preferences 60
-```
-
-The fixture includes full English at stream 3, Dutch at stream 4, and deliberately
-default/forced English at stream 2. It also creates an exact-name external SRT
-case and an alternate Dutch-first config. Run these checks when ready, substituting
-a selected receiver where an explicit device is needed:
-
-1. `cargo run --locked -- samples/preferences/embedded.mkv`: the configured
-   preferred receiver should play full English captions, not the forced track.
-   Interrupt after at least 20 seconds, then repeat the same command. Confirm the
-   resume notice and TV starting near that point with correctly timed captions.
-   Let it finish; the next run should start at zero.
-2. Add `--subtitle-track 4 --restart`: Dutch captions should appear from the start.
-   The generated `samples/preferences/dutch.toml` can also be selected with
-   `--config ... --device "Living Room"` to test automatic Dutch preference.
-3. Cast `samples/preferences/external.mp4 --no-resume`: the same-name external SRT
-   should be selected automatically. Repeat with `--no-subtitles` to confirm none.
-4. Optional image-caption check on the local prepared fixture:
-   `cargo run --locked -- samples/subtitle-check/embedded-pgs-cues.mkv --subtitle-track 4 --no-resume`.
-   The CLI should select burn-in and reuse its prepared output; confirm visible
-   captions during the short clip. This fixture is local-only.
-
-Use `--subtitle-delay-ms 1500` and then `-1500` for a signed-delay regression;
-text/image delays have local test coverage, not a complete hardware sync report.
-Long-duration and expanded-path seeking remain deferred. This checklist uses
-Ctrl+C for interruption; the GUI provides controls for later seek checks.
-
-### Convert-only
-
-Open a video through Dolphin's convert-only entry. Confirm no work starts before
-Convert, the last-used device is selected if available, and switching to Broad
-compatibility updates the preview. Convert and check the result path; reopen the
-original to verify reuse. Cancel a second uncached conversion and confirm Close
-appears after cleanup. Auto-close depends on the
-[GUI preference](docs/gui.md#kde-frontend-preferences). Device-targeted conversion/cache sharing and discovery-failure fallback have automated coverage;
-subjective dialogue quality still requires listening.
-
-### GUI playback
-
-1. Generate `samples/preferences/embedded.mkv` with
-   `bash scripts/generate-subtitle-fixture.sh samples/preferences 60`. Open it;
-   confirm English and the last-used eligible TV are selected, without playback.
-   Press **Werp** and confirm picture, sound and captions.
-2. Pause/resume with buttons and Space. Seek both directions, including while
-   paused; confirm caption/audio sync. Longer copied-HEVC checks are separate.
-3. Stop after at least 20 seconds; confirm the TV stops and choices return.
-   Try **Werp from last position**, then **Werp** to verify resume versus restart.
-4. Choose an external subtitle and test positive/negative delay. Close during
-   playback and confirm owned playback/helper resources stop.
-5. With an uncached input requiring conversion (or a selected PGS track), confirm
-   progress before playback. Cancel a fresh preparation and check no partial
-   output remains. The local PGS fixture is not shipped; see [subtitle checks](#subtitles-and-resume).
-6. Reopen, confirm device persistence, and drop a local video onto the idle player.
-   It should refresh choices without starting playback.
-
-### Feasibility probe
-
-The original feasibility example is retained for transport diagnosis. It requires
-an already compatible MP4/WebVTT; prefer `werp FILE` for normal use.
-
-```sh
-bash scripts/generate-m1-fixture.sh
-cargo run --locked -p werp-core --example cast_probe -- --discover
-cargo run --locked -p werp-core --example cast_probe -- \
-  --device "Living Room" \
-  --video samples/m1/test.mp4 --subtitles samples/m1/subtitles.vtt \
-  --http-port 8010 --seconds 620 --exercise-controls
-```
-
-The generator creates an ignored 12-minute silent H.264/AAC clip and numbered
-captions. Choose an intended receiver: the example replaces its playback.
-`--exercise-controls` pauses at 20 seconds, resumes at 25, seeks forward to 90
-at 40, then back to 20 at 60. Ctrl+C/SIGTERM triggers cleanup; this prototype
-counts cancellation as test success, unlike the CLI's 130/143 contract.
-The host must stay awake and allow the chosen serving port. No firewall rule is
-changed automatically. Generated media stays outside Git.
+The previous manual acceptance checklists are retired. Future playback problems
+will be handled as bugs with targeted reproduction. Existing device observations
+retain their original scope; retiring a check does not mark it as passed.
 
 ## Contributor guidelines
 

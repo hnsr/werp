@@ -126,7 +126,7 @@ id = "phone-controls"
 status = "intermittent"
 path = "controls"
 format = "Phone-based Cast playback controls"
-result = "Earlier pause/play/seek/stop checks worked; controls later stopped appearing. Broader seeking and long-duration checks were deferred."
+result = "Earlier pause/play/seek/stop checks worked; controls later stopped appearing. Broader seeking and long-duration behavior were not established; further issues are handled as bugs."
 evidence = ["docs/plan.md#open-functional-and-release-work"]
 
 [[devices.observations]]

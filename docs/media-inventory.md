@@ -88,7 +88,7 @@ language tags, dispositions, and any reported side data, without source names.
 
 `sample-021` (1280×720, AAC stereo) and `sample-073` (1920×1038, AAC six-channel)
 combine H.264 High/yuv420p with `smpte2084` transfer and BT.2020 primaries.
-They need an explicit colour check. If the pixels genuinely represent HDR and
+Their colour correctness was not verified. If the pixels genuinely represent HDR and
 the receiver cannot render that combination, tone mapping plus video encoding
 may be necessary. If the signalling is wrong, a metadata/bitstream correction
 might suffice. Do not apply tone mapping or strip HDR metadata automatically.
@@ -138,9 +138,9 @@ but this is not proof of the earlier failure's cause or of a fix. See the
 
 The [device observations](../crates/werp-core/data/devices.toml) later confirmed the
 short-clip direct/remux/audio/full-conversion matrix with captions and reuse.
-This supersedes the original proposed test order. Expanded-path seeking,
-long-duration sync and the two HDR review cases remain open; full-conversion
-success for AV1 does not establish native AV1 playback. Original-file, remux and encoding results are distinct observations.
+Manual acceptance checklists are retired. The two HDR cases remain unsupported;
+full-conversion success for AV1 does not establish native AV1 playback.
+Original-file, remux and encoding results are distinct observations.
 
 ## Local samples and privacy
 

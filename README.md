@@ -97,7 +97,8 @@ Known HDR/Dolby Vision, multiple tracks requiring explicit audio/video selection
 and missing required metadata remain errors. Live encoding, hardware acceleration,
 HDR tone mapping and broader platform support are deferred. Subtitle format scope
 is accepted for the sample set; advanced ASS styling and external bitmap files
-remain limited. See [subtitles](docs/preferences-and-subtitles.md).
+remain limited. DVD/VobSub and DVB image subtitles are not supported; embedded
+PGS burn-in remains supported. See [subtitles](docs/preferences-and-subtitles.md).
 
 The host must stay awake and be reachable from the receiver. Werp chooses the
 local address from the receiver route and an OS-assigned HTTP
@@ -127,6 +128,6 @@ This small adapter avoids desktop bindings; broader platform support is deferred
 Locally verified on Fedora KDE: the lock appeared in logind and KDE's active
 inhibitions, and disappeared after SIGINT cleanup. Automated tests cover helper
 failure, cancellation, release and signal cleanup. Actual suspend and long-video
-validation remain outstanding; standby was only a suspected cause of an earlier
+behavior were not separately validated; standby was only a suspected cause of an earlier
 interruption. To inspect an active lock, use the KDE power applet or
 `systemd-inhibit --list --no-pager`; Werp's entry should disappear after cleanup.

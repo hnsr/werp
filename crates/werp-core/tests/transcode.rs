@@ -584,6 +584,40 @@ async fn real_audio_only_preserves_video_packets_and_audio_offset() {
 }
 
 #[tokio::test]
+async fn unsupported_bitmap_burn_in_is_rejected_before_starting_ffmpeg() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut info, probe) = input(dir.path()).await;
+    let mut options = options(dir.path());
+    options.bitmap_subtitle = Some(2);
+    for codec in ["dvd_subtitle", "dvb_subtitle"] {
+        info.streams.retain(|stream| stream.kind != "subtitle");
+        info.streams.push(media::StreamInfo {
+            index: 2,
+            kind: "subtitle".into(),
+            codec: Some(codec.into()),
+            ..Default::default()
+        });
+        let error = transcode::prepare(
+            &info,
+            &dir.path().join("missing-ffmpeg"),
+            &probe,
+            &options,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(
+            error
+                .to_string()
+                .contains("selected bitmap subtitle stream does not exist or is unsupported")
+        );
+        cache_empty(&options);
+    }
+}
+
+#[tokio::test]
 async fn preparation_rejects_hdr_ambiguity_missing_encoders_and_insufficient_space() {
     let dir = tempfile::tempdir().unwrap();
     let (mut info, probe) = input(dir.path()).await;
