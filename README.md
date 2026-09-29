@@ -1,17 +1,17 @@
 # Werp
 
-Cast local videos and subtitles to a Chromecast from a Rust CLI or native GUI.
-Werp chooses direct play, MP4 remuxing, audio-only conversion or full SDR conversion
-and reuses validated prepared files. Conversion finishes before playback starts.
-For MKV files with compatible video/audio, remuxing copies the streams into MP4
-without re-encoding or quality loss. H.264/AAC and device-permitted HEVC/surround
-are supported; subtitles are handled separately. See [media conversion](docs/media-conversion.md)
-for selection, encoding and reuse.
+Cast local videos and subtitles to a Chromecast-compatible receiver using a native
+GUI application (currently Qt/KDE, support for GTK, macOS coming later).
 
-The GUI player provides device/subtitle selection, preparation progress, resume,
-and pause/play/seek/stop. The current KDE frontend adds Dolphin **Open With**
-integration. Convert-only previews output for a selected device without starting playback. Recorded hardware coverage
-centres on **KPN DIW7022**; other models use conservative defaults unless configured.
+Werp supports embedded or external subtitles and tries to avoid or minimize
+transcoding/remuxing when possible, depending on source format and target device
+capabilities. Newer generation devices allow more video and audio codecs/profiles
+(compared to the baseline profile) and a device compatibility DB is maintained to
+document capabilities, to allow direct-play for more video formats.
+
+See [media conversion](docs/media-conversion.md) for selection, encoding and reuse.
+Conversion is a one-off operation done before casting starts. See also 
+[storage and reuse](docs/media-conversion.md#storage-and-reuse).
 
 See the [project direction and roadmap](docs/plan.md) for decisions and open work,
 and the [device database](crates/werp-core/data/devices.toml) for recorded support.
@@ -19,14 +19,23 @@ and the [device database](crates/werp-core/data/devices.toml) for recorded suppo
 ## Requirements
 
 `ffprobe` must be on PATH. `ffmpeg` is required for subtitle conversion/extraction,
-remuxing and encoding on a cache miss; full encoding needs libx264/AAC and input
-decoders. External WebVTT does not need conversion. Linux sleep prevention uses
-`systemd-inhibit` on a best-effort basis.
+remuxing and encoding; full video transcoding needs libx264/AAC and input decoders.
 
 Distribution packaging is still pending. See [DEVELOPMENT.md](DEVELOPMENT.md)
 for dependencies, building from source, local installation and testing.
 
-## GUI application
+## Design
+
+Werp consists of a platform-independent backend helper written in rust, which native
+GUI applications automatically launch and interface with. This allows
+the GUI applications to be written in the native language/tooling without having to use
+bindings. Werp also comes with a CLI binary for casting from the command-line.
+
+On Linux, Werp uses `systemd-inhibit` to block sleep during casting and conversion,
+including preparation, paused playback and cleanup. Merely opening the GUI or
+browsing devices does not acquire a lock. Screen dimming/locking remains enabled.
+
+### GUI application
 
 The current frontend uses C++/Qt and KDE Frameworks. GTK and other native
 frontends can share the same Rust backend; they are not implemented yet.
@@ -36,19 +45,14 @@ werp-kde /path/to/video.mkv
 werp-kde --convert-only /path/to/video.mkv
 ```
 
-The app launches its Rust helper automatically. The player preselects the last-used
-device and suggests English, then Dutch subtitles. Review choices and press
-**Werp** or **Werp from last position**. Space toggles pause/play; Ctrl+Q closes
-with cleanup. Opening/dropping a file does not start playback.
+The GUI app allows choosing target device, subtitle and other options before
+starting the chromecast session.
 
-Convert-only lets you choose a discovered device (using its model rules and local
-overrides) or **Broad compatibility** for conservative H.264/stereo AAC output.
-Review the source/target preview and press **Convert**. Successful output is
-retained; auto-close defaults to five seconds and is configurable in the GUI INI.
+The GUI app can also run in convert-only mode, allowing conversion ahead of time.
 
 See the [GUI guide](docs/gui.md) for interaction, launch options and settings.
 
-## CLI
+### CLI
 
 ```sh
 werp devices
@@ -86,19 +90,14 @@ preferences for the KDE frontend use `kde-ui.ini`. XDG locations are supported. 
 [configuration and resume](docs/preferences-and-subtitles.md) and
 [device overrides](docs/device-compatibility.md#user-overrides).
 
-Prepared MP4s and completion sidecars live beside the canonical source, falling
-back to the user cache if unwritable. Originals are never changed. Reuse validates
-source/output fingerprints and the recipe; this costs disk reads but avoids
-encoding. There is no automatic eviction. See [storage and reuse](docs/media-conversion.md#storage-and-reuse).
 
 ## Limits and networking
 
 Known HDR/Dolby Vision, multiple tracks requiring explicit audio/video selection,
-and missing required metadata remain errors. Live encoding, hardware acceleration,
-HDR tone mapping and broader platform support are deferred. Subtitle format scope
-is accepted for the sample set; advanced ASS styling and external bitmap files
-remain limited. DVD/VobSub and DVB image subtitles are not supported; embedded
-PGS burn-in remains supported. See [subtitles](docs/preferences-and-subtitles.md).
+and missing required metadata remain errors. On-the-fly transcoding/remuxing, hardware
+acceleration, HDR tone mapping and broader platform support are deferred. DVD/VobSub
+and DVB image subtitles are not supported; embedded PGS burn-in is supported.
+See [subtitles](docs/preferences-and-subtitles.md).
 
 The host must stay awake and be reachable from the receiver. Werp chooses the
 local address from the receiver route and an OS-assigned HTTP
@@ -109,25 +108,4 @@ Wi-Fi isolation if discovery or downloads fail. Werp never edits firewall rules.
 Only registered media/subtitle resources are served, with ranges and subtitle CORS.
 Use a trusted LAN: Cast TLS does not authenticate receiver identity, and media
 uses HTTP. Lost connections fail rather than automatically restarting playback.
-See [transport rationale](docs/decisions/001-cast-library.md).
-
-CLI results go to stdout; diagnostics go to stderr. Use `--verbose` or `RUST_LOG`
-for debug output. Exit codes: 0 success, 1 operation failure, 2 argument error,
-130 Ctrl+C and 143 SIGTERM on Linux. Inspection JSON is Werp metadata, not raw
-ffprobe output or a stable public API.
-
-## Sleep prevention
-
-On Linux, Werp uses `systemd-inhibit` to block sleep during casting and conversion,
-including preparation, paused playback and cleanup. Merely opening the GUI or
-browsing devices does not acquire a lock. Screen dimming/locking remains enabled.
-CLI/helper `--no-inhibit-sleep` opts out. Acquisition failures warn and let work
-continue; forced sleep or power-policy overrides may still interrupt playback.
-This small adapter avoids desktop bindings; broader platform support is deferred.
-
-Locally verified on Fedora KDE: the lock appeared in logind and KDE's active
-inhibitions, and disappeared after SIGINT cleanup. Automated tests cover helper
-failure, cancellation, release and signal cleanup. Actual suspend and long-video
-behavior were not separately validated; standby was only a suspected cause of an earlier
-interruption. To inspect an active lock, use the KDE power applet or
-`systemd-inhibit --list --no-pager`; Werp's entry should disappear after cleanup.
+See [storage and reuse](docs/media-conversion.md#storage-and-reuse).
