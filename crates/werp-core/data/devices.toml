@@ -76,6 +76,14 @@ result = "Short-clip hardware batch passed. A separate integrated H.264/AC-3 con
 evidence = ["docs/media-inventory.md#user-playback-results"]
 
 [[devices.observations]]
+id = "mkv-h264-ac3-audio-conversion"
+status = "passed"
+path = "audio_conversion"
+format = "MKV; H.264 High, 8-bit, 1790x1080/24; six-channel AC-3 input; copied video and stereo AAC-LC output in MP4"
+result = "User confirmed successful playback of sample-024 with automatic preparation and subtitles disabled. This confirms the MKV/H.264/AC-3 conversion path, not native AC-3 passthrough. Full-duration playback, seeking and cleanup were not separately reported."
+evidence = ["docs/media-inventory.md#user-playback-results"]
+
+[[devices.observations]]
 id = "full-video-conversion"
 status = "passed"
 path = "transcode"

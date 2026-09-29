@@ -116,7 +116,7 @@ MKV, 4K/HDR and untested audio passthrough are not established by this inventory
 
 ## User playback results
 
-These early observations concern the KPN DIW7022 development setup. Direct trials
+These observations concern the KPN DIW7022 development setup. Direct trials
 served original MP4 bytes; the wider cases initially used explicit experimental
 permissions, now represented by bounded model rules.
 
@@ -125,9 +125,10 @@ permissions, now represented by bounded model rules.
 | 009 / 014 / 017 | H.264/stereo AAC MP4; 1920×816/24, 1280×690/24, 1920×800/~23.976 | Good picture and sound for all three. | No full-duration, subtitle or cleanup report for these runs. |
 | 004 | H.264 1920×1040/~23.976, six-channel AAC; original MP4 | General success for requested picture/dialogue/sync check. | Discrete surround and long-duration sync not established. |
 | 005 | HEVC Main 10 1920×1080/~23.976, six-channel AAC; original MP4 | General success; requested checks included colours, dialogue, sync and phone controls. | No separate per-check measurements; no subtitles selected. |
-| 041 | H.264 1920×804/24, six-channel AC-3; original MP4 | Picture, but no audible sound. | Cause not isolated between decoding, output setup and file; other AC-3 files untested. |
+| 041 | H.264 1920×804/24, six-channel AC-3; original MP4 | Picture, but no audible sound. | Cause not isolated between decoding, output setup and file; Other native AC-3 passthrough trials not recorded. |
 | 041 | Copied video/stereo AAC preparation | First attempt exited to the TV home screen after brief sound. Later saved-output playback and integrated conversion succeeded. | Startup failure cause remains unresolved. |
 | 006 | H.264/stereo AAC MKV → MP4 remux | General success for picture/sound/sync/Ctrl+C request. | No per-check measurements or cleanup transcript. |
+| 024 | H.264 High 1790×1080/24, six-channel AC-3 in MKV → copied video/stereo AAC in MP4 | User confirmed successful playback with automatic preparation. | Subtitles disabled; full-duration, seeking and cleanup not separately reported. |
 
 For sample-041, the successful saved-output log had HTTP 206, positions through
 about 298.6 seconds and pause/resume, ending paused. The later integrated run
@@ -138,6 +139,8 @@ but this is not proof of the earlier failure's cause or of a fix. See the
 
 The [device observations](../crates/werp-core/data/devices.toml) later confirmed the
 short-clip direct/remux/audio/full-conversion matrix with captions and reuse.
+With sample-024 confirmed, every SDR format group in this inventory has a
+representative successful playback path; this does not mean every file was tested.
 Manual acceptance checklists are retired. The two HDR cases remain unsupported;
 full-conversion success for AV1 does not establish native AV1 playback.
 Original-file, remux and encoding results are distinct observations.
