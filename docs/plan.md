@@ -158,4 +158,4 @@ repository hosting and supported build environments are settled.
 | [Backend protocol](backend-protocol.md) | Exact private frontend contract |
 | [Sleep inhibition](sleep-inhibition.md) | Linux adapter and validation limits |
 | [Media inventory](media-inventory.md) | Historical 75-file scan and early trials |
-| [Transcode](transcode-validation.md) and [remux](remux-validation.md) reports | Historical observations and bug diagnoses, not current usage specifications |
+| [Transcode report](transcode-validation.md) | Historical observations and bug diagnoses, not current usage specifications |

@@ -108,6 +108,17 @@ cover SRT/WebVTT completion and cancellation/port cleanup across preparation pat
 Interrupted loading and signal-port closure were not individually recorded for
 all original CLI runs; those remain optional regression checks, not known defects.
 
+### Initial remux hardware check
+
+The user reported no problems with sample-006 (MKV, H.264 High 720×480 at
+23.976 fps, stereo AAC-LC) remuxed to MP4 on KPN DIW7022. Requested checks covered
+picture, sound, sync and Ctrl+C; the reply was a general success report without
+measurements or a cleanup transcript. No subtitles were selected. The later
+[batch checks](automatic-playback.md#hardware-batch-result) add short-clip
+H.264/HEVC remux, captions, completion, reuse and cancellation coverage.
+Expanded-path seeking and long-duration sync remain deferred; original MKV
+playback is not established.
+
 ## Maintaining the bundled database
 
 Edit `crates/yeet-core/data/devices.toml` and rebuild the app. Add an exact model ID

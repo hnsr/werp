@@ -3,6 +3,9 @@
 Cast local videos and subtitles to a Chromecast from a Rust CLI or native KDE app.
 Yeet chooses direct play, MP4 remuxing, audio-only conversion or full SDR conversion
 and reuses validated prepared files. Conversion finishes before playback starts.
+For MKV files with compatible video/audio, remuxing copies the streams into MP4
+without re-encoding or quality loss. H.264/AAC and device-permitted HEVC/surround
+are supported; subtitles are handled separately.
 
 The KDE player provides device/subtitle selection, preparation progress, resume,
 pause/play/seek/stop and Dolphin **Open With** integration. Convert-only previews

@@ -54,6 +54,11 @@ Model-specific permissions can be changed in the optional
 codec opt-ins. Convert-only uses the same rules for its selected device, or
 Baseline for Broad compatibility. [KDE behavior](kde-ui.md#convert-only-window).
 
+Remuxing produces a complete faststart MP4 using FFmpeg's demuxer/muxer;
+no audio/video encoders are required. Generated-fixture checks verified unchanged
+encoded payload hashes, preserved relative audio/video timing within 3 ms,
+mono and silent inputs, source preservation, and cancellation/partial-file cleanup.
+
 ## Preparation limits
 
 Full encoding uses libx264 veryfast/CRF 20, at most 1080p30, an 8 Mbps maximum

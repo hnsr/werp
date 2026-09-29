@@ -67,7 +67,7 @@ status = "passed"
 path = "remux"
 format = "MKV to MP4; H.264/stereo AAC-LC, HEVC Main/six-channel AAC-LC, HEVC Main 10/six-channel AAC-LC"
 result = "Initial H.264 trial and consolidated short-clip hardware batch passed with video/audio copied into MP4. This does not validate original MKV delivery."
-evidence = ["docs/remux-validation.md#hardware-playback-result", "docs/automatic-playback.md#hardware-batch-result"]
+evidence = ["docs/device-compatibility.md#initial-remux-hardware-check", "docs/automatic-playback.md#hardware-batch-result"]
 
 [[devices.observations]]
 id = "audio-to-stereo-aac"
