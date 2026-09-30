@@ -67,7 +67,8 @@ without tone mapping; audio-track limits still apply. See [media conversion](med
 ## Subtitle delay
 
 Delay is specified in signed milliseconds: positive values show captions later,
-negative values earlier. The default is zero. Set it with the GUI's **Subtitle
+negative values earlier. A saved offset for this video and subtitle is restored;
+otherwise it starts at zero. Set it with the GUI's **Subtitle
 delay** control or the CLI's `--subtitle-delay-ms` option before casting.
 
 The delay applies when playback starts, including resume, and changes subtitle
@@ -76,6 +77,16 @@ clipped to zero; cues ending before or at zero are dropped. If none remain,
 playback proceeds without a subtitle track. Originals are never modified. Image
 subtitle burn-in also respects the delay and uses a separate cache recipe for
 each offset.
+
+Offsets are saved after confirmed playback starts and shared by the GUI and CLI.
+Each video/subtitle pair has its own value: video identity includes canonical
+path, size and modification time; external subtitles use a content hash and
+embedded subtitles use their source stream index. Renaming external subtitles
+preserves their offset, while editing them or changing the video invalidates it.
+Explicit CLI `--subtitle-delay-ms` values override saved timing, including zero
+which clears the saved offset. Offsets survive playback completion. Entries
+expire after 180 days and are pruned when another nonzero offset is saved.
+State errors warn without preventing casting.
 
 ## Convert-only
 

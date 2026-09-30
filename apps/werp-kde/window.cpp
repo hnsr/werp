@@ -1,6 +1,7 @@
 #include "window.h"
 #include "protocol.h"
 #include <QSpinBox>
+#include <QSignalBlocker>
 #include <limits>
 #include "selectedvideopanel.h"
 #include <QAbstractItemView>
@@ -227,6 +228,8 @@ void Window::connectSignals() {
         addSubtitle(m_subtitles,i18n("External: %1",QFileInfo(path).fileName()),payload({{"kind","external"},{"path",path}}));
         m_subtitles->setCurrentIndex(m_subtitles->count()-1);
     });
+    connect(m_subtitles,&QComboBox::currentIndexChanged,this,[this] { if (m_inspected) loadSubtitleDelay(); });
+    connect(m_subtitleDelay,qOverload<int>(&QSpinBox::valueChanged),this,[this] { ++m_delayGeneration; m_delayLoading=false; refreshActions(); });
     connect(m_refresh,&QPushButton::clicked,this,&Window::discover);
     connect(m_retry,&QPushButton::clicked,&m_backend,&Backend::start);
     connect(m_devices,&QComboBox::currentIndexChanged,this,&Window::refreshActions);
@@ -282,6 +285,7 @@ void Window::openFile(const QString &file) {
     m_mpris.setMedia(m_file,0);
     m_selectedVideo->setFile(m_file);
     m_selectedVideo->setPlaybackDetails({},{});
+    m_delayLoading=false; ++m_delayGeneration;
     m_subtitleDelay->setValue(0);
     m_inspected=false; m_applySuggestedSubtitle=true; m_resume=-1; m_duration=0; showError({});
     m_subtitles->clear(); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
@@ -308,6 +312,7 @@ void Window::inspect() {
         m_resume=result.resumePosition.isDouble() ? result.resumePosition.toDouble() : -1;
         const auto selected=m_applySuggestedSubtitle && !result.suggestedSubtitles.isEmpty()
             ? payload(result.suggestedSubtitles) : m_subtitles->currentData().toString();
+        const QSignalBlocker subtitleBlocker(m_subtitles);
         m_subtitles->clear(); m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
         for (const auto value : result.subtitles) {
             const Protocol::SubtitleChoice choice(value.toObject());
@@ -341,10 +346,28 @@ void Window::inspect() {
         }
         if (m_applySuggestedSubtitle && !result.subtitleWarning.isEmpty())
             showError(i18n("Choose subtitles manually: %1",result.subtitleWarning));
+        const bool restoreDelay=m_applySuggestedSubtitle;
         m_applySuggestedSubtitle=false;
         m_inspected=true;
+        if (restoreDelay) loadSubtitleDelay();
         if (!result.resumeWarning.isEmpty()) showError(i18n("Saved position unavailable: %1",result.resumeWarning));
         refreshActions();
+    });
+}
+void Window::loadSubtitleDelay() {
+    const QSignalBlocker blocker(m_subtitleDelay);
+    m_subtitleDelay->setValue(0);
+    m_delayLoading=true; refreshActions();
+    const auto revision=++m_delayGeneration;
+    const auto generation=m_generation;
+    const auto selected=m_subtitles->currentData().toString();
+    const auto choice=QJsonDocument::fromJson(selected.toUtf8()).object();
+    m_backend.request("get_subtitle_delay",{{"file",m_file},{"subtitles",choice}},[this,revision,generation,selected](const QJsonObject &reply) {
+        if (revision!=m_delayGeneration || generation!=m_generation || selected!=m_subtitles->currentData().toString() || m_activity==Activity::Closing) return;
+        m_delayLoading=false; refreshActions();
+        if (!check(reply)) return;
+        const QSignalBlocker blocker(m_subtitleDelay);
+        m_subtitleDelay->setValue(Protocol::Reply(reply).result()["subtitle_delay_ms"].toInt());
     });
 }
 void Window::discover() {
@@ -383,14 +406,14 @@ void Window::refreshActions() {
     m_subtitleDelay->setEnabled(idle && m_inspected);
     m_open->setEnabled(m_activity == Activity::Idle); m_devices->setEnabled(idle && !m_discovering); m_subtitles->setEnabled(idle && m_inspected);
     m_browse->setEnabled(idle && m_inspected);
-    const bool canStart=idle && !m_discovering && m_inspected && !m_devices->currentData().toString().isEmpty();
+    const bool canStart=idle && !m_delayLoading && !m_discovering && m_inspected && !m_devices->currentData().toString().isEmpty();
     m_start->setEnabled(canStart); m_resumeButton->setVisible(m_resume>=0); m_resumeButton->setEnabled(canStart && m_resume>=0);
     m_mpris.setCanPlay(canStart || m_activity == Activity::Paused || m_activity == Activity::Playing);
     m_resumeButton->setToolTip(i18n("Resume at %1",timestamp(m_resume)));
     m_refresh->setEnabled(idle && !m_discovering); m_seek->setEnabled((m_activity == Activity::Playing || m_activity == Activity::Paused) && m_duration>0);
 }
 void Window::startPlayback(bool resume) {
-    if (!m_inspected || busy() || m_devices->currentData().toString().isEmpty()) return;
+    if (!m_inspected || m_delayLoading || busy() || m_devices->currentData().toString().isEmpty()) return;
     m_selectedVideo->setPlaybackDetails({},{});
     m_activity=Activity::Starting; showError({}); m_prepareLabel->setText(i18n("Preparing playback…")); m_progress->setRange(0,0);
     m_mpris.setCanPlay(false);

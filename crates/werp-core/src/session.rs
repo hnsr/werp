@@ -56,6 +56,7 @@ pub struct CastRequest {
     pub start_position: f64,
     /// Override state location for embedding/testing; CLI uses XDG_STATE_HOME.
     pub resume_directory: Option<PathBuf>,
+    pub subtitle_offset_directory: Option<PathBuf>,
 }
 
 impl CastRequest {
@@ -79,6 +80,7 @@ impl CastRequest {
             save_position: true,
             start_position: 0.0,
             resume_directory: None,
+            subtitle_offset_directory: None,
         }
     }
 }
@@ -399,6 +401,7 @@ pub async fn run_controlled(
             .map_err(|e| delivery_error(e, serving))?;
         let mut last_active = Instant::now();
         let mut reached_playable = false;
+        let mut offset_saved = false;
         let loaded_at = Instant::now();
         let mut tracks_enabled = false;
         let mut subtitle_confirmed = serving.subtitle_url.is_none();
@@ -473,6 +476,13 @@ pub async fn run_controlled(
                     return Err(WerpError::Subtitles(
                         "receiver did not activate the requested subtitle track".into(),
                     ));
+                }
+            }
+            if !offset_saved && matches!(phase, Phase::Playing | Phase::Paused) {
+                offset_saved = true;
+                if let Err(error) = crate::subtitle_offsets::save(&info, &request.subtitles, request.subtitle_delay_ms, request.subtitle_offset_directory.as_deref()).await {
+                    tracing::warn!(%error, "Could not save subtitle offset; casting continues");
+                    notice(&progress, format!("Could not save subtitle offset: {error}"));
                 }
             }
             if last_active.elapsed() > Duration::from_secs(30) {

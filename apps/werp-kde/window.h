@@ -26,6 +26,7 @@ private:
     void connectSignals();
     void inspect();
     void discover();
+    void loadSubtitleDelay();
     void startPlayback(bool resume);
     void stopPlayback();
     void handleEvent(const QJsonObject &message);
@@ -39,10 +40,10 @@ private:
     QShortcut *m_togglePlayback;
     QString m_file, m_directory;
     qint64 m_session = 0;
-    int m_generation = 0;
+    int m_generation = 0, m_delayGeneration = 0;
     double m_duration = 0, m_resume = -1;
     Activity m_activity = Activity::Idle;
-    bool m_inspected = false, m_dragging = false;
+    bool m_inspected = false, m_dragging = false, m_delayLoading = false;
     bool m_autoDiscover;
     bool m_discovering = false, m_canClose = false, m_applySuggestedSubtitle = true;
     QStackedWidget *m_pages;

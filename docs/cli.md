@@ -52,7 +52,8 @@ Overrides are mutually exclusive:
 | `--auto-subtitles` | Enable automatic selection even if disabled in config |
 
 Use `--subtitle-delay-ms 1500` to show captions 1.5 seconds later, or
-`--subtitle-delay-ms -1500` to show them earlier. The default is zero; see
+`--subtitle-delay-ms -1500` to show them earlier. A saved offset is restored when the flag is omitted; otherwise it starts at zero.
+An explicit zero clears saved timing. See
 [delay behavior](subtitles.md#subtitle-delay).
 
 ## Device selection

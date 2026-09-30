@@ -36,6 +36,15 @@ for line in sys.stdin:
                 {"kind":"embedded","index":2,"codec":"subrip","language":"eng","title":"English","supported":True},
                 {"kind":"embedded","index":3,"codec":"subrip","language":"dut","title":"Dutch","supported":True},
                 {"kind":"external","path":str(Path(params["file"]).with_suffix(".srt")),"supported":True}]}
+    elif method=="get_subtitle_delay":
+        result={"subtitle_delay_ms":0}
+        custom=Path(__file__+".delays.json")
+        if custom.exists():
+            choice=params["subtitles"]
+            result["subtitle_delay_ms"]=json.loads(custom.read_text()).get(str(choice.get("index")),0)
+            delayed=threading.Timer(0.15,lambda reply={"id":request["id"],"ok":True,"result":result}: emit(reply))
+            delayed.daemon=True; delayed.start()
+            continue
     elif method=="discover":
         result={"devices":[
             {"id":"speaker","name":"Speaker","model":"Audio receiver","capabilities":4,"addresses":["127.0.0.1"]},

@@ -400,6 +400,8 @@ async fn receiver_stop_finishes_without_stopping_other_apps_or_hiding_errors() {
         fs::write(&subtitles, "WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n").unwrap();
         let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video);
+        request.subtitle_offset_directory =
+            Some(request.file.parent().unwrap().join("test-offsets"));
         request.inhibit_sleep = false;
         request.subtitles = werp_core::subtitles::Request::Off;
         request.save_position = false;
@@ -478,6 +480,8 @@ async fn terminal_broadcasts_complete_promptly_and_do_not_confuse_other_sessions
         fs::write(&subs, "WEBVTT\n\n00:00.000 --> 00:02.000\nHello\n").unwrap();
         let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video);
+        request.subtitle_offset_directory =
+            Some(request.file.parent().unwrap().join("test-offsets"));
         request.inhibit_sleep = false;
         request.subtitles = werp_core::subtitles::Request::Off;
         request.save_position = false;
@@ -577,6 +581,8 @@ async fn force_direct_serves_original_formats_and_keeps_session_cleanup() {
         let probe = fake_probe(dir.path(), &metadata.to_string());
         let (address, receiver) = receiver(mode, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video.clone());
+        request.subtitle_offset_directory =
+            Some(request.file.parent().unwrap().join("test-offsets"));
         request.inhibit_sleep = false;
         request.save_position = false;
         request.target = Some(Target::Host(address));
@@ -670,6 +676,7 @@ async fn force_direct_rejects_burn_in_and_still_requires_a_regular_file() {
         "index": 2, "codec_type": "subtitle", "codec_name": "hdmv_pgs_subtitle"
     }));
     let mut request = CastRequest::new(video);
+    request.subtitle_offset_directory = Some(request.file.parent().unwrap().join("test-offsets"));
     request.force_direct = true;
     request.inhibit_sleep = false;
     request.save_position = false;
@@ -708,6 +715,8 @@ async fn experimental_formats_require_opt_in_and_serve_original_bytes() {
         let probe = fake_probe(directory.path(), &metadata.to_string());
         let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
         let mut request = CastRequest::new(video.clone());
+        request.subtitle_offset_directory =
+            Some(request.file.parent().unwrap().join("test-offsets"));
         request.inhibit_sleep = false;
         request.subtitles = werp_core::subtitles::Request::Off;
         request.save_position = false;
@@ -774,6 +783,8 @@ async fn session_covers_completion_transient_idle_errors_takeover_and_cancellati
         let loaded = Arc::new(AtomicBool::new(false));
         let (address, receiver) = receiver(mode, loaded.clone()).await;
         let mut request = CastRequest::new(file);
+        request.subtitle_offset_directory =
+            Some(request.file.parent().unwrap().join("test-offsets"));
         request.inhibit_sleep = false;
         request.subtitles = werp_core::subtitles::Request::Off;
         request.save_position = false;
@@ -884,6 +895,7 @@ async fn delay_that_removes_all_captions_still_plays_video() {
     fs::write(&subs, original).unwrap();
     let (address, receiver) = receiver(Mode::Complete, Arc::new(AtomicBool::new(false))).await;
     let mut request = CastRequest::new(file);
+    request.subtitle_offset_directory = Some(request.file.parent().unwrap().join("test-offsets"));
     request.inhibit_sleep = false;
     request.save_position = false;
     request.subtitles = werp_core::subtitles::Request::External(subs.clone());
@@ -912,6 +924,8 @@ async fn invalid_media_and_subtitles_fail_before_contacting_receiver() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     for malformed_media in [true, false] {
         let mut request = CastRequest::new(file.clone());
+        request.subtitle_offset_directory =
+            Some(request.file.parent().unwrap().join("test-offsets"));
         request.inhibit_sleep = false;
         request.subtitles = werp_core::subtitles::Request::Off;
         request.save_position = false;
@@ -1047,6 +1061,8 @@ async fn real_media_and_srt_or_vtt_complete_the_entire_session() {
             &video
         };
         let mut request = CastRequest::new(source.clone());
+        request.subtitle_offset_directory =
+            Some(request.file.parent().unwrap().join("test-offsets"));
         request.inhibit_sleep = false;
         request.subtitles = werp_core::subtitles::Request::Off;
         request.save_position = false;
@@ -1129,6 +1145,8 @@ async fn resume_survives_interruptions_obeys_overrides_and_clears_on_completion(
         let (address, receiver) =
             receiver_at(mode, Arc::new(AtomicBool::new(false)), position).await;
         let mut request = CastRequest::new(video.clone());
+        request.subtitle_offset_directory =
+            Some(request.file.parent().unwrap().join("test-offsets"));
         request.target = Some(Target::Host(address));
         request.probe.executable = probe.clone();
         request.inhibit_sleep = false;
@@ -1193,6 +1211,7 @@ async fn controlled_session_pauses_plays_seeks_and_stops_with_cleanup() {
     fs::write(&file, b"video").unwrap();
     let (address, receiver) = receiver(Mode::Hold, Arc::new(AtomicBool::new(false))).await;
     let mut request = CastRequest::new(file);
+    request.subtitle_offset_directory = Some(request.file.parent().unwrap().join("test-offsets"));
     request.target = Some(Target::Host(address));
     request.inhibit_sleep = false;
     request.save_position = false;

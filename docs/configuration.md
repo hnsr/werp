@@ -46,3 +46,5 @@ The GUI has no `--config` or `--no-config` launch option.
   `~/.local/state/werp/gui.toml` when the variable is unset or not absolute.
 - Playback checkpoints live under the same state root in `werp/resume`; see
   [playback positions](cli.md#playback-positions).
+- Subtitle offsets live under the state root in `werp/subtitle-offsets`; see
+  [saved subtitle timing](subtitles.md#subtitle-delay).

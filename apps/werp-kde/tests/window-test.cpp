@@ -285,6 +285,27 @@ private slots:
         QTest::mouseClick(early.findChild<QPushButton *>("conversionButton"),Qt::LeftButton);
         QTRY_VERIFY(!early.isVisible());
     }
+    void subtitle_offsets_restore_without_overwriting_newer_choices_or_manual_edits() {
+        QTemporaryDir dir;
+        const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        QFile saved(helper+".delays.json"); QVERIFY(saved.open(QIODevice::WriteOnly)); saved.write("{\"2\":-600,\"3\":800}"); saved.close();
+        Window window(helper,dir.filePath("movie.mp4")); window.show();
+        auto *subtitles=window.findChild<QComboBox *>("subtitles");
+        auto *delay=window.findChild<QSpinBox *>("subtitleDelay");
+        auto *devices=window.findChild<QComboBox *>("devices");
+        auto *start=window.findChild<QPushButton *>("werp");
+        QTRY_COMPARE(subtitles->count(),4); QTRY_COMPARE(delay->value(),-600);
+        QTRY_COMPARE(devices->count(),3); devices->setCurrentIndex(2);
+        subtitles->setCurrentIndex(2); QVERIFY(!start->isEnabled());
+        QTRY_COMPARE(delay->value(),800); QTRY_VERIFY(start->isEnabled());
+        subtitles->setCurrentIndex(1); delay->setValue(1200);
+        QTest::qWait(250); QCOMPARE(delay->value(),1200);
+        subtitles->setCurrentIndex(2); subtitles->setCurrentIndex(1);
+        QTRY_COMPARE(delay->value(),-600); QTest::qWait(200); QCOMPARE(delay->value(),-600);
+        window.close(); QTRY_VERIFY(!window.isVisible());
+    }
     void explicit_choices_preparation_controls_and_stop() {
         QTemporaryDir dir;
         const auto helper=dir.filePath("backend.py");
@@ -323,7 +344,7 @@ private slots:
         QCOMPARE(window.findChild<QLabel *>("selectedVideoFilename")->text(),QString("test video.mkv"));
         QVERIFY(!selected->isAncestorOf(window.findChild<QPushButton *>("openVideo")));
         screenshot(window,"selection");
-        devices->setCurrentIndex(2); subtitles->setCurrentIndex(2); QVERIFY(werp->isEnabled());
+        devices->setCurrentIndex(2); subtitles->setCurrentIndex(2); QTRY_VERIFY(werp->isEnabled());
         delay->setValue(-1500);
         QTest::mouseClick(resume,Qt::LeftButton);
         QTRY_COMPARE(progress->value(),42); QCOMPARE(pages->currentIndex(),1);
@@ -360,8 +381,8 @@ private slots:
         QVERIFY(!activeSubtitle->isVisible());
         QVERIFY(!activeReceiver->isVisible());
         QCOMPARE(window.findChild<QLabel *>("selectedVideoHeading")->text(),QString("Selected video"));
-        QVERIFY(delay->isEnabled()); QCOMPARE(delay->value(),-1500); delay->setValue(750);
-        subtitles->setCurrentIndex(3);
+        QVERIFY(delay->isEnabled()); QCOMPARE(delay->value(),-1500);
+        subtitles->setCurrentIndex(3); delay->setValue(750);
         QTest::mouseClick(werp,Qt::LeftButton); QTRY_COMPARE(starts(log).size(),2);
         QCOMPARE(starts(log).last()["position"].toDouble(),0.0);
         QCOMPARE(starts(log).last()["subtitle_delay_ms"].toInt(),750);

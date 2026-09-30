@@ -25,6 +25,7 @@ changes require a version bump. Frontends should ignore additional response fiel
 | --- | --- | --- |
 | `hello` | `version: 2` | `version`, `application` |
 | `inspect` | `file: string` | `media`, `subtitles`, `suggested_subtitles`, `subtitle_warning`, `resume_position`, `resume_warning` |
+| `get_subtitle_delay` | `file`, `subtitles` as in `start` | `subtitle_delay_ms: signed integer` |
 | `discover` | Omit params | `devices: array` from a five-second IPv4 scan |
 | `get_gui_preferences` | Optional `path` to a shared config file; omit or null for default | `last_device_id`, `conversion_auto_close`, `warnings: string[]` |
 | `set_gui_last_device` | `device_id: string` | `last_device_id` |
@@ -77,6 +78,12 @@ Error codes are `invalid_request`, `protocol_version`, `busy`, `operation_failed
 `config_error`, `state_error`, and `not_playing`.
 Malformed input can produce a null response ID when no ID can be recovered.
 Display the message; do not parse its prose to drive frontend behavior.
+
+`get_subtitle_delay` is a read-only per-video/subtitle lookup. Missing or expired
+state returns zero; unreadable state fails the query. It does not select or
+prepare subtitles. Frontends discard stale responses after file, subtitle or
+manual delay changes. Successful playback saves the supplied delay for that
+pair; completion retains it.
 
 ## Inspection and discovery data
 
