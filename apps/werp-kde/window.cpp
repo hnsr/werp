@@ -231,9 +231,7 @@ void Window::connectSignals() {
     });
     connect(m_browse,&QPushButton::clicked,this,[this] {
         const auto path = QFileDialog::getOpenFileName(this,i18n("Choose subtitles"),m_directory,i18n("Subtitles (*.srt *.vtt *.ass *.ssa);;All files (*)"));
-        if (path.isEmpty()) return;
-        addSubtitle(m_subtitles,i18n("External: %1",QFileInfo(path).fileName()),payload({{"kind","external"},{"path",path}}));
-        m_subtitles->setCurrentIndex(m_subtitles->count()-1);
+        if (!path.isEmpty()) selectSubtitleFile(path);
     });
     connect(m_subtitles,&QComboBox::currentIndexChanged,this,[this] { if (m_inspected) loadSubtitleDelay(); });
     connect(m_subtitleDelay,qOverload<int>(&QSpinBox::valueChanged),this,[this] { ++m_delayGeneration; m_delayLoading=false; refreshActions(); if (m_session && m_subtitleChangeable) m_subtitleTimer->start(); });
@@ -381,6 +379,22 @@ void Window::loadSubtitleDelay() {
         if (m_session && m_subtitleChangeable) m_subtitleTimer->start();
     });
 }
+bool Window::canSelectSubtitles() const {
+    return m_inspected && m_backend.ready() && (m_activity==Activity::Idle ||
+        ((m_activity==Activity::Playing || m_activity==Activity::Paused) && m_subtitleChangeable && !m_subtitleUpdating));
+}
+void Window::selectSubtitleFile(const QString &path) {
+    if (!canSelectSubtitles()) return;
+    const auto canonical=QFileInfo(path).canonicalFilePath();
+    if (canonical.isEmpty() || !QFileInfo(canonical).isFile()) { showError(i18n("Choose a local subtitle file.")); return; }
+    const auto data=payload({{"kind","external"},{"path",canonical}});
+    int index=m_subtitles->findData(data);
+    if (index<0) { addSubtitle(m_subtitles,i18n("External: %1",QFileInfo(canonical).fileName()),data); index=m_subtitles->count()-1; }
+    const bool same=index==m_subtitles->currentIndex();
+    m_forceSubtitleUpdate=m_session!=0;
+    m_subtitles->setCurrentIndex(index);
+    if (same) loadSubtitleDelay();
+}
 void Window::restoreActiveSubtitles() {
     const QSignalBlocker subtitlesBlocker(m_subtitles), delayBlocker(m_subtitleDelay);
     const int index=m_subtitles->findData(m_activeSubtitleData);
@@ -391,7 +405,8 @@ void Window::applySubtitleChange() {
     if (!m_session || !m_subtitleChangeable || m_subtitleUpdating || m_delayLoading || (m_activity!=Activity::Playing && m_activity!=Activity::Paused)) return;
     const auto selection=m_subtitles->currentData().toString();
     const auto text=m_subtitles->currentText(); const int delay=m_subtitleDelay->value();
-    if (selection==m_activeSubtitleData && delay==m_activeDelay) return;
+    if (selection==m_activeSubtitleData && delay==m_activeDelay && !m_forceSubtitleUpdate) return;
+    m_forceSubtitleUpdate=false;
     const auto session=m_session;
     m_subtitleUpdating=true; refreshActions(); showError({});
     m_backend.request("set_subtitles",{{"session_id",session},{"subtitles",QJsonDocument::fromJson(selection.toUtf8()).object()},{"subtitle_delay_ms",delay}},[this,session,selection,text,delay](const QJsonObject &reply) {
@@ -437,8 +452,7 @@ void Window::refreshActions() {
     const bool idle=m_activity == Activity::Idle && m_backend.ready();
     m_discoveryProgress->setVisible(m_discovering);
     m_devices->setItemText(0,m_discovering ? i18n("Searching for devices…") : i18n("Choose a device…"));
-    const bool live=(m_activity==Activity::Playing || m_activity==Activity::Paused) && m_subtitleChangeable && !m_subtitleUpdating;
-    const bool subtitlesEnabled=m_inspected && (idle || live);
+    const bool subtitlesEnabled=canSelectSubtitles();
     m_choices->setVisible(m_activity!=Activity::Starting && m_activity!=Activity::Preparing && m_activity!=Activity::Stopping && m_activity!=Activity::Closing);
     for (int i=0; i<m_subtitles->count(); ++i) {
         const bool supported=!m_subtitles->itemData(i,Qt::UserRole+3).isValid() || m_subtitles->itemData(i,Qt::UserRole+3).toBool();
@@ -493,7 +507,7 @@ void Window::handleEvent(const QJsonObject &message) {
     if (m_activity == Activity::Closing) return;
     if (message["session_id"].toInteger()!=m_session || !m_session) return;
     if (message["event"]=="ended") {
-        m_subtitleTimer->stop(); m_subtitleUpdating=false; ++m_delayGeneration; m_delayLoading=false;
+        m_subtitleTimer->stop(); m_subtitleUpdating=false; m_forceSubtitleUpdate=false; ++m_delayGeneration; m_delayLoading=false;
         m_activity=Activity::Idle; m_session=0; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); m_pause->setEnabled(true); m_selectedVideo->setPlaybackDetails({},{});
         m_mpris.clear();
         if (!message["error"].isNull()) showError(message["error"].toString());
@@ -525,26 +539,38 @@ void Window::handleEvent(const QJsonObject &message) {
     } else if (phase=="stopping") { m_activity=Activity::Stopping; m_mpris.clear(); m_togglePlayback->setEnabled(false); m_prepareLabel->setText(i18n("Stopping and cleaning up…")); m_cancel->setEnabled(false); }
     refreshActions();
 }
-static QString droppedVideo(const QMimeData *data) {
+static QString droppedLocalFile(const QMimeData *data) {
     const auto urls=data->urls();
     if (urls.size()!=1 || !urls.first().isLocalFile()) return {};
     const auto path=urls.first().toLocalFile();
-    if (!QFileInfo(path).isFile()) return {};
-    const auto mime=QMimeDatabase().mimeTypeForFile(path,QMimeDatabase::MatchExtension).name();
-    return mime.startsWith("video/") ? path : QString();
+    return QFileInfo(path).isFile() ? path : QString();
+}
+static bool isSubtitleFile(const QString &path) {
+    const auto extension=QFileInfo(path).suffix().toLower();
+    return extension=="srt" || extension=="vtt" || extension=="ass" || extension=="ssa";
+}
+static bool isVideoFile(const QString &path) {
+    return QMimeDatabase().mimeTypeForFile(path,QMimeDatabase::MatchExtension).name().startsWith("video/");
 }
 void Window::dragEnterEvent(QDragEnterEvent *event) {
-    if (!busy() && event->possibleActions().testFlag(Qt::CopyAction) && !droppedVideo(event->mimeData()).isEmpty()) { event->setDropAction(Qt::CopyAction); event->accept(); }
+    const auto path=droppedLocalFile(event->mimeData());
+    const bool accepted=!path.isEmpty() && ((canSelectSubtitles() && isSubtitleFile(path)) || (!busy() && isVideoFile(path)));
+    if (accepted && event->possibleActions().testFlag(Qt::CopyAction)) { event->setDropAction(Qt::CopyAction); event->accept(); }
     else event->ignore();
 }
 void Window::dragMoveEvent(QDragMoveEvent *event) {
-    if (!busy() && event->possibleActions().testFlag(Qt::CopyAction) && !droppedVideo(event->mimeData()).isEmpty()) { event->setDropAction(Qt::CopyAction); event->accept(); }
+    const auto path=droppedLocalFile(event->mimeData());
+    const bool accepted=!path.isEmpty() && ((canSelectSubtitles() && isSubtitleFile(path)) || (!busy() && isVideoFile(path)));
+    if (accepted && event->possibleActions().testFlag(Qt::CopyAction)) { event->setDropAction(Qt::CopyAction); event->accept(); }
     else event->ignore();
 }
 void Window::dropEvent(QDropEvent *event) {
-    const auto path=droppedVideo(event->mimeData());
-    if (busy() || path.isEmpty() || !event->possibleActions().testFlag(Qt::CopyAction)) { event->ignore(); return; }
-    openFile(path); event->setDropAction(Qt::CopyAction); event->accept();
+    const auto path=droppedLocalFile(event->mimeData());
+    if (path.isEmpty() || !event->possibleActions().testFlag(Qt::CopyAction)) { event->ignore(); return; }
+    if (canSelectSubtitles() && isSubtitleFile(path)) selectSubtitleFile(path);
+    else if (!busy() && isVideoFile(path)) openFile(path);
+    else { event->ignore(); return; }
+    event->setDropAction(Qt::CopyAction); event->accept();
 }
 void Window::closeEvent(QCloseEvent *event) {
     if (m_canClose) { event->accept(); return; }
