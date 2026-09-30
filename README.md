@@ -1,7 +1,7 @@
 # Werp
 
-Native GUI application (currently only Qt/KDE) for casting videos to a Chromecast-compatible
-receiver.
+Native desktop application (currently Qt/KDE, macOS and GTK/Gnome are next) for casting
+videos to a Chromecast-compatible receiver.
 
 ## Features
 
