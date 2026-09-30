@@ -11,9 +11,6 @@ bindings and lets other native frontends reuse the [versioned protocol](backend-
 The core owns media/Cast/lifecycle logic; the UI owns presentation and choices.
 See [project decisions](plan.md#decisions-and-rationale).
 
-The user confirmed initial KDE playback and subsequent UI improvements. Future
-playback issues are handled as bugs; there is no pending manual acceptance checklist.
-
 ## Player interaction
 
 Opening a video or dropping one local file on the idle player does not start
@@ -31,11 +28,12 @@ playback. The selected-video panel stays visible through all three states:
    to choices. Quit/Ctrl+Q/window close cancels active work and waits for helper exit.
 
 The last-used eligible device is restored after discovery. Subtitles default to
-English then Dutch using shared ranking, then exact-name SRT fallback. Unsupported
-tracks are skipped; ambiguous sidecars leave None selected with a warning. The
+English then Dutch using the [shared selection rules](subtitles.md#selection),
+then exact-name SRT fallback. Unsupported tracks are skipped; ambiguous sidecars leave None selected with a warning. The
 combined list also includes matching VTT/ASS/SSA; an explicit picker file need
 not match the video name. Manual choices survive stop/restart of the same video.
-CLI preferences do not change these UI defaults.
+CLI preferences do not change these UI defaults. See the [subtitle guide](subtitles.md)
+for supported formats, rendering and limitations.
 
 **Cast** starts at zero; **Cast from last position** appears when a usable
 checkpoint exists. The UI saves progress but never resumes implicitly.

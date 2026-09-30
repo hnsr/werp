@@ -97,4 +97,4 @@ See the [CLI guide](docs/cli.md) for commands, options, subtitle selection and r
 - Subtitle handling:
   - Advanced ASS styling and external bitmap files remain limited.
   - DVD/VobSub and DVB image subtitles are not supported (embedded PGS burn-in is supported)
-  - See [subtitles](docs/cli.md).
+  - See [subtitles](docs/subtitles.md).

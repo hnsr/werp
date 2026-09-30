@@ -33,27 +33,14 @@ Configuration paths, defaults and settings are in the [configuration reference](
 Device capabilities use the separate [device database](device-compatibility.md).
 GUI interaction is covered in the [GUI guide](gui.md).
 
-## Subtitle selection and rendering
+## Subtitles
 
-With automatic loading enabled, Werp first looks for a supported embedded
-track matching the ordered language preferences, then an exact-basename `.srt`
-beside the real source file. If necessary it also checks beside a supplied alias.
-The extension is case-insensitive; the basename must match exactly. Multiple
-matching sidecars produce an explicit-selection error. Unrelated SRTs and language
-variants with different basenames are not guessed.
-
-Within the first matching language, prefer full dialogue over forced/signs-only
-tracks, text over image tracks, non-SDH/CC over accessibility tracks, then a
-default track, then the lowest stream index. The selected file/index is printed.
-Forced/SDH tracks remain selectable and can be chosen automatically if they are
-the best available match. Metadata language tags take precedence over track names;
-names are a fallback only for missing/undefined language tags.
-
-English aliases include `en`, `eng`, `English`, and region variants such as
-`en-GB`/`en_US`. Dutch aliases include `nl`, `nld`, `dut`, `Dutch`, `Nederlands`,
-`Flemish`, and `Vlaams`. User preferences and otherwise untagged titles also accept
-UK/GB as English shorthand. A media language tag `uk` is Ukrainian and is never
-treated as English. Other preferred languages are currently rejected in config.
+Automatic selection is enabled by default, using English then Dutch. Configure
+`cli.subtitles.auto_load` and `cli.subtitles.languages` in
+[`config.toml`](configuration.md) to change this behavior. These preferences apply
+only to the CLI. The selected file or stream index is printed before playback.
+See the [shared subtitle guide](subtitles.md) for selection rules, supported
+formats, rendering and limitations.
 
 Overrides are mutually exclusive:
 
@@ -64,35 +51,9 @@ Overrides are mutually exclusive:
 | `--no-subtitles` | Disable subtitles for this session |
 | `--auto-subtitles` | Enable automatic selection even if disabled in config |
 
-Embedded text (including SubRip, MP4 `mov_text`, ASS/SSA, and WebVTT) is extracted
-from the original source and served as a temporary WebVTT track. Video need not
-be re-encoded. External SRT, WebVTT, ASS, and SSA are supported in UTF-8 or
-BOM-marked UTF-16. Conversion/extraction needs FFmpeg; external WebVTT does not.
-Empty timed cues are skipped during preparation without modifying the original
-file. Invalid timestamps and files with no non-empty cues still produce an error.
 Use `--subtitle-delay-ms 1500` to show captions 1.5 seconds later, or
-`--subtitle-delay-ms -1500` to show them earlier. The default is zero. The GUI
-selection screen offers the same setting as **Subtitle delay**, in milliseconds.
-It applies when playback starts, including resume, and changes subtitle timing
-without shifting audio or video. Text cues crossing the beginning are clipped to
-zero; cues ending before or at zero are dropped. If none remain, playback proceeds
-without a subtitle track. Originals are never modified. Image subtitle burn-in
-also respects the delay and uses a separate cache recipe for each offset.
-ASS/SSA conversion warns that advanced fonts, positioning, and effects are lost;
-this is readable caption support, not faithful ASS rendering.
-
-Embedded PGS image subtitles use FFmpeg overlay and full video conversion.
-They are permanently visible in that prepared video; they cannot be toggled off
-on the receiver. Automatic mode selects full conversion and explains why. An
-explicit Direct/Remux/Audio mode fails rather than violating its no-video-encoding
-constraint. Selecting another track or disabling subtitles uses a distinct cache
-recipe, so an output with burned captions is never reused for a different choice.
-PGS burn-in passed local rendered-frame verification and user-confirmed TV
-playback. External image-subtitle files and OCR are not implemented.
-Burn-in on HDR-tagged sources uses experimental video transcoding without tone
-mapping; audio-track limits still apply.
-
-Further subtitle expansion is considered when a real file exposes a gap.
+`--subtitle-delay-ms -1500` to show them earlier. The default is zero; see
+[delay behavior](subtitles.md#subtitle-delay).
 
 ## Device selection
 
