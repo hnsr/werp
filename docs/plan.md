@@ -95,8 +95,7 @@ manual acceptance checklist; reproduce and investigate issues as they arise.
 
 - Reconnection only if it can safely reattach to the same owned session; never
   blindly relaunch the video.
-- GUI settings window, single-instance behavior and subtitle
-  switching during playback. Window-close cleanup and Dolphin integration exist.
+- GUI settings window, single-instance behavior. Window-close cleanup and Dolphin integration exist.
 - Stronger model identification/individual-device rules; exact aliases already
   work and matching changes were explicitly deferred.
 - Cache eviction, duplicate-generation cleanup and crash-leftover collection.

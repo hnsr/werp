@@ -35,6 +35,7 @@ changes require a version bump. Frontends should ignore additional response fiel
 | `cancel_conversion` | `operation_id` | Empty object after conversion cleanup |
 | `pause`, `play` | `session_id` | Empty object after receiver acknowledgement |
 | `seek` | `session_id`, `position` | Empty object after receiver acknowledgement |
+| `set_subtitles` | `session_id`, `subtitles`, `subtitle_delay_ms` | Empty object after the receiver acknowledges reload |
 | `stop` | `session_id` | Empty object after session cleanup |
 | `shutdown` | Omit params | Empty object after cleanup; helper exits |
 
@@ -52,7 +53,7 @@ source stream index, not the index in the returned subtitle array.
 `subtitle_delay_ms` is a signed 32-bit integer, defaulting to zero. Positive values
 show subtitles later and negative values earlier, on the full video timeline
 (including resume/seek). It applies to prepared text tracks and image burn-in;
-it cannot be changed during an active session.
+live text updates use `set_subtitles`. Image burn-in cannot change during playback.
 
 ```json
 {"id":4,"method":"start","params":{"file":"/path/to/video.mkv","device_id":"example-device-id","subtitles":{"kind":"embedded","index":2},"subtitle_delay_ms":-500,"position":0}}
@@ -84,6 +85,19 @@ state returns zero; unreadable state fails the query. It does not select or
 prepare subtitles. Frontends discard stale responses after file, subtitle or
 manual delay changes. Successful playback saves the supplied delay for that
 pair; completion retains it.
+
+`set_subtitles` accepts an explicit text selection or None while playing, paused
+or buffering. Both the subtitle selection and signed delay are required. It
+prepares a fresh WebVTT snapshot, rechecks ownership and position, then reloads
+the same video URL with the receiver's pause/play state. Each snapshot has a new
+registered URL so old timing is not served from receiver caches. It does not
+reconvert video or restart from zero. Preparation errors leave the active track
+in place; receiver reload/transport failure ends the session with cleanup.
+Image selections and sessions using burned-in subtitles reject live changes.
+The state field `subtitles_changeable` is false for burned-in sessions and true
+otherwise. Acknowledgement confirms reload, with subsequent snapshots confirming
+playable state and track activation. Commands and temporary snapshots remain
+session scoped; stop, EOF and shutdown cancel and await subtitle preparation.
 
 ## Inspection and discovery data
 

@@ -4,6 +4,7 @@ import json, os, sys, threading, tomllib
 from pathlib import Path
 lock = threading.Lock()
 session, position, phase, timer = 0, 0, "playing", None
+subtitle_changeable=True
 def emit(value):
     with lock:
         print(json.dumps(value), flush=True)
@@ -11,7 +12,7 @@ def state(phase_value=None, fraction=None):
     emit({"event":"state","session_id":session,"state":{
         "phase":phase_value or phase,"position_seconds":position,"duration_seconds":120,
         "preparation_operation":"Transcoding","preparation_fraction":fraction,
-        "message":"Preparing video" if fraction else None,"notices":[]}})
+        "message":"Preparing video" if fraction else None,"notices":[],"subtitles_changeable":subtitle_changeable}})
 def conversion_formats(params):
     source={"container":"matroska","streams":[{"kind":"video","codec":"hevc","profile":"Main 10","width":1920,"height":1080},{"kind":"audio","codec":"ac3","channels":6}]}
     planned={"container":"mp4","streams":[{"kind":"video","codec":"h264","profile":"High"},{"kind":"audio","codec":"aac","profile":"LC","channels":2}]}
@@ -36,6 +37,8 @@ for line in sys.stdin:
                 {"kind":"embedded","index":2,"codec":"subrip","language":"eng","title":"English","supported":True},
                 {"kind":"embedded","index":3,"codec":"subrip","language":"dut","title":"Dutch","supported":True},
                 {"kind":"external","path":str(Path(params["file"]).with_suffix(".srt")),"supported":True}]}
+        if "bitmap" in params["file"]:
+            result["subtitles"].append({"kind":"embedded","index":4,"codec":"hdmv_pgs_subtitle","supported":True,"burn_in":True})
     elif method=="get_subtitle_delay":
         result={"subtitle_delay_ms":0}
         custom=Path(__file__+".delays.json")
@@ -109,12 +112,17 @@ for line in sys.stdin:
     elif method=="start":
         session+=1
         position, phase = params["position"], "playing"
+        subtitle_changeable = params["subtitles"].get("index") != 4
         emit({"id":request["id"],"ok":True,"result":{"session_id":session}})
         state("preparing",0.42)
         timer=threading.Timer(0.8,state)
         timer.daemon=True
         timer.start()
         continue
+    elif method=="set_subtitles":
+        if params["subtitles"].get("kind")=="external" and "invalid" in params["subtitles"].get("path",""):
+            emit({"id":request["id"],"ok":False,"error":{"message":"Invalid subtitle file"}}); continue
+        emit({"id":request["id"],"ok":True,"result":{}}); state(); continue
     elif method in ("pause","play","seek"):
         if method=="pause": phase="paused"
         elif method=="play": phase="playing"

@@ -47,6 +47,7 @@ struct Envelope {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
     Complete,
+    Live,
     Transient,
     Reject,
     Disconnect,
@@ -85,6 +86,10 @@ struct Transcript {
     receiver_polls: usize,
     start_position: f64,
     controls: Vec<String>,
+    load_positions: Vec<f64>,
+    autoplay: Vec<bool>,
+    subtitle_snapshots: Vec<Vec<u8>>,
+    subtitle_urls: Vec<String>,
 }
 
 fn status(url: &str, state: &str, tracks: bool) -> Value {
@@ -174,6 +179,19 @@ async fn receiver_at(
                 "LOAD" => {
                     log.loads += 1;
                     log.start_position = payload["currentTime"].as_f64().unwrap();
+                    log.load_positions.push(log.start_position);
+                    log.autoplay.push(payload["autoplay"].as_bool().unwrap());
+                    if mode == Mode::Live {
+                        state = if payload["autoplay"] == false {
+                            "PAUSED"
+                        } else {
+                            "PLAYING"
+                        };
+                        if log.loads > 1 {
+                            assert_eq!(payload["media"]["contentId"], log.url);
+                        }
+                    }
+                    tracks = false;
                     log.url = payload["media"]["contentId"].as_str().unwrap().into();
                     loaded.store(true, Ordering::Release);
                     if mode == Mode::Reject {
@@ -188,6 +206,8 @@ async fn receiver_at(
                             assert_eq!(payload["activeTrackIds"], json!([1]));
                             if mode != Mode::MissingSubtitles {
                                 log.subtitles = Some(download(url, "text/vtt").await);
+                                log.subtitle_snapshots.push(log.subtitles.clone().unwrap());
+                                log.subtitle_urls.push(url.to_owned());
                             }
                             tracks = true;
                         } else {
@@ -257,7 +277,7 @@ async fn receiver_at(
                                 "IDLE"
                             } else if mode == Mode::Transient && log.polls == 2 {
                                 "BUFFERING"
-                            } else if mode == Mode::Hold {
+                            } else if matches!(mode, Mode::Hold | Mode::Live) {
                                 state
                             } else {
                                 "PLAYING"
@@ -279,7 +299,10 @@ async fn receiver_at(
                     }
                 }
                 "PAUSE" | "PLAY" | "SEEK" => {
-                    assert_eq!(payload["mediaSessionId"], 7);
+                    assert_eq!(
+                        payload["mediaSessionId"],
+                        if mode == Mode::Live { 6 + log.loads } else { 7 }
+                    );
                     log.controls.push(payload["type"].as_str().unwrap().into());
                     match payload["type"].as_str().unwrap() {
                         "PAUSE" => state = "PAUSED",
@@ -298,7 +321,30 @@ async fn receiver_at(
             if let Some(entries) = reply.get_mut("status").and_then(Value::as_array_mut) {
                 for entry in entries {
                     entry["currentTime"] = json!(position);
+                    if mode == Mode::Live {
+                        entry["mediaSessionId"] = json!(6 + log.loads);
+                    }
                 }
+            }
+            if mode == Mode::Live && payload["type"] == "LOAD" && log.loads > 1 {
+                let mut old = status(&log.url, "IDLE", false);
+                old["mediaSessionId"] = json!(5 + log.loads);
+                old["idleReason"] = json!("INTERRUPTED");
+                send(
+                    &mut stream,
+                    &Envelope {
+                        protocol_version: 0,
+                        source_id: message.destination_id.clone(),
+                        destination_id: message.source_id.clone(),
+                        namespace: message.namespace.clone(),
+                        payload_type: 0,
+                        payload_utf8: Some(
+                            json!({"type":"MEDIA_STATUS","status":[old]}).to_string(),
+                        ),
+                    },
+                )
+                .await
+                .unwrap();
             }
             if let Some(id) = payload.get("requestId") {
                 reply["requestId"] = id.clone();
@@ -806,7 +852,7 @@ async fn session_covers_completion_transient_idle_errors_takeover_and_cancellati
                 // Allow the simulated receiver to finish its HTTP fetch before cancellation.
                 tokio::time::sleep(Duration::from_millis(30)).await;
                 token.cancel();
-            } else if mode == Mode::Hold {
+            } else if matches!(mode, Mode::Hold | Mode::Live) {
                 loop {
                     if updates.borrow_and_update().phase == Phase::Playing {
                         token.cancel();
@@ -1278,4 +1324,241 @@ async fn controlled_session_pauses_plays_seeks_and_stops_with_cleanup() {
         .next()
         .unwrap();
     assert!(TcpStream::connect(host).await.is_err());
+}
+
+#[tokio::test]
+async fn live_text_updates_preserve_video_position_pause_state_and_cleanup() {
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("movie.mp4");
+    fs::write(&video, "original video").unwrap();
+    let first = dir.path().join("first.vtt");
+    fs::write(&first, "WEBVTT\n\n00:00.000 --> 00:02.000\nFirst\n").unwrap();
+    let second = dir.path().join("second.vtt");
+    fs::write(&second, "WEBVTT\n\n00:00.000 --> 00:02.000\nSecond\n").unwrap();
+    let mut metadata: Value = serde_json::from_str(include_str!("fixtures/h264.json")).unwrap();
+    metadata["streams"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"index":2,"codec_type":"subtitle","codec_name":"hdmv_pgs_subtitle"}));
+    metadata["format"]["duration"] = json!("120.0");
+    let (address, receiver) = receiver_at(Mode::Live, Arc::new(AtomicBool::new(false)), 40.0).await;
+    let mut request = CastRequest::new(video.clone());
+    request.target = Some(Target::Host(address));
+    request.inhibit_sleep = false;
+    request.save_position = false;
+    request.subtitle_offset_directory = Some(dir.path().join("offsets"));
+    request.probe.executable = fake_probe(dir.path(), &metadata.to_string());
+    request.ffmpeg = dir.path().join("must-not-run-ffmpeg");
+    let (progress, mut updates) = watch::channel(SessionState::default());
+    let (controller, commands) = session::control_channel();
+    let cancel = CancellationToken::new();
+    let session_cancel = cancel.clone();
+    let task = tokio::spawn(async move {
+        session::run_controlled(request, progress, &session_cancel, commands).await
+    });
+    async fn wait_phase(updates: &mut watch::Receiver<SessionState>, phase: Phase) {
+        while updates.borrow_and_update().phase != phase {
+            updates.changed().await.unwrap();
+        }
+    }
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        wait_phase(&mut updates, Phase::Playing),
+    )
+    .await
+    .unwrap();
+    let change = |subtitles, delay_ms| session::Control::SetSubtitles {
+        subtitles,
+        delay_ms,
+    };
+    controller
+        .command(change(
+            werp_core::subtitles::Request::External(first.clone()),
+            750,
+        ))
+        .await
+        .unwrap();
+    controller.command(session::Control::Pause).await.unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        wait_phase(&mut updates, Phase::Paused),
+    )
+    .await
+    .unwrap();
+    controller
+        .command(change(
+            werp_core::subtitles::Request::External(second),
+            -500,
+        ))
+        .await
+        .unwrap();
+    assert!(
+        controller
+            .command(change(
+                werp_core::subtitles::Request::External(dir.path().join("invalid.vtt")),
+                0
+            ))
+            .await
+            .is_err()
+    );
+    assert!(
+        controller
+            .command(change(werp_core::subtitles::Request::Embedded(2), 0))
+            .await
+            .is_err()
+    );
+    controller
+        .command(change(werp_core::subtitles::Request::Off, 0))
+        .await
+        .unwrap();
+    controller
+        .command(session::Control::Seek(55.0))
+        .await
+        .unwrap();
+    cancel.cancel();
+    assert!(matches!(task.await.unwrap(), Err(WerpError::Cancelled)));
+    let log = receiver.await.unwrap();
+    assert_eq!(log.loads, 4);
+    assert_eq!(log.load_positions, vec![0.0, 40.0, 40.0, 40.0]);
+    assert_eq!(log.autoplay, vec![true, true, false, false]);
+    assert_eq!(log.stops, vec![10]);
+    assert_ne!(log.subtitle_urls[0], log.subtitle_urls[1]);
+    assert!(
+        String::from_utf8_lossy(&log.subtitle_snapshots[0])
+            .contains("00:00:00.750 --> 00:00:02.750")
+    );
+    assert!(
+        String::from_utf8_lossy(&log.subtitle_snapshots[1])
+            .contains("00:00:00.000 --> 00:00:01.500")
+    );
+    let info = werp_core::media::MediaInfo {
+        path: video.clone(),
+        container: "mp4".into(),
+        duration_seconds: Some(120.0),
+        streams: vec![],
+    };
+    assert_eq!(
+        werp_core::subtitle_offsets::load(
+            &info,
+            &werp_core::subtitles::Request::External(first),
+            Some(&dir.path().join("offsets"))
+        )
+        .await
+        .unwrap(),
+        750
+    );
+    assert_eq!(fs::read(video).unwrap(), b"original video");
+    let host = log
+        .url
+        .strip_prefix("http://")
+        .unwrap()
+        .split('/')
+        .next()
+        .unwrap();
+    assert!(TcpStream::connect(host).await.is_err());
+}
+
+#[tokio::test]
+async fn cancelling_live_subtitle_preparation_reaps_encoder_and_keeps_one_video_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("movie.mp4");
+    fs::write(&video, "video").unwrap();
+    let subtitle = dir.path().join("captions.srt");
+    fs::write(&subtitle, "1\n00:00:00,000 --> 00:00:02,000\nHello\n").unwrap();
+    let encoder = dir.path().join("encoder");
+    fs::write(&encoder, "#!/bin/sh\necho $$ > \"$0.pid\"\nexec sleep 60\n").unwrap();
+    fs::set_permissions(&encoder, fs::Permissions::from_mode(0o700)).unwrap();
+    let (address, receiver) = receiver(Mode::Hold, Arc::new(AtomicBool::new(false))).await;
+    let mut request = CastRequest::new(video);
+    request.target = Some(Target::Host(address));
+    request.inhibit_sleep = false;
+    request.save_position = false;
+    request.probe.executable = fake_probe(dir.path(), include_str!("fixtures/h264.json"));
+    request.ffmpeg = encoder.clone();
+    request.subtitle_offset_directory = Some(dir.path().join("offsets"));
+    let (progress, mut updates) = watch::channel(SessionState::default());
+    let (controller, commands) = session::control_channel();
+    let cancel = CancellationToken::new();
+    let session_cancel = cancel.clone();
+    let task = tokio::spawn(async move {
+        session::run_controlled(request, progress, &session_cancel, commands).await
+    });
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while updates.borrow_and_update().phase != Phase::Playing {
+            updates.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    let update = tokio::spawn(async move {
+        controller
+            .command(session::Control::SetSubtitles {
+                subtitles: werp_core::subtitles::Request::External(subtitle),
+                delay_ms: 0,
+            })
+            .await
+    });
+    let pid_file = encoder.with_extension("pid");
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !pid_file.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let pid = fs::read_to_string(pid_file).unwrap();
+    cancel.cancel();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(3), task)
+            .await
+            .unwrap()
+            .unwrap(),
+        Err(WerpError::Cancelled)
+    ));
+    assert!(update.await.unwrap().is_err());
+    assert!(!Path::new(&format!("/proc/{}", pid.trim())).exists());
+    let log = receiver.await.unwrap();
+    assert_eq!(log.loads, 1);
+    assert_eq!(log.stops, vec![7]);
+}
+
+#[tokio::test]
+async fn live_update_rechecks_ownership_and_does_not_reload_or_stop_a_foreign_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("movie.mp4");
+    fs::write(&video, "video").unwrap();
+    let (address, receiver) = receiver(Mode::Takeover, Arc::new(AtomicBool::new(false))).await;
+    let mut request = CastRequest::new(video);
+    request.target = Some(Target::Host(address));
+    request.inhibit_sleep = false;
+    request.save_position = false;
+    request.probe.executable = fake_probe(dir.path(), include_str!("fixtures/h264.json"));
+    request.subtitle_offset_directory = Some(dir.path().join("offsets"));
+    let (progress, mut updates) = watch::channel(SessionState::default());
+    let (controller, commands) = session::control_channel();
+    let cancel = CancellationToken::new();
+    let task =
+        tokio::spawn(
+            async move { session::run_controlled(request, progress, &cancel, commands).await },
+        );
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while updates.borrow_and_update().phase != Phase::Playing {
+            updates.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        controller
+            .command(session::Control::SetSubtitles {
+                subtitles: werp_core::subtitles::Request::Off,
+                delay_ms: 0
+            })
+            .await
+            .is_err()
+    );
+    assert!(task.await.unwrap().is_err());
+    let log = receiver.await.unwrap();
+    assert_eq!(log.loads, 1);
+    assert!(log.stops.is_empty());
 }

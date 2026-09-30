@@ -83,6 +83,11 @@ enum Command {
         session_id: u64,
         position: f64,
     },
+    SetSubtitles {
+        session_id: u64,
+        subtitles: Subtitle,
+        subtitle_delay_ms: i32,
+    },
     Stop {
         session_id: u64,
     },
@@ -487,6 +492,7 @@ async fn run(args: Args) -> Result<(), String> {
                                 Command::Pause { session_id } => (session_id,Some(Control::Pause)),
                                 Command::Play { session_id } => (session_id,Some(Control::Play)),
                                 Command::Seek { session_id, position } => (session_id,Some(Control::Seek(position))),
+                                Command::SetSubtitles { session_id, subtitles, subtitle_delay_ms } => (session_id,Some(Control::SetSubtitles { subtitles: subtitles.request(), delay_ms: subtitle_delay_ms })),
                                 Command::Stop { session_id } => (session_id,None),
                                 _ => unreachable!(),
                             };

@@ -7,7 +7,7 @@
 class QShortcut; class QDragEnterEvent; class QDragMoveEvent; class QDropEvent;
 class QComboBox; class QLabel; class QPushButton; class QSlider; class QProgressBar; class QStackedWidget;
 class SelectedVideoPanel;
-class QSpinBox;
+class QSpinBox; class QTimer;
 
 class Window : public QMainWindow {
     Q_OBJECT
@@ -27,6 +27,8 @@ private:
     void inspect();
     void discover();
     void loadSubtitleDelay();
+    void applySubtitleChange();
+    void restoreActiveSubtitles();
     void startPlayback(bool resume);
     void stopPlayback();
     void handleEvent(const QJsonObject &message);
@@ -46,6 +48,11 @@ private:
     bool m_inspected = false, m_dragging = false, m_delayLoading = false;
     bool m_autoDiscover;
     bool m_discovering = false, m_canClose = false, m_applySuggestedSubtitle = true;
+    bool m_subtitleChangeable = true, m_subtitleUpdating = false;
+    QString m_activeSubtitleData, m_activeSubtitleText;
+    int m_activeDelay = 0;
+    QTimer *m_subtitleTimer;
+    QWidget *m_choices;
     QStackedWidget *m_pages;
     SelectedVideoPanel *m_selectedVideo;
     QLabel *m_error, *m_prepareLabel, *m_time;

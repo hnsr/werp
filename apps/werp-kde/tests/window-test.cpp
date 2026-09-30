@@ -306,6 +306,20 @@ private slots:
         QTRY_COMPARE(delay->value(),-600); QTest::qWait(200); QCOMPARE(delay->value(),-600);
         window.close(); QTRY_VERIFY(!window.isVisible());
     }
+    void burned_in_sessions_disable_live_subtitle_controls() {
+        QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        Window window(helper,dir.filePath("bitmap.mp4")); window.show();
+        auto *subtitles=window.findChild<QComboBox *>("subtitles");
+        auto *delay=window.findChild<QSpinBox *>("subtitleDelay"); auto *start=window.findChild<QPushButton *>("werp");
+        auto *devices=window.findChild<QComboBox *>("devices");
+        QTRY_COMPARE(subtitles->count(),5); QTRY_COMPARE(devices->count(),3);
+        devices->setCurrentIndex(2); subtitles->setCurrentIndex(4); QTRY_VERIFY(start->isEnabled());
+        QTest::mouseClick(start,Qt::LeftButton); QTRY_COMPARE(window.findChild<QStackedWidget *>("pages")->currentIndex(),2);
+        QVERIFY(!subtitles->isEnabled()); QVERIFY(!delay->isEnabled()); QVERIFY(!window.findChild<QPushButton *>("browseSubtitles")->isEnabled());
+        window.close(); QTRY_VERIFY(!window.isVisible());
+    }
     void explicit_choices_preparation_controls_and_stop() {
         QTemporaryDir dir;
         const auto helper=dir.filePath("backend.py");
@@ -356,6 +370,7 @@ private slots:
         QVERIFY(!delay->isEnabled());
         QCOMPARE(starts(log).last()["subtitles"].toObject()["index"].toInt(),3);
         QTRY_COMPARE(pages->currentIndex(),2);
+        QTRY_VERIFY(subtitles->isEnabled()); QVERIFY(delay->isEnabled());
         QCOMPARE(activeSubtitle->text(),subtitles->currentText());
         QVERIFY(activeSubtitle->text().contains("Track 3"));
         QVERIFY(activeSubtitle->isVisible());
@@ -376,6 +391,14 @@ private slots:
         QCOMPARE(pages->currentIndex(),2);
         seek->setValue(50000); QVERIFY(QMetaObject::invokeMethod(seek,"sliderReleased",Qt::DirectConnection));
         QTest::keyClick(seek,Qt::Key_Space); QTRY_COMPARE(pause->text(),QString("Pause"));
+        subtitles->setCurrentIndex(1); delay->setValue(900);
+        QTRY_VERIFY([&] { for (const auto &call:calls(log)) if (call["method"]=="set_subtitles") return true; return false; }());
+        QTRY_VERIFY(subtitles->isEnabled());
+        QCOMPARE(activeSubtitle->text(),subtitles->currentText());
+        QCOMPARE(starts(log).size(),1);
+        subtitles->setCurrentIndex(2); delay->setValue(-1500);
+        QTRY_VERIFY([&] { int n=0; for (const auto &call:calls(log)) if (call["method"]=="set_subtitles") ++n; return n>=2; }());
+        QTRY_VERIFY(subtitles->isEnabled());
         QTest::mouseClick(window.findChild<QPushButton *>("stop"),Qt::LeftButton);
         QTRY_COMPARE(pages->currentIndex(),0); QTRY_VERIFY(werp->isEnabled()); QCOMPARE(subtitles->currentIndex(),2);
         QVERIFY(!activeSubtitle->isVisible());
