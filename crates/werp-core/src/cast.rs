@@ -41,6 +41,7 @@ pub struct CastSession {
     app: Option<Application>,
     media_id: Option<i64>,
     content_id: Option<String>,
+    loaded_metadata: Option<(String, String)>,
 }
 
 pub(crate) async fn bounded<T>(
@@ -81,6 +82,7 @@ impl CastSession {
             app: None,
             media_id: None,
             content_id: None,
+            loaded_metadata: None,
         })
     }
 
@@ -169,6 +171,7 @@ impl CastSession {
             .ok_or_else(|| WerpError::Cast("receiver has not launched".into()))?;
         // Remember content before LOAD: cancellation may race with its reply.
         self.content_id = Some(video.into());
+        self.loaded_metadata = Some((content_type.into(), title.into()));
         self.media_id = None;
         let response = self
             .request(
@@ -184,6 +187,39 @@ impl CastSession {
                 ),
                 cancel,
             )
+            .await?;
+        self.adopt_status(&response)
+    }
+
+    /// Reload the same owned video with fresh text-track URLs and playback state.
+    pub async fn reload_subtitles(
+        &mut self,
+        subtitles: Option<&str>,
+        position: f64,
+        autoplay: bool,
+        cancel: &CancellationToken,
+    ) -> Result<Option<PlaybackSnapshot>, WerpError> {
+        let app = self
+            .app
+            .as_ref()
+            .ok_or_else(|| WerpError::Cast("receiver has not launched".into()))?;
+        if self.media_id.is_none() {
+            return Err(WerpError::Cast("no owned media session".into()));
+        }
+        let video = self.content_id.as_ref().unwrap();
+        let (content_type, title) = self.loaded_metadata.as_ref().unwrap();
+        let mut payload = load_payload(
+            &app.session_id,
+            video,
+            content_type,
+            subtitles,
+            title,
+            position,
+        );
+        payload["autoplay"] = json!(autoplay);
+        self.media_id = None;
+        let response = self
+            .request(MEDIA, &app.transport_id, payload, cancel)
             .await?;
         self.adopt_status(&response)
     }

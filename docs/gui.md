@@ -22,8 +22,9 @@ playback. The selected-video panel stays visible through all three states:
 2. **Preparation:** conversion/remux progress and Cancel; probing, subtitle work,
    connection and loading use an indeterminate indicator. Direct/cache-hit paths
    pass through this state briefly.
-3. **Playing:** the selected-video panel shows the active subtitle track or external
-   filename. Position, seek slider, pause/play and stop are aligned at the bottom.
+3. **Playing:** the shared subtitle selector, file picker and delay control remain
+   available for text subtitles. The selected-video panel shows the active track
+   or external filename. Position, seek slider, pause/play and stop are aligned at the bottom.
    Space toggles pause/play without key-repeat. Stop waits for cleanup and returns
    to choices. Quit/Ctrl+Q/window close cancels active work and waits for helper exit.
 
@@ -39,9 +40,13 @@ See the [subtitle guide](subtitles.md) for supported formats, rendering and limi
 checkpoint exists. The UI saves progress but never resumes implicitly.
 **Subtitle delay** is in signed milliseconds: positive later, negative earlier.
 It restores the saved offset for each video/subtitle pair and survives stop/restart.
-It is fixed for each session,
-including burn-in. Subtitle selection/delay cannot change during preparation or
-playback. Multiple-file, directory, remote-URL and active-session drops are ignored.
+Text selection and delay can change while playing or paused. Changes prepare a
+fresh subtitle track and briefly reload the existing video at its current
+position, preserving pause/play state and avoiding video conversion. Invalid
+replacement subtitles leave the active choice in place. Burned-in image subtitles
+require stopping and starting with another choice; their live controls are disabled.
+Subtitle controls are unavailable during initial preparation. Multiple-file,
+directory, remote-URL and active-session drops are ignored.
 
 ## Preferences and saved state
 
@@ -112,5 +117,4 @@ options. Both apps do use the same [device override file](device-compatibility.m
 Build, local installation, development flags and automated checks are in
 [DEVELOPMENT.md](../DEVELOPMENT.md).
 
-Subtitle switching during playback, a settings window, single-instance
-behavior, packaging and additional native frontends remain in [the roadmap](plan.md).
+A settings window, single-instance behavior, packaging and additional native frontends remain in [the roadmap](plan.md).

@@ -1,15 +1,22 @@
 //! Session-scoped HTTP serving of explicitly selected media and subtitle files.
 use std::{
+    collections::HashMap,
     net::{IpAddr, SocketAddr},
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, RwLock,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 
-use axum::{Router, http::Method, middleware};
+use axum::{
+    Router,
+    http::{Method, StatusCode},
+    middleware,
+    response::IntoResponse,
+    routing::get,
+};
 use tokio::{
     net::{TcpListener, UdpSocket},
     task::{JoinHandle, JoinSet},
@@ -21,12 +28,24 @@ use tower_http::{
 
 use crate::{CancellationToken, WerpError};
 
+#[derive(Clone)]
+pub struct SubtitleResource {
+    pub url: String,
+    pub requests: Arc<AtomicU64>,
+}
+#[derive(Clone)]
+struct RegisteredSubtitle {
+    path: PathBuf,
+    requests: Arc<AtomicU64>,
+}
 pub struct MediaServer {
     pub video_url: String,
     pub subtitle_url: Option<String>,
     pub requests: Arc<AtomicU64>,
     pub video_requests: Arc<AtomicU64>,
     pub subtitle_requests: Arc<AtomicU64>,
+    subtitle_base: String,
+    subtitle_registry: Arc<RwLock<HashMap<String, RegisteredSubtitle>>>,
     cancel: CancellationToken,
     task: JoinHandle<Result<(), std::io::Error>>,
 }
@@ -79,6 +98,34 @@ impl MediaServer {
                 ServeFile::new_with_mime(subtitles, &"text/vtt".parse().unwrap()),
             );
         }
+        let subtitle_registry = Arc::new(RwLock::new(HashMap::<String, RegisteredSubtitle>::new()));
+        let registry = subtitle_registry.clone();
+        let router = router.route(
+            &format!("/{token}/subtitles/{{generation}}"),
+            get(move |request: axum::extract::Request| {
+                let registry = registry.clone();
+                async move {
+                    let key = request.uri().path().rsplit('/').next().unwrap_or_default();
+                    let entry = registry.read().unwrap().get(key).cloned();
+                    let Some(entry) = entry else {
+                        return StatusCode::NOT_FOUND.into_response();
+                    };
+                    let is_get = request.method() == Method::GET;
+                    match ServeFile::new_with_mime(&entry.path, &"text/vtt".parse().unwrap())
+                        .try_call(request)
+                        .await
+                    {
+                        Ok(response) => {
+                            if is_get && response.status().is_success() {
+                                entry.requests.fetch_add(1, Ordering::Relaxed);
+                            }
+                            response.into_response()
+                        }
+                        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                    }
+                }
+            }),
+        );
         let router = router
             .layer(
                 CorsLayer::new()
@@ -155,11 +202,47 @@ impl MediaServer {
             requests,
             video_requests,
             subtitle_requests,
+            subtitle_base: format!("http://{address}/{token}/subtitles/"),
+            subtitle_registry,
             cancel,
             task,
         })
     }
 
+    /// Register only a prepared snapshot; fresh URLs prevent cached old cue timing.
+    pub async fn register_subtitles(&self, path: &Path) -> Result<SubtitleResource, WerpError> {
+        if !tokio::fs::metadata(path)
+            .await
+            .map_err(|e| WerpError::Serve(e.to_string()))?
+            .is_file()
+        {
+            return Err(WerpError::NotRegularFile(path.into()));
+        }
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random).map_err(|e| WerpError::Serve(e.to_string()))?;
+        let key: String = random
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+            + ".vtt";
+        let requests = Arc::new(AtomicU64::new(0));
+        self.subtitle_registry.write().unwrap().insert(
+            key.clone(),
+            RegisteredSubtitle {
+                path: path.to_owned(),
+                requests: requests.clone(),
+            },
+        );
+        Ok(SubtitleResource {
+            url: format!("{}{key}", self.subtitle_base),
+            requests,
+        })
+    }
+    pub fn unregister_subtitles(&self, url: &str) {
+        if let Some(key) = url.strip_prefix(&self.subtitle_base) {
+            self.subtitle_registry.write().unwrap().remove(key);
+        }
+    }
     pub fn is_finished(&self) -> bool {
         self.task.is_finished()
     }

@@ -112,6 +112,7 @@ pub struct SessionState {
     pub message: Option<String>,
     /// Durable preparation decisions, retained even when progress updates coalesce.
     pub notices: Vec<String>,
+    pub subtitles_changeable: bool,
 }
 
 impl Default for SessionState {
@@ -124,6 +125,7 @@ impl Default for SessionState {
             preparation_fraction: None,
             message: None,
             notices: Vec::new(),
+            subtitles_changeable: true,
         }
     }
 }
@@ -149,11 +151,15 @@ fn notice(progress: &watch::Sender<SessionState>, message: String) {
     progress.send_modify(|state| state.notices.push(message));
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Control {
     Pause,
     Play,
     Seek(f64),
+    SetSubtitles {
+        subtitles: subtitles::Request,
+        delay_ms: i32,
+    },
 }
 
 pub struct ControlRequest {
@@ -263,6 +269,7 @@ pub async fn run_controlled(
             selected = subtitles::select(&request.subtitles, &info, &request.file, &subtitle_preferences) => selected?,
         };
         let bitmap_index = match &subtitle { Some(subtitles::Selection::Bitmap { index }) => Some(*index), _ => None };
+        progress.send_modify(|state| state.subtitles_changeable = bitmap_index.is_none());
         if request.force_direct && bitmap_index.is_some() {
             return Err(WerpError::Subtitles("--force-direct cannot burn in image subtitles; choose a text track or --no-subtitles".into()));
         }
@@ -402,9 +409,13 @@ pub async fn run_controlled(
         let mut last_active = Instant::now();
         let mut reached_playable = false;
         let mut offset_saved = false;
-        let loaded_at = Instant::now();
+        let mut loaded_at = Instant::now();
+        let mut active_subtitle_url = serving.subtitle_url.clone();
+        let mut active_subtitle_requests = serving.subtitle_requests.clone();
+        let mut active_subtitles = request.subtitles.clone();
+        let mut active_delay_ms = request.subtitle_delay_ms;
         let mut tracks_enabled = false;
-        let mut subtitle_confirmed = serving.subtitle_url.is_none();
+        let mut subtitle_confirmed = active_subtitle_url.is_none();
         let mut controls_open = true;
         loop {
             if cancel.is_cancelled() {
@@ -417,7 +428,7 @@ pub async fn run_controlled(
             }
             let mut phase = Phase::Loading;
             if let Some(status) = &current {
-                if status.player_state != "IDLE" && serving.subtitle_url.is_some() && !tracks_enabled {
+                if status.player_state != "IDLE" && active_subtitle_url.is_some() && !tracks_enabled {
                     current = Some(
                         cast.command("EDIT_TRACKS_INFO", json!({"activeTrackIds":[1]}), cancel)
                             .await?,
@@ -442,7 +453,7 @@ pub async fn run_controlled(
                                 "receiver never confirmed the requested subtitle track".into(),
                             ));
                         }
-                        require_subtitle_fetch(serving)?;
+                        require_subtitle_fetch(active_subtitle_url.as_deref(), &active_subtitle_requests)?;
                         completed_naturally = true;
                         return Ok(());
                     }
@@ -480,7 +491,7 @@ pub async fn run_controlled(
             }
             if !offset_saved && matches!(phase, Phase::Playing | Phase::Paused) {
                 offset_saved = true;
-                if let Err(error) = crate::subtitle_offsets::save(&info, &request.subtitles, request.subtitle_delay_ms, request.subtitle_offset_directory.as_deref()).await {
+                if let Err(error) = crate::subtitle_offsets::save(&info, &active_subtitles, active_delay_ms, request.subtitle_offset_directory.as_deref()).await {
                     tracing::warn!(%error, "Could not save subtitle offset; casting continues");
                     notice(&progress, format!("Could not save subtitle offset: {error}"));
                 }
@@ -498,7 +509,7 @@ pub async fn run_controlled(
                 ));
             }
             if subtitle_confirmed && loaded_at.elapsed() > Duration::from_secs(10) {
-                require_subtitle_fetch(serving)?;
+                require_subtitle_fetch(active_subtitle_url.as_deref(), &active_subtitle_requests)?;
             }
             report(
                 &progress,
@@ -511,7 +522,49 @@ pub async fn run_controlled(
                 _ = cancel.cancelled() => return Err(WerpError::Cancelled),
                 command = controls.recv(), if controls_open => {
                     if let Some(command) = command {
+                        if let Control::SetSubtitles { subtitles: selection, delay_ms } = &command.command {
+                            if bitmap_index.is_some() {
+                                let _ = command.reply.send(Err("burned-in image subtitles cannot be changed during playback".into())); continue;
+                            }
+                            let mut replacement = match prepare_text_subtitles(&info, selection, &request, *delay_ms, cancel).await {
+                                Ok(value) => value,
+                                Err(WerpError::Cancelled) => return Err(WerpError::Cancelled),
+                                Err(error) => { let _ = command.reply.send(Err(error.to_string())); continue; }
+                            };
+                            let resource = if let Some(captions) = &replacement {
+                                match serving.register_subtitles(&captions.path).await {
+                                    Ok(resource) => Some(resource),
+                                    Err(error) => { let _ = command.reply.send(Err(error.to_string())); continue; }
+                                }
+                            } else { None };
+                            // Recheck ownership and position after extraction, since the
+                            // receiver keeps playing while the replacement is prepared.
+                            let status = match cast.status(cancel).await {
+                                Ok(Some(status)) if matches!(status.player_state.as_str(), "PLAYING" | "PAUSED" | "BUFFERING") => status,
+                                Ok(status) => {
+                                    if let Some(resource) = &resource { serving.unregister_subtitles(&resource.url); }
+                                    current = status;
+                                    let _ = command.reply.send(Err("receiver is no longer playing".into())); continue;
+                                }
+                                Err(error) => { let _ = command.reply.send(Err(error.to_string())); return Err(error); }
+                            };
+                            let url = resource.as_ref().map(|r| r.url.as_str());
+                            match cast.reload_subtitles(url, status.current_time, status.player_state != "PAUSED", cancel).await {
+                                Ok(status) => current = status,
+                                Err(error) => { let _ = command.reply.send(Err(error.to_string())); return Err(error); }
+                            }
+                            if let Some(old_url) = &active_subtitle_url { serving.unregister_subtitles(old_url); }
+                            if let Some(old) = prepared.take() { old.close()?; }
+                            prepared = replacement.take();
+                            active_subtitle_url = resource.as_ref().map(|r| r.url.clone());
+                            active_subtitle_requests = resource.map_or_else(|| std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)), |r| r.requests);
+                            active_subtitles = selection.clone(); active_delay_ms = *delay_ms;
+                            subtitle_confirmed = active_subtitle_url.is_none(); tracks_enabled = false;
+                            loaded_at = Instant::now(); last_active = loaded_at; offset_saved = false;
+                            let _ = command.reply.send(Ok(())); continue;
+                        }
                         let (kind, extra) = match command.command {
+                            Control::SetSubtitles { .. } => unreachable!(),
                             Control::Pause => ("PAUSE", json!({})),
                             Control::Play => ("PLAY", json!({})),
                             Control::Seek(position) => {
@@ -588,8 +641,52 @@ pub async fn run_controlled(
     result
 }
 
-fn require_subtitle_fetch(server: &MediaServer) -> Result<(), WerpError> {
-    if server.subtitle_url.is_some() && server.subtitle_requests.load(Ordering::Relaxed) == 0 {
+async fn prepare_text_subtitles(
+    info: &media::MediaInfo,
+    selection: &subtitles::Request,
+    request: &CastRequest,
+    delay_ms: i32,
+    cancel: &CancellationToken,
+) -> Result<Option<subtitles::PreparedSubtitles>, WerpError> {
+    if matches!(selection, subtitles::Request::Auto) {
+        return Err(WerpError::Subtitles(
+            "an explicit subtitle choice is required".into(),
+        ));
+    }
+    let preferences = crate::config::SubtitlePreferences {
+        auto_load: false,
+        languages: vec![],
+    };
+    let selection = tokio::select! {
+        _ = cancel.cancelled() => return Err(WerpError::Cancelled),
+        selected = subtitles::select(selection, info, &request.file, &preferences) => selected?,
+    };
+    let prepared = match selection {
+        None => return Ok(None),
+        Some(subtitles::Selection::External(path)) => {
+            subtitles::prepare(&path, &request.ffmpeg, cancel).await?
+        }
+        Some(subtitles::Selection::Text { index, .. }) => {
+            subtitles::extract(info, index, &request.ffmpeg, cancel).await?
+        }
+        Some(subtitles::Selection::Bitmap { .. }) => {
+            return Err(WerpError::Subtitles(
+                "only text subtitles can be selected during playback".into(),
+            ));
+        }
+    };
+    if !prepared.apply_delay(delay_ms, cancel).await? {
+        prepared.close()?;
+        return Ok(None);
+    }
+    Ok(Some(prepared))
+}
+
+fn require_subtitle_fetch(
+    url: Option<&str>,
+    requests: &std::sync::atomic::AtomicU64,
+) -> Result<(), WerpError> {
+    if url.is_some() && requests.load(Ordering::Relaxed) == 0 {
         return Err(WerpError::Subtitles(
             "receiver activated the track but no successful subtitle GET reached the host; check receiver text-track support and HTTP reachability".into(),
         ));

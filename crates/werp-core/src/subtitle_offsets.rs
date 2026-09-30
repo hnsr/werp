@@ -124,7 +124,7 @@ pub async fn load(info: &MediaInfo, subtitle: &Request, root: Option<&Path>) -> 
         Err(e) => Err(e),
     }
 }
-/// Atomic last-writer-wins save. Zero removes the preference; other offsets survive completion.
+/// Atomic save under a nonblocking store lock; busy state yields a warning to the caller. Zero removes the preference; other offsets survive completion.
 pub async fn save(
     info: &MediaInfo,
     subtitle: &Request,
@@ -134,15 +134,10 @@ pub async fn save(
     let Some(path) = location(info, subtitle, root).await? else {
         return Ok(());
     };
-    if delay_ms == 0 {
-        match fs::remove_file(&path) {
-            Ok(()) => (),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => (),
-            Err(e) => return Err(e),
-        }
+    let directory = path.parent().unwrap();
+    if delay_ms == 0 && !directory.exists() {
         return Ok(());
     }
-    let directory = path.parent().unwrap();
     let mut builder = fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
@@ -151,6 +146,23 @@ pub async fn save(
         builder.mode(0o700);
     }
     builder.create(directory)?;
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let lock = options.open(directory.join("state.lock"))?;
+    lock.try_lock().map_err(io::Error::other)?;
+    if delay_ms == 0 {
+        match fs::remove_file(&path) {
+            Ok(()) => (),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => (),
+            Err(e) => return Err(e),
+        }
+        return Ok(());
+    }
     let mut file = tempfile::NamedTempFile::new_in(directory)?;
     file.write_all(
         &serde_json::to_vec(&Record {

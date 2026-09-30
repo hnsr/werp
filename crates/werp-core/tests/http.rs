@@ -72,6 +72,33 @@ async fn serves_selected_resources_ranges_head_and_subtitle_cors() {
     assert!(options.contains("access-control-allow-methods: GET,HEAD,OPTIONS"));
     let wrong = server.video_url.replace("video.mp4", "../../etc/passwd");
     assert!(request(&wrong, "GET", "").await.starts_with("HTTP/1.1 404"));
+    let updated = server.register_subtitles(&subtitles).await.unwrap();
+    let updated_range = request(
+        &updated.url,
+        "GET",
+        "Range: bytes=0-5\r\nOrigin: https://www.gstatic.com\r\n",
+    )
+    .await;
+    assert!(updated_range.starts_with("HTTP/1.1 206"));
+    assert!(updated_range.contains("access-control-allow-origin: *"));
+    assert_eq!(
+        updated.requests.load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
+    let unknown = updated
+        .url
+        .replace(updated.url.rsplit('/').next().unwrap(), "unregistered.vtt");
+    assert!(
+        request(&unknown, "GET", "")
+            .await
+            .starts_with("HTTP/1.1 404")
+    );
+    server.unregister_subtitles(&updated.url);
+    assert!(
+        request(&updated.url, "GET", "")
+            .await
+            .starts_with("HTTP/1.1 404")
+    );
     let address = server
         .video_url
         .strip_prefix("http://")

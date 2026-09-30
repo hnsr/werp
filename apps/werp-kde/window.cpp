@@ -103,7 +103,10 @@ void Window::setupUi() {
     startupLayout->setContentsMargins(0,0,0,0);
     auto *form = new QFormLayout;
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    startupLayout->addLayout(form);
+    m_choices = new QWidget;
+    auto *choicesLayout = new QVBoxLayout(m_choices); choicesLayout->setContentsMargins(0,0,0,0);
+    choicesLayout->addLayout(form);
+    layout->insertWidget(layout->indexOf(m_pages),m_choices);
     m_devices = new QComboBox;
     m_devices->setObjectName("devices");
     m_devices->addItem(i18n("Choose a device…"),"");
@@ -127,12 +130,16 @@ void Window::setupUi() {
     m_subtitles->addItem(i18n("None"),payload({{"kind","none"}}));
     form->addRow(i18n("Subtitles:"),m_subtitles);
     m_browse = new QPushButton(i18n("Choose subtitle file…"));
+    m_browse->setObjectName("browseSubtitles");
     form->addRow("",m_browse);
     m_subtitleDelay = new QSpinBox;
     m_subtitleDelay->setObjectName("subtitleDelay");
     m_subtitleDelay->setRange(std::numeric_limits<int>::min(),std::numeric_limits<int>::max());
     m_subtitleDelay->setSingleStep(100);
-    m_subtitleDelay->setToolTip(i18n("Positive values show subtitles later; negative values show them earlier. Applies when playback starts."));
+    m_subtitleDelay->setKeyboardTracking(false);
+    m_subtitleDelay->setToolTip(i18n("Positive values show subtitles later; negative values show them earlier."));
+    m_subtitleTimer = new QTimer(this); m_subtitleTimer->setSingleShot(true); m_subtitleTimer->setInterval(300);
+    connect(m_subtitleTimer,&QTimer::timeout,this,&Window::applySubtitleChange);
     auto *delayRow = new QHBoxLayout;
     delayRow->addWidget(m_subtitleDelay);
     delayRow->addWidget(new QLabel(i18n("ms")));
@@ -229,7 +236,7 @@ void Window::connectSignals() {
         m_subtitles->setCurrentIndex(m_subtitles->count()-1);
     });
     connect(m_subtitles,&QComboBox::currentIndexChanged,this,[this] { if (m_inspected) loadSubtitleDelay(); });
-    connect(m_subtitleDelay,qOverload<int>(&QSpinBox::valueChanged),this,[this] { ++m_delayGeneration; m_delayLoading=false; refreshActions(); });
+    connect(m_subtitleDelay,qOverload<int>(&QSpinBox::valueChanged),this,[this] { ++m_delayGeneration; m_delayLoading=false; refreshActions(); if (m_session && m_subtitleChangeable) m_subtitleTimer->start(); });
     connect(m_refresh,&QPushButton::clicked,this,&Window::discover);
     connect(m_retry,&QPushButton::clicked,&m_backend,&Backend::start);
     connect(m_devices,&QComboBox::currentIndexChanged,this,&Window::refreshActions);
@@ -331,6 +338,8 @@ void Window::inspect() {
                 text=i18n("External: %1",QFileInfo(choice.path).fileName());
             }
             addSubtitle(m_subtitles,text,payload(data));
+            m_subtitles->setItemData(m_subtitles->count()-1,choice.burnIn,Qt::UserRole+2);
+            m_subtitles->setItemData(m_subtitles->count()-1,choice.supported,Qt::UserRole+3);
             if (!choice.supported) {
                 if (auto *model=qobject_cast<QStandardItemModel *>(m_subtitles->model())) model->item(m_subtitles->count()-1)->setEnabled(false);
             }
@@ -355,6 +364,7 @@ void Window::inspect() {
     });
 }
 void Window::loadSubtitleDelay() {
+    m_subtitleTimer->stop();
     const QSignalBlocker blocker(m_subtitleDelay);
     m_subtitleDelay->setValue(0);
     m_delayLoading=true; refreshActions();
@@ -365,9 +375,33 @@ void Window::loadSubtitleDelay() {
     m_backend.request("get_subtitle_delay",{{"file",m_file},{"subtitles",choice}},[this,revision,generation,selected](const QJsonObject &reply) {
         if (revision!=m_delayGeneration || generation!=m_generation || selected!=m_subtitles->currentData().toString() || m_activity==Activity::Closing) return;
         m_delayLoading=false; refreshActions();
-        if (!check(reply)) return;
+        if (!check(reply)) { if (m_session) restoreActiveSubtitles(); return; }
         const QSignalBlocker blocker(m_subtitleDelay);
         m_subtitleDelay->setValue(Protocol::Reply(reply).result()["subtitle_delay_ms"].toInt());
+        if (m_session && m_subtitleChangeable) m_subtitleTimer->start();
+    });
+}
+void Window::restoreActiveSubtitles() {
+    const QSignalBlocker subtitlesBlocker(m_subtitles), delayBlocker(m_subtitleDelay);
+    const int index=m_subtitles->findData(m_activeSubtitleData);
+    if (index>=0) m_subtitles->setCurrentIndex(index);
+    m_subtitleDelay->setValue(m_activeDelay);
+}
+void Window::applySubtitleChange() {
+    if (!m_session || !m_subtitleChangeable || m_subtitleUpdating || m_delayLoading || (m_activity!=Activity::Playing && m_activity!=Activity::Paused)) return;
+    const auto selection=m_subtitles->currentData().toString();
+    const auto text=m_subtitles->currentText(); const int delay=m_subtitleDelay->value();
+    if (selection==m_activeSubtitleData && delay==m_activeDelay) return;
+    const auto session=m_session;
+    m_subtitleUpdating=true; refreshActions(); showError({});
+    m_backend.request("set_subtitles",{{"session_id",session},{"subtitles",QJsonDocument::fromJson(selection.toUtf8()).object()},{"subtitle_delay_ms",delay}},[this,session,selection,text,delay](const QJsonObject &reply) {
+        if (session!=m_session || m_activity==Activity::Closing) return;
+        m_subtitleUpdating=false;
+        if (check(reply)) {
+            m_activeSubtitleData=selection; m_activeSubtitleText=text; m_activeDelay=delay;
+            m_selectedVideo->setPlaybackDetails(text,m_devices->currentData(Qt::UserRole+1).toString());
+        } else restoreActiveSubtitles();
+        refreshActions();
     });
 }
 void Window::discover() {
@@ -403,9 +437,17 @@ void Window::refreshActions() {
     const bool idle=m_activity == Activity::Idle && m_backend.ready();
     m_discoveryProgress->setVisible(m_discovering);
     m_devices->setItemText(0,m_discovering ? i18n("Searching for devices…") : i18n("Choose a device…"));
-    m_subtitleDelay->setEnabled(idle && m_inspected);
-    m_open->setEnabled(m_activity == Activity::Idle); m_devices->setEnabled(idle && !m_discovering); m_subtitles->setEnabled(idle && m_inspected);
-    m_browse->setEnabled(idle && m_inspected);
+    const bool live=(m_activity==Activity::Playing || m_activity==Activity::Paused) && m_subtitleChangeable && !m_subtitleUpdating;
+    const bool subtitlesEnabled=m_inspected && (idle || live);
+    m_choices->setVisible(m_activity!=Activity::Starting && m_activity!=Activity::Preparing && m_activity!=Activity::Stopping && m_activity!=Activity::Closing);
+    for (int i=0; i<m_subtitles->count(); ++i) {
+        const bool supported=!m_subtitles->itemData(i,Qt::UserRole+3).isValid() || m_subtitles->itemData(i,Qt::UserRole+3).toBool();
+        const bool allowed=supported && (idle || !m_subtitles->itemData(i,Qt::UserRole+2).toBool());
+        if (auto *model=qobject_cast<QStandardItemModel *>(m_subtitles->model())) model->item(i)->setEnabled(allowed);
+    }
+    m_subtitleDelay->setEnabled(subtitlesEnabled);
+    m_open->setEnabled(m_activity == Activity::Idle); m_devices->setEnabled(idle && !m_discovering); m_subtitles->setEnabled(subtitlesEnabled);
+    m_browse->setEnabled(subtitlesEnabled);
     const bool canStart=idle && !m_delayLoading && !m_discovering && m_inspected && !m_devices->currentData().toString().isEmpty();
     m_start->setEnabled(canStart); m_resumeButton->setVisible(m_resume>=0); m_resumeButton->setEnabled(canStart && m_resume>=0);
     m_mpris.setCanPlay(canStart || m_activity == Activity::Paused || m_activity == Activity::Playing);
@@ -415,6 +457,8 @@ void Window::refreshActions() {
 void Window::startPlayback(bool resume) {
     if (!m_inspected || m_delayLoading || busy() || m_devices->currentData().toString().isEmpty()) return;
     m_selectedVideo->setPlaybackDetails({},{});
+    m_activeSubtitleData=m_subtitles->currentData().toString(); m_activeSubtitleText=m_subtitles->currentText(); m_activeDelay=m_subtitleDelay->value();
+    m_subtitleChangeable=true;
     m_activity=Activity::Starting; showError({}); m_prepareLabel->setText(i18n("Preparing playback…")); m_progress->setRange(0,0);
     m_mpris.setCanPlay(false);
     m_cancel->setEnabled(false); m_pages->setCurrentIndex(1); refreshActions();
@@ -439,7 +483,7 @@ void Window::sendControl(const QString &method,QJsonObject params) {
 }
 void Window::stopPlayback() {
     if (!m_session) return;
-    m_activity=Activity::Stopping;
+    m_activity=Activity::Stopping; m_subtitleTimer->stop(); ++m_delayGeneration; m_delayLoading=false; refreshActions();
     m_mpris.clear();
     m_togglePlayback->setEnabled(false);
     m_stop->setEnabled(false); m_cancel->setEnabled(false); m_pause->setEnabled(false); m_seek->setEnabled(false);
@@ -449,15 +493,17 @@ void Window::handleEvent(const QJsonObject &message) {
     if (m_activity == Activity::Closing) return;
     if (message["session_id"].toInteger()!=m_session || !m_session) return;
     if (message["event"]=="ended") {
+        m_subtitleTimer->stop(); m_subtitleUpdating=false; ++m_delayGeneration; m_delayLoading=false;
         m_activity=Activity::Idle; m_session=0; m_togglePlayback->setEnabled(false); m_pages->setCurrentIndex(0); m_pause->setEnabled(true); m_selectedVideo->setPlaybackDetails({},{});
         m_mpris.clear();
         if (!message["error"].isNull()) showError(message["error"].toString());
         inspect(); refreshActions(); return;
     }
     const auto state=message["state"].toObject(); const auto phase=state["phase"].toString();
+    m_subtitleChangeable=state["subtitles_changeable"].toBool(true);
     if (m_activity == Activity::Stopping && (phase=="playing" || phase=="paused" || phase=="buffering")) return;
     if (phase=="playing" || phase=="paused" || (phase=="buffering" && m_pages->currentIndex()==2)) {
-        m_selectedVideo->setPlaybackDetails(m_subtitles->currentText(),m_devices->currentData(Qt::UserRole+1).toString());
+        m_selectedVideo->setPlaybackDetails(m_activeSubtitleText,m_devices->currentData(Qt::UserRole+1).toString());
         m_togglePlayback->setEnabled(m_stop->isEnabled());
         m_activity=phase=="paused" ? Activity::Paused : Activity::Playing;
         m_pages->setCurrentIndex(2); m_pause->setText(m_activity == Activity::Paused ? i18n("Play") : i18n("Pause"));
@@ -477,6 +523,7 @@ void Window::handleEvent(const QJsonObject &message) {
         if (state["preparation_fraction"].isDouble()) { m_progress->setRange(0,100); m_progress->setValue(qRound(100*state["preparation_fraction"].toDouble())); }
         else m_progress->setRange(0,0);
     } else if (phase=="stopping") { m_activity=Activity::Stopping; m_mpris.clear(); m_togglePlayback->setEnabled(false); m_prepareLabel->setText(i18n("Stopping and cleaning up…")); m_cancel->setEnabled(false); }
+    refreshActions();
 }
 static QString droppedVideo(const QMimeData *data) {
     const auto urls=data->urls();
