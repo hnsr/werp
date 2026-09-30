@@ -1,20 +1,24 @@
 # Preferences, subtitles, device selection, and resume
 
-Current CLI preferences and shared subtitle/resume behavior. GUI choices and
+Shared settings, CLI preferences and subtitle/resume behavior. GUI choices and
 independent defaults are described in the [GUI guide](gui.md).
 
 ## Configuration
 
 Werp reads `$XDG_CONFIG_HOME/werp/config.toml`, falling back to
 `~/.config/werp/config.toml` when XDG_CONFIG_HOME is unset or not absolute.
-A missing default file uses built-in defaults. `--config PATH` selects an explicit
-file; a missing explicit file is an error. `--no-config` uses built-in defaults.
+A missing default file uses built-in defaults. For the CLI, `--config PATH` selects
+an explicit file; a missing explicit file is an error. `--no-config` uses built-in
+defaults.
 Malformed values and unknown keys are errors, so spelling mistakes do not silently
 change behavior. CLI overrides take precedence over file preferences.
 
 See [the example TOML](config.example.toml). Supported settings:
 
 ```toml
+# Shared by GUI and CLI casting. Zero lets the OS choose an available port.
+http_port = 0
+
 [cli.subtitles]
 auto_load = true
 languages = ["en", "nl"]
@@ -26,14 +30,21 @@ preferred = ["Living Room", "Bedroom"]
 auto_resume = true
 ```
 
+Set the top-level `http_port` to a port from 1 through 65535 (for example, 8010)
+when an existing firewall rule requires a fixed port. The default is 0 for
+OS assignment. The CLI's `--http-port PORT` overrides this setting, including
+`--http-port 0` to request an OS-assigned port. The GUI helper reads the shared
+setting when starting playback; convert-only and inspection do not use it.
+
 Device capabilities are configured separately in the optional
 [model database overlay](device-compatibility.md#user-overrides), shared by
 CLI and GUI casting. Global `[compatibility]` flags are removed and rejected.
-`--no-config` ignores both CLI preferences and local model overrides, retaining
-bundled rules. `--config PATH` changes only CLI preferences; the model overlay
-stays in the default XDG location. Explicit CLI profiles bypass model overrides.
-The GUI helper does not read CLI preferences. Convert-only uses the selected
-receiver's merged model rules, or Baseline for its Broad compatibility option.
+`--no-config` ignores shared settings, CLI preferences and local model overrides,
+retaining bundled rules. `--config PATH` changes shared settings and CLI
+preferences; the model overlay stays in the default XDG location. Explicit CLI
+profiles bypass model overrides. The GUI helper does not apply the `[cli.*]`
+preferences. Convert-only uses the selected receiver's merged model rules, or
+Baseline for its Broad compatibility option.
 
 ## Subtitle selection and rendering
 

@@ -2,6 +2,71 @@
 use std::{fs, net::TcpListener, os::unix::fs::PermissionsExt, process::Command};
 
 #[test]
+fn shared_http_port_and_cli_overrides_reach_the_media_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_dir = dir.path().join("config/werp");
+    fs::create_dir_all(&config_dir).unwrap();
+    let config = config_dir.join("config.toml");
+    let alternate = dir.path().join("alternate.toml");
+    let video = dir.path().join("movie.mp4");
+    fs::write(&video, "video").unwrap();
+    let probe = dir.path().join("probe");
+    fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(
+        dir.path().join("probe.json"),
+        include_str!("../../werp-core/tests/fixtures/h264.json"),
+    )
+    .unwrap();
+    // An occupied HTTP port fails before any Cast connection. A closed local
+    // Cast port makes the OS-assigned cases terminate without contacting a TV.
+    let occupied = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = occupied.local_addr().unwrap().port();
+    let cast = TcpListener::bind("127.0.0.1:0").unwrap();
+    let cast_port = cast.local_addr().unwrap().port();
+    drop(cast);
+    let run = |extra: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_werp"))
+            .arg(&video)
+            .args([
+                "--host",
+                "127.0.0.1",
+                "--cast-port",
+                &cast_port.to_string(),
+                "--bind-address",
+                "127.0.0.1",
+                "--no-inhibit-sleep",
+                "--no-resume",
+                "--no-subtitles",
+            ])
+            .arg("--ffprobe")
+            .arg(&probe)
+            .args(extra)
+            .env("XDG_CONFIG_HOME", dir.path().join("config"))
+            .env("XDG_STATE_HOME", dir.path().join("state"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        String::from_utf8(output.stderr).unwrap()
+    };
+    let assert_refused = |stderr: String| {
+        assert!(stderr.contains("Connection refused"), "{stderr}");
+        assert!(!stderr.contains("Address already in use"), "{stderr}");
+    };
+    assert_refused(run(&[])); // Missing config defaults to OS assignment.
+    fs::write(&config, format!("http_port = {port}\n")).unwrap();
+    let stderr = run(&[]);
+    assert!(stderr.contains("Address already in use"), "{stderr}");
+    assert_refused(run(&["--http-port", "0"]));
+    assert_refused(run(&["--no-config"]));
+    fs::write(&alternate, "http_port = 0\n").unwrap();
+    assert_refused(run(&["--config", alternate.to_str().unwrap()]));
+    fs::write(&config, "http_port = 0\n").unwrap();
+    let stderr = run(&["--http-port", &port.to_string()]);
+    assert!(stderr.contains("Address already in use"), "{stderr}");
+}
+
+#[test]
 fn config_location_language_order_and_cli_subtitle_overrides() {
     let dir = tempfile::tempdir().unwrap();
     let config_dir = dir.path().join("config/werp");

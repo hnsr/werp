@@ -36,6 +36,9 @@ changes require a version bump. Frontends should ignore additional response fiel
 | `shutdown` | Omit params | Empty object after cleanup; helper exits |
 
 `start` requires `file`, `device_id`, `subtitles` and `position`; delay is optional.
+The helper reads the shared `http_port` setting from the default `config.toml`
+for each start request; a missing setting defaults to 0 (OS-assigned).
+Invalid configuration returns `config_error` before starting a session.
 `position` is seconds from the beginning; zero
 means restart. It must be finite, nonnegative, and below a known media duration.
 The device must be in this helper's latest discovery results and must have an
@@ -68,15 +71,17 @@ Errors have the form:
 ```
 
 Error codes are `invalid_request`, `protocol_version`, `busy`, `operation_failed`,
-`invalid_device`, `invalid_position`, `invalid_session`, `invalid_operation`, and `not_playing`.
+`invalid_device`, `invalid_position`, `invalid_session`, `invalid_operation`,
+`config_error`, and `not_playing`.
 Malformed input can produce a null response ID when no ID can be recovered.
 Display the message; do not parse its prose to drive frontend behavior.
 
 ## Inspection and discovery data
 
 Inspection is read-only and never starts a session or selects a device or starting position.
-It does not create checkpoint files or prepare media. The helper never loads CLI
-configuration. `resume_position` is a usable saved position, already adjusted five
+It does not create checkpoint files or prepare media. Inspection does not load
+`config.toml`; the helper uses independent subtitle defaults and GUI choices.
+`resume_position` is a usable saved position, already adjusted five
 seconds backwards, or null; `resume_warning` is null or a read error string.
 
 `suggested_subtitles` has the same shape as the `start` subtitle parameter and
@@ -198,7 +203,7 @@ helper snapshots the bundled model database merged with
 `$XDG_CONFIG_HOME/werp/devices.toml` (normally `~/.config/werp/devices.toml`).
 Invalid overrides produce `operation_failed` without starting the operation. A
 missing file retains bundled rules. Edits do not affect an active operation.
-CLI preferences are not read. Broad-compatibility conversion/preview, inspect and
-discovery do not load device overrides. The core receives a resolved policy for
+The `[cli.*]` preferences are not applied. Broad-compatibility conversion/preview,
+inspect and discovery do not load device overrides. The core receives a resolved policy for
 conversion and a database snapshot for casting, keeping configuration loading at
 the frontend boundary. See [override semantics](device-compatibility.md#user-overrides).

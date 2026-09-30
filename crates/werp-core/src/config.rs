@@ -1,4 +1,4 @@
-//! CLI preferences; device capabilities live in the separate model database.
+//! Shared settings and CLI preferences; device capabilities live separately.
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -11,6 +11,8 @@ use crate::WerpError;
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    /// Local media server port; zero lets the OS choose an available port.
+    pub http_port: u16,
     pub cli: CliPreferences,
 }
 
@@ -157,6 +159,27 @@ fn load_with<T: Default>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_http_port_defaults_and_validation() {
+        assert_eq!(parse("").unwrap().http_port, 0);
+        for port in [0, 8010, 65535] {
+            let config = parse(&format!(
+                "http_port = {port}\n[cli.playback]\nauto_resume = false"
+            ))
+            .unwrap();
+            assert_eq!(config.http_port, port);
+            assert!(!config.cli.playback.auto_resume);
+        }
+        for invalid in [
+            "http_port = -1",
+            "http_port = 65536",
+            "http_port = '8010'",
+            "http_port = 1.5",
+            "[cli]\nhttp_port = 8010",
+        ] {
+            assert!(parse(invalid).is_err(), "{invalid}");
+        }
+    }
     #[test]
     fn removed_global_compatibility_settings_are_rejected() {
         assert!(parse("[compatibility]\nallow_hevc=true").is_err());
