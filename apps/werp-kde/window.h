@@ -63,4 +63,5 @@ private:
     QProgressBar *m_progress, *m_discoveryProgress;
     QSlider *m_seek;
     QSpinBox *m_subtitleDelay;
+    QPushButton *m_applySubtitleDelay;
 };

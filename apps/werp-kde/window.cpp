@@ -136,13 +136,18 @@ void Window::setupUi() {
     m_subtitleDelay->setObjectName("subtitleDelay");
     m_subtitleDelay->setRange(std::numeric_limits<int>::min(),std::numeric_limits<int>::max());
     m_subtitleDelay->setSingleStep(100);
-    m_subtitleDelay->setKeyboardTracking(false);
+    m_subtitleDelay->setKeyboardTracking(true);
     m_subtitleDelay->setToolTip(i18n("Positive values show subtitles later; negative values show them earlier."));
     m_subtitleTimer = new QTimer(this); m_subtitleTimer->setSingleShot(true); m_subtitleTimer->setInterval(300);
     connect(m_subtitleTimer,&QTimer::timeout,this,&Window::applySubtitleChange);
     auto *delayRow = new QHBoxLayout;
     delayRow->addWidget(m_subtitleDelay);
     delayRow->addWidget(new QLabel(i18n("ms")));
+    m_applySubtitleDelay = new QPushButton(i18n("Apply"));
+    m_applySubtitleDelay->setObjectName("applySubtitleDelay");
+    m_applySubtitleDelay->setAutoDefault(false);
+    m_applySubtitleDelay->setToolTip(i18n("Apply the subtitle delay to the current playback."));
+    delayRow->addWidget(m_applySubtitleDelay);
     delayRow->addStretch();
     form->addRow(i18n("Subtitle delay:"),delayRow);
     auto *buttons = new QHBoxLayout;
@@ -234,7 +239,13 @@ void Window::connectSignals() {
         if (!path.isEmpty()) selectSubtitleFile(path);
     });
     connect(m_subtitles,&QComboBox::currentIndexChanged,this,[this] { if (m_inspected) loadSubtitleDelay(); });
-    connect(m_subtitleDelay,qOverload<int>(&QSpinBox::valueChanged),this,[this] { ++m_delayGeneration; m_delayLoading=false; refreshActions(); if (m_session && m_subtitleChangeable) m_subtitleTimer->start(); });
+    connect(m_subtitleDelay,&QSpinBox::textChanged,this,[this] { ++m_delayGeneration; m_delayLoading=false; m_subtitleTimer->stop(); refreshActions(); });
+    connect(m_applySubtitleDelay,&QPushButton::clicked,this,[this] {
+        if (!m_subtitleDelay->hasAcceptableInput()) return;
+        m_subtitleDelay->interpretText();
+        m_subtitleTimer->stop();
+        applySubtitleChange();
+    });
     connect(m_refresh,&QPushButton::clicked,this,&Window::discover);
     connect(m_retry,&QPushButton::clicked,&m_backend,&Backend::start);
     connect(m_devices,&QComboBox::currentIndexChanged,this,&Window::refreshActions);
@@ -460,6 +471,10 @@ void Window::refreshActions() {
         if (auto *model=qobject_cast<QStandardItemModel *>(m_subtitles->model())) model->item(i)->setEnabled(allowed);
     }
     m_subtitleDelay->setEnabled(subtitlesEnabled);
+    const bool live=m_session && (m_activity==Activity::Playing || m_activity==Activity::Paused) && m_subtitleChangeable;
+    m_applySubtitleDelay->setVisible(live);
+    m_applySubtitleDelay->setEnabled(live && subtitlesEnabled && !m_delayLoading && m_subtitleDelay->hasAcceptableInput()
+        && (m_subtitleDelay->value()!=m_activeDelay || m_subtitles->currentData().toString()!=m_activeSubtitleData || m_forceSubtitleUpdate));
     m_open->setEnabled(m_activity == Activity::Idle); m_devices->setEnabled(idle && !m_discovering); m_subtitles->setEnabled(subtitlesEnabled);
     m_browse->setEnabled(subtitlesEnabled);
     const bool canStart=idle && !m_delayLoading && !m_discovering && m_inspected && !m_devices->currentData().toString().isEmpty();

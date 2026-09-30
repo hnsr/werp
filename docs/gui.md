@@ -40,9 +40,12 @@ See the [subtitle guide](subtitles.md) for supported formats, rendering and limi
 checkpoint exists. The UI saves progress but never resumes implicitly.
 **Subtitle delay** is in signed milliseconds: positive later, negative earlier.
 It restores the saved offset for each video/subtitle pair and survives stop/restart.
-Text selection and delay can change while playing or paused. Changes prepare a
-fresh subtitle track and briefly reload the existing video at its current
-position, preserving pause/play state and avoiding video conversion. Invalid
+During playing or paused playback, edit the delay and click **Apply** to submit
+it. Typing, using the arrows or leaving the delay field does not apply the change.
+Selecting another text track or subtitle file applies that choice automatically.
+Changes prepare a fresh subtitle track and briefly reload the existing video at
+its current position, preserving pause/play state and avoiding video conversion.
+Invalid
 replacement subtitles leave the active choice in place. Burned-in image subtitles
 require stopping and starting with another choice; their live controls are disabled.
 Subtitle controls are unavailable during initial preparation. Drop one local
