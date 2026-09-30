@@ -26,7 +26,7 @@ guards. Failed playback does not trigger a blind retry with encoding.
 ## User overrides
 
 Create `$XDG_CONFIG_HOME/werp/devices.toml` (normally `~/.config/werp/devices.toml`).
-It is separate from CLI preferences in `config.toml` and needs no rebuild.
+It is separate from [application preferences](configuration.md) and needs no rebuild.
 For example, to disable copied surround audio for a known model:
 
 ```toml
@@ -97,8 +97,8 @@ They are not accepted by **`werp-kde` (the current GUI)**:
 | `--profile auto` | Use bundled model rules plus user overrides (default). |
 | `--profile baseline`, `--profile extended`, `--profile experimental` | Use the explicit profile without loading user device overrides. |
 | `--host IP` | Bypass discovery/model detection and use Baseline under the automatic profile. |
-| `--no-config` | Skip CLI preferences and user device overrides; retain bundled model rules. |
-| `--config PATH` | Read CLI preferences from another file; the device-file location stays unchanged. |
+| `--no-config` | Skip application preferences and user device overrides; retain bundled model rules. |
+| `--config PATH` | Read application preferences from another file; the device-file location stays unchanged. |
 
 The GUI uses model rules automatically for its selected device. Convert-only's
 **Broad compatibility** choice uses Baseline and skips device overrides. The GUI

@@ -40,7 +40,7 @@ for dependencies, building from source, local installation and testing.
 
 Werp chooses an OS-assigned HTTP port by default. For an existing firewall rule,
 set the global `http_port = 8010` in
-[`config.toml`](docs/preferences-and-subtitles.md#configuration) for GUI and CLI
+[`config.toml`](docs/configuration.md) for GUI and CLI
 casting. The CLI also accepts `--http-port` and `--bind-address` diagnostic overrides.
 Check firewall, VPN routes, mDNS and Wi-Fi isolation if discovery or downloads
 fail. Werp never edits firewall rules.
@@ -80,43 +80,7 @@ See the [GUI guide](docs/gui.md) for interaction, launch options and settings.
 
 ### CLI
 
-```sh
-werp devices
-werp inspect /path/to/video.mkv --json
-werp /path/to/video.mkv --device "Living Room"
-werp /path/to/video.mkv --device "Living Room" --subtitles /path/to/captions.srt
-werp --help
-```
-
-`werp FILE` stays in the foreground while serving. It replaces playback on the
-selected receiver. Ctrl+C/SIGTERM cleans up owned playback, child processes,
-HTTP serving and temporary files; successful reusable outputs remain. Another
-sender's takeover ends Werp's ownership without stopping that sender's media.
-Interactive terminal playback controls remain parked; the GUI has controls.
-
-`--device` accepts an exact friendly name or ID; duplicate names require an ID.
-Without it, CLI preferences apply, then the sole eligible video receiver is chosen.
-`--host IP` bypasses IPv4 discovery and model detection. Use `--help` for diagnostic
-options, or a path such as `./devices` for filenames that match subcommands.
-
-| Options | Purpose |
-| --- | --- |
-| `--mode auto/direct/remux/audio/transcode` | Choose automatically (default), or require a preparation path |
-| `--profile auto/baseline/extended/experimental` | Model rules (default), conservative support, bounded HEVC/AAC surround, or explicit AC-3 trials |
-| `--subtitles FILE`, `--subtitle-track INDEX`, `--no-subtitles` | Override automatic subtitle selection |
-| `--subtitle-delay-ms N` | Signed delay: positive is later, negative earlier |
-| `--restart`, `--resume`, `--no-resume` | Control starting position/checkpoint behavior |
-| `--cache-dir PATH`, `--no-cache` | Override storage or disable output reuse/retention |
-| `--config PATH`, `--no-config` | Override shared settings and CLI preferences, or ignore them and local model overrides |
-
-Shared settings and CLI preferences live in `~/.config/werp/config.toml`: the HTTP
-port, automatic subtitles (English then Dutch), preferred devices and automatic
-resume. The GUI applies the global HTTP port but uses its own playback preferences.
-Device rules live separately in `devices.toml`; GUI preferences for the KDE
-frontend use `gui.toml`. XDG locations are supported. See
-[configuration and resume](docs/preferences-and-subtitles.md) and
-[device overrides](docs/device-compatibility.md#user-overrides).
-
+See the [CLI guide](docs/cli.md) for commands, options, subtitle selection and resume.
 
 ## Limitations
 
@@ -133,4 +97,4 @@ frontend use `gui.toml`. XDG locations are supported. See
 - Subtitle handling:
   - Advanced ASS styling and external bitmap files remain limited.
   - DVD/VobSub and DVB image subtitles are not supported (embedded PGS burn-in is supported)
-  - See [subtitles](docs/preferences-and-subtitles.md).
+  - See [subtitles](docs/cli.md).

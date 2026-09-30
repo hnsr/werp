@@ -1,4 +1,4 @@
-# Private frontend protocol, version 1
+# Private frontend protocol, version 2
 
 `werp-backend` is an automatically launched child process, not a user-managed
 daemon. A frontend owns its stdin/stdout pipes. UTF-8 JSON objects are delimited
@@ -13,8 +13,8 @@ Request IDs are integers from 0 through 9007199254740991 and must be unique amon
 pending requests. Responses can arrive out of order. Start with a handshake:
 
 ```json
-{"id":1,"method":"hello","params":{"version":1}}
-{"id":1,"ok":true,"result":{"version":1,"application":"werp-backend"}}
+{"id":1,"method":"hello","params":{"version":2}}
+{"id":1,"ok":true,"result":{"version":2,"application":"werp-backend"}}
 ```
 
 Incompatible versions receive `protocol_version`; no operations are accepted
@@ -23,9 +23,11 @@ changes require a version bump. Frontends should ignore additional response fiel
 
 | Method | Params | Successful result |
 | --- | --- | --- |
-| `hello` | `version: 1` | `version`, `application` |
+| `hello` | `version: 2` | `version`, `application` |
 | `inspect` | `file: string` | `media`, `subtitles`, `suggested_subtitles`, `subtitle_warning`, `resume_position`, `resume_warning` |
 | `discover` | Omit params | `devices: array` from a five-second IPv4 scan |
+| `get_gui_preferences` | Optional `path` to a shared config file; omit or null for default | `last_device_id`, `conversion_auto_close`, `warnings: string[]` |
+| `set_gui_last_device` | `device_id: string` | `last_device_id` |
 | `start` | `file`, `device_id`, `subtitles`, `position`, optional `subtitle_delay_ms` | `session_id: integer` |
 | `preview_conversion` | `file`, optional `device_id` | Conversion snapshot with `source`, `planned_target`, `target_description`, `message` |
 | `convert` | `file`, optional `device_id` | `operation_id: integer` |
@@ -72,7 +74,7 @@ Errors have the form:
 
 Error codes are `invalid_request`, `protocol_version`, `busy`, `operation_failed`,
 `invalid_device`, `invalid_position`, `invalid_session`, `invalid_operation`,
-`config_error`, and `not_playing`.
+`config_error`, `state_error`, and `not_playing`.
 Malformed input can produce a null response ID when no ID can be recovered.
 Display the message; do not parse its prose to drive frontend behavior.
 
@@ -108,7 +110,19 @@ An explicitly picked external file need not be in this list.
 Each discovered device has `id`, `name`, `model`, `addresses` (IPv4 strings), `port`,
 and nullable `capabilities`. Bit 0 means video support; null means unknown. Names
 are display labels; use IDs in requests. A frontend may restore its last-used
-ID when that receiver is present and eligible; the helper does not store this preference.
+ID when that receiver is present and eligible. `get_gui_preferences` combines
+settings from the shared core configuration loader with the last device in
+`$XDG_STATE_HOME/werp/gui.toml` (fallback `~/.local/state/werp/gui.toml`). A missing
+state file yields an empty ID; unreadable or malformed state yields a warning and
+an empty ID without discarding configuration preferences.
+
+`set_gui_last_device` atomically replaces only GUI state, returning `state_error`
+if saving fails. It never writes configuration. Player and converter record the
+selected ID after an accepted operation. Concurrent saves are last-writer-wins.
+The optional `get_gui_preferences.path` selects configuration only; it never changes
+the state location. An explicitly selected missing config file is an error.
+Unknown config keys are ignored and returned in `warnings`; invalid known values
+return `config_error`. Frontends should show warnings without rejecting settings.
 
 ## State events and lifecycle
 

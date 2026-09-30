@@ -44,25 +44,16 @@ It resets for a new file, survives stop/restart, and is fixed for each session,
 including burn-in. Subtitle selection/delay cannot change during preparation or
 playback. Multiple-file, directory, remote-URL and active-session drops are ignored.
 
-## KDE frontend preferences
+## Preferences and saved state
 
-`$XDG_CONFIG_HOME/werp/gui.toml` (normally `~/.config/werp/gui.toml`) stores
-the KDE GUI preferences. The player and converter share the last device; an accepted
-start/convert with a device records it. Merely changing a selection does not.
-The helper snapshots [device rules](device-compatibility.md) per operation and
-never reads `[cli.*]` preferences.
+GUI preferences live in the shared [`config.toml`](configuration.md). Set
+`gui.conversion.auto_close = false` to leave the converter open after success;
+by default it closes after five seconds. Errors and cancellation stay open.
 
-```toml
-last_device_id = "your-device-id"
-
-[conversion]
-auto_close = true
-```
-
-Auto-close defaults to five seconds after successful conversion, including reuse
-or already-compatible input. Set false to retain the window with **Auto-close
-disabled** shown. Errors/cancellation stay open. The setting is read when the
-window opens and has no CLI effect.
+The player and converter remember their last device after an accepted start or
+conversion. Merely changing the selection does not save it. This state lives in
+`$XDG_STATE_HOME/werp/gui.toml` (normally `~/.local/state/werp/gui.toml`), separately
+from configuration. CLI subtitle and resume preferences do not change GUI behavior.
 
 ## Convert-only window
 
@@ -112,7 +103,7 @@ the same resolved policy; another device or bitmap burn-in may need another reci
 
 Casting uses an OS-assigned HTTP port by default. For an existing firewall rule,
 set the global `http_port = 8010` in
-[`config.toml`](preferences-and-subtitles.md#configuration). This setting applies
+[`config.toml`](configuration.md). This setting applies
 to both GUI and CLI casting and has no effect in convert-only. The GUI does not
 create firewall rules.
 CLI flags such as `--profile`, `--mode`, `--config` and `--no-config` are not GUI
@@ -121,5 +112,5 @@ options. Both apps do use the same [device override file](device-compatibility.m
 Build, local installation, development flags and automated checks are in
 [DEVELOPMENT.md](../DEVELOPMENT.md).
 
-Subtitle switching during playback, a settings window, MPRIS, single-instance
+Subtitle switching during playback, a settings window, single-instance
 behavior, packaging and additional native frontends remain in [the roadmap](plan.md).

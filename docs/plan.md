@@ -109,7 +109,7 @@ manual acceptance checklist; reproduce and investigate issues as they arise.
 | Reference | Owns |
 | --- | --- |
 | [Media conversion](media-conversion.md) | Path selection, profiles, encoding, storage and downmix |
-| [Preferences and subtitles](preferences-and-subtitles.md) | CLI config, subtitle selection/delay and resume |
+| [CLI guide](cli.md) | Commands, subtitle selection/delay and resume |
 | [Device database](device-compatibility.md) | Model matching, overrides and TOML schema |
 | [GUI guide](gui.md) | Interaction, launch options and settings |
 | [Development guide](../DEVELOPMENT.md) | Setup, builds, local installation, contributor workflows and validation |

@@ -61,7 +61,7 @@ remain errors. Tone mapping and explicit audio-track selection are not implement
 or Baseline for **Broad compatibility**, without launching a receiver. It leaves
 subtitles with the original file. During casting, text subtitles are served as
 WebVTT; selected image subtitles require full video encoding with burn-in.
-See [subtitle selection and delay](preferences-and-subtitles.md). Preparation
+See [subtitle selection and delay](cli.md). Preparation
 omits unselected tracks, attachments, source titles and chapters.
 
 ## Encoding and progress

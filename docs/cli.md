@@ -1,50 +1,37 @@
-# Preferences, subtitles, device selection, and resume
+# CLI guide
 
-Shared settings, CLI preferences and subtitle/resume behavior. GUI choices and
-independent defaults are described in the [GUI guide](gui.md).
-
-## Configuration
-
-Werp reads `$XDG_CONFIG_HOME/werp/config.toml`, falling back to
-`~/.config/werp/config.toml` when XDG_CONFIG_HOME is unset or not absolute.
-A missing default file uses built-in defaults. For the CLI, `--config PATH` selects
-an explicit file; a missing explicit file is an error. `--no-config` uses built-in
-defaults.
-Malformed values and unknown keys are errors, so spelling mistakes do not silently
-change behavior. CLI overrides take precedence over file preferences.
-
-See [the example TOML](config.example.toml). Supported settings:
-
-```toml
-# Shared by GUI and CLI casting. Zero lets the OS choose an available port.
-http_port = 0
-
-[cli.subtitles]
-auto_load = true
-languages = ["en", "nl"]
-
-[cli.devices]
-preferred = ["Living Room", "Bedroom"]
-
-[cli.playback]
-auto_resume = true
+```sh
+werp devices
+werp inspect /path/to/video.mkv --json
+werp /path/to/video.mkv --device "Living Room"
+werp /path/to/video.mkv --device "Living Room" --subtitles /path/to/captions.srt
+werp --help
 ```
 
-Set the top-level `http_port` to a port from 1 through 65535 (for example, 8010)
-when an existing firewall rule requires a fixed port. The default is 0 for
-OS assignment. The CLI's `--http-port PORT` overrides this setting, including
-`--http-port 0` to request an OS-assigned port. The GUI helper reads the shared
-setting when starting playback; convert-only and inspection do not use it.
+`werp FILE` stays in the foreground while serving. It replaces playback on the
+selected receiver. Ctrl+C/SIGTERM cleans up owned playback, child processes,
+HTTP serving and temporary files; successful reusable outputs remain. Another
+sender's takeover ends Werp's ownership without stopping that sender's media.
+Interactive terminal playback controls remain parked; the GUI has controls.
 
-Device capabilities are configured separately in the optional
-[model database overlay](device-compatibility.md#user-overrides), shared by
-CLI and GUI casting. Global `[compatibility]` flags are removed and rejected.
-`--no-config` ignores shared settings, CLI preferences and local model overrides,
-retaining bundled rules. `--config PATH` changes shared settings and CLI
-preferences; the model overlay stays in the default XDG location. Explicit CLI
-profiles bypass model overrides. The GUI helper does not apply the `[cli.*]`
-preferences. Convert-only uses the selected receiver's merged model rules, or
-Baseline for its Broad compatibility option.
+`--device` accepts an exact friendly name or ID; duplicate names require an ID.
+Without it, CLI preferences apply, then the sole eligible video receiver is chosen.
+`--host IP` bypasses IPv4 discovery and model detection. Use `--help` for diagnostic
+options, or a path such as `./devices` for filenames that match subcommands.
+
+| Options | Purpose |
+| --- | --- |
+| `--mode auto/direct/remux/audio/transcode` | Choose automatically (default), or require a preparation path |
+| `--profile auto/baseline/extended/experimental` | Model rules (default), conservative support, bounded HEVC/AAC surround, or explicit AC-3 trials |
+| `--subtitles FILE`, `--subtitle-track INDEX`, `--no-subtitles` | Override automatic subtitle selection |
+| `--subtitle-delay-ms N` | Signed delay: positive is later, negative earlier |
+| `--restart`, `--resume`, `--no-resume` | Control starting position/checkpoint behavior |
+| `--cache-dir PATH`, `--no-cache` | Override storage or disable output reuse/retention |
+| `--config PATH`, `--no-config` | Override shared settings and CLI preferences, or ignore them and local model overrides |
+
+Configuration paths, defaults and settings are in the [configuration reference](configuration.md).
+Device capabilities use the separate [device database](device-compatibility.md).
+GUI interaction is covered in the [GUI guide](gui.md).
 
 ## Subtitle selection and rendering
 

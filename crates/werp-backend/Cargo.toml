@@ -14,5 +14,4 @@ toml = "0.9"
 tokio = { workspace = true, features = ["io-std"] }
 tracing-subscriber.workspace = true
 
-[dev-dependencies]
 tempfile.workspace = true

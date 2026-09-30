@@ -17,3 +17,7 @@ preferred = []
 
 [cli.playback]
 auto_resume = true
+
+# Preferences below apply only to native GUIs.
+[gui.conversion]
+auto_close = true

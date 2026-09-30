@@ -227,6 +227,9 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     } else {
         werp_core::config::load(cli.config.as_deref())?
     };
+    for warning in &preferences.warnings {
+        eprintln!("Warning: {warning}");
+    }
     // Register before starting any work, including in noninteractive runs.
     #[cfg(unix)]
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;

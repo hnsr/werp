@@ -29,7 +29,7 @@ for line in sys.stdin:
         log.write(json.dumps(request)+"\n")
     method, params, result = request["method"], request.get("params",{}), {}
     if method=="hello":
-        result={"version":1}
+        result={"version":2}
     elif method=="inspect":
         result={"media":{"path":params["file"],"duration_seconds":120},"resume_position":25,"suggested_subtitles":{"kind":"embedded","index":2},
             "subtitles":[
@@ -48,16 +48,18 @@ for line in sys.stdin:
                 continue
             result=override
     elif method in ("get_gui_preferences","set_gui_last_device"):
-        config=Path(params.get("path") or Path(os.environ.get("XDG_CONFIG_HOME",Path.home()/".config"))/"werp/gui.toml")
-        existing=tomllib.loads(config.read_text()) if config.exists() else {}
-        current={"last_device_id":existing.get("last_device_id",""),
-                 "conversion_auto_close":existing.get("conversion",{}).get("auto_close",True)}
+        config=Path(params.get("path") or Path(os.environ.get("XDG_CONFIG_HOME",Path.home()/".config"))/"werp/config.toml")
+        state_file=Path(os.environ["XDG_STATE_HOME"])/"werp/gui.toml"
+        existing=tomllib.loads(state_file.read_text()) if state_file.exists() else {}
+        result={"last_device_id":existing.get("last_device_id","")}
         if method=="set_gui_last_device":
-            current["last_device_id"]=params["device_id"]
-        if method!="get_gui_preferences":
-            config.parent.mkdir(parents=True,exist_ok=True)
-            config.write_text(f'last_device_id = {json.dumps(current["last_device_id"])}\n\n[conversion]\nauto_close = {str(current["conversion_auto_close"]).lower()}\n')
-        result=current
+            result["last_device_id"]=params["device_id"]
+            state_file.parent.mkdir(parents=True,exist_ok=True)
+            state_file.write_text(f'last_device_id = {json.dumps(result["last_device_id"])}\n')
+        else:
+            preferences=tomllib.loads(config.read_text()) if config.exists() else {}
+            result["conversion_auto_close"]=preferences.get("gui",{}).get("conversion",{}).get("auto_close",True)
+            result["warnings"]=[]
     elif method=="preview_conversion":
         source,planned=conversion_formats(params)
         result={"source":source,"planned_target":planned,"message":"Ready to convert","warnings":[]}
