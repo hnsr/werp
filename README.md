@@ -49,10 +49,11 @@ uses HTTP.
 
 ## Design
 
-Werp consists of a platform-independent backend helper written in Rust, which native
-GUI applications automatically launch and interface with. This allows
-the GUI applications to be written in the native language/tooling without having to use
-bindings. Werp also comes with a CLI binary for casting from the command-line, which
+Werp consists of a platform-independent backend helper written in Rust, which
+handles chromecast communication and converting media using ffmpeg.
+
+The GUI application(s) can stay small and fully native and lets the backend helper
+do all the work. Werp also comes with a CLI binary for casting from the command-line, which
 is mainly intended for debugging/diagnostic purposes.
 
 On Linux, Werp uses `systemd-inhibit` to block sleep during casting and conversion,
@@ -116,14 +117,17 @@ preferences for the KDE frontend use `gui.toml`. XDG locations are supported. Se
 
 ## Limitations
 
-PQ/HLG colour tags alone do not prevent direct playback or video copying. Werp
-preserves the video and its colour signalling on those paths; the receiver may
-still reject the format or render it incorrectly. Transcoding HDR-tagged sources,
-including subtitle burn-in, is experimental: Werp produces its usual 8-bit H.264
-output without tone mapping or a guarantee of correct rendering. Dolby Vision,
-multiple tracks requiring explicit audio/video selection, and missing required
-metadata remain errors.
-Live encoding, hardware acceleration, HDR tone mapping and broader platform support
-are deferred. Advanced ASS styling and external bitmap files remain limited.
-DVD/VobSub and DVB image subtitles are not supported; embedded PGS burn-in remains
-supported. See [subtitles](docs/preferences-and-subtitles.md).
+- HDR handling:
+  - PQ/HLG colour tags alone do not prevent direct playback or video copying.
+    Werp preserves the video and its colour signalling on those paths; the receiver may
+    still reject the format or render it incorrectly.
+  - Transcoding HDR-tagged sources, including subtitle burn-in, is experimental: Werp produces
+    its usual 8-bit H.264 output without tone mapping or a guarantee of correct rendering.
+  - Dolby Vision is not supported yet
+- Multiple tracks requiring explicit audio/video selection are not yet implemented and will trigger an error
+- Live remuxing/transcoding is not yet implemented
+- Hardware accellerated transcoding is not yet implemented/verified
+- Subtitle handling:
+  - Advanced ASS styling and external bitmap files remain limited.
+  - DVD/VobSub and DVB image subtitles are not supported (embedded PGS burn-in is supported)
+  - See [subtitles](docs/preferences-and-subtitles.md).
