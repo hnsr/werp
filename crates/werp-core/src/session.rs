@@ -593,7 +593,7 @@ fn delivery_error(error: WerpError, server: &MediaServer) -> WerpError {
     }
     if server.video_requests.load(Ordering::Relaxed) == 0 {
         return WerpError::Cast(format!(
-            "{error}; no successful video download reached {}. Check the selected interface, firewall, VPN and Wi-Fi client isolation; --bind-address and --http-port can help diagnose this",
+            "{error}; no successful video download reached {}. Check the selected interface, firewall, VPN and Wi-Fi client isolation; the shared http_port config setting and CLI --bind-address/--http-port overrides can help diagnose this",
             server.video_url
         ));
     }

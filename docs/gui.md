@@ -108,10 +108,13 @@ the same resolved policy; another device or bitmap burn-in may need another reci
 | GUI option | Effect |
 | --- | --- |
 | `--convert-only` | Open the converter instead of the player. |
-| `--http-port PORT` | Fix the player's serving port; default `0` chooses automatically. Has no effect in convert-only. Also supported by the CLI. |
 | `--help`, `--version` | Show usage or version information. |
 
-A fixed port helps with an existing firewall rule; the GUI does not create one.
+Casting uses an OS-assigned HTTP port by default. For an existing firewall rule,
+set the global `http_port = 8010` in
+[`config.toml`](preferences-and-subtitles.md#configuration). This setting applies
+to both GUI and CLI casting and has no effect in convert-only. The GUI does not
+create firewall rules.
 CLI flags such as `--profile`, `--mode`, `--config` and `--no-config` are not GUI
 options. Both apps do use the same [device override file](device-compatibility.md#user-overrides).
 

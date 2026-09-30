@@ -89,6 +89,42 @@ impl Drop for Helper {
 }
 
 #[test]
+fn shared_config_is_validated_at_start_and_can_be_corrected_without_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let path = state.with_extension("config").join("werp/config.toml");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "http_port = 65536\n").unwrap();
+    let mut helper = Helper::new(None, &state);
+    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+    assert_eq!(helper.read()["ok"], true);
+    let start = |id| json!({"id":id,"method":"start","params":{"file":"video.mp4","device_id":"test-id","subtitles":{"kind":"none"},"position":0}});
+    helper.send(start(2));
+    let reply = helper.read();
+    assert_eq!(reply["error"]["code"], "config_error");
+    assert!(
+        reply["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("http_port")
+    );
+    fs::write(
+        &path,
+        "http_port = 8010\n[cli.playback]\nauto_resume = false\n",
+    )
+    .unwrap();
+    helper.send(start(3));
+    // Validation proceeds to device selection without discovering real TVs.
+    assert_eq!(helper.read()["error"]["code"], "invalid_device");
+    fs::remove_file(&path).unwrap();
+    helper.send(start(4));
+    assert_eq!(helper.read()["error"]["code"], "invalid_device");
+    helper.send(json!({"id":5,"method":"shutdown"}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.wait();
+}
+
+#[test]
 fn gui_preferences_are_separate_from_cli_config() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");
@@ -246,6 +282,8 @@ fn handshake_inspection_framing_validation_and_explicit_shutdown() {
     );
     helper.send(json!({"id":5,"method":"pause","params":{"session_id":1}}));
     assert_eq!(helper.read()["error"]["code"], "invalid_session");
+    // Inspection ignores malformed config; playback now validates shared settings.
+    fs::remove_file(config.join("config.toml")).unwrap();
     helper.send(json!({"id":6,"method":"start","params":{"file":file,"device_id":"missing","subtitles":{"kind":"none"},"position":0}}));
     assert_eq!(helper.read()["error"]["code"], "invalid_device");
     helper.send(json!({"id":7,"method":"shutdown"}));

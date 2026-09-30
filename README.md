@@ -38,8 +38,10 @@ remuxing and encoding; full video transcoding needs libx264/AAC and input decode
 Distribution packaging is still pending. See [DEVELOPMENT.md](DEVELOPMENT.md)
 for dependencies, building from source, local installation and testing.
 
-Werp chooses  an OS-assigned HTTP port. For an existing firewall rule, use
-`--http-port 8010` (CLI or GUI); `--bind-address` is a CLI diagnostic override.
+Werp chooses an OS-assigned HTTP port by default. For an existing firewall rule,
+set the global `http_port = 8010` in
+[`config.toml`](docs/preferences-and-subtitles.md#configuration) for GUI and CLI
+casting. The CLI also accepts `--http-port` and `--bind-address` diagnostic overrides.
 Check firewall, VPN routes, mDNS and Wi-Fi isolation if discovery or downloads
 fail. Werp never edits firewall rules.
 
@@ -105,12 +107,13 @@ options, or a path such as `./devices` for filenames that match subcommands.
 | `--subtitle-delay-ms N` | Signed delay: positive is later, negative earlier |
 | `--restart`, `--resume`, `--no-resume` | Control starting position/checkpoint behavior |
 | `--cache-dir PATH`, `--no-cache` | Override storage or disable output reuse/retention |
-| `--config PATH`, `--no-config` | Override CLI preferences, or ignore preferences and local model overrides |
+| `--config PATH`, `--no-config` | Override shared settings and CLI preferences, or ignore them and local model overrides |
 
-CLI preferences live in `~/.config/werp/config.toml`: automatic subtitles
-(English then Dutch), preferred devices and automatic resume. The GUI does not
-apply these CLI settings. Device rules live separately in `devices.toml`; GUI
-preferences for the KDE frontend use `gui.toml`. XDG locations are supported. See
+Shared settings and CLI preferences live in `~/.config/werp/config.toml`: the HTTP
+port, automatic subtitles (English then Dutch), preferred devices and automatic
+resume. The GUI applies the global HTTP port but uses its own playback preferences.
+Device rules live separately in `devices.toml`; GUI preferences for the KDE
+frontend use `gui.toml`. XDG locations are supported. See
 [configuration and resume](docs/preferences-and-subtitles.md) and
 [device overrides](docs/device-compatibility.md#user-overrides).
 

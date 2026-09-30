@@ -24,8 +24,6 @@ struct Args {
     ffmpeg: PathBuf,
     #[arg(long)]
     no_inhibit_sleep: bool,
-    #[arg(long, default_value_t = 0)]
-    http_port: u16,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -473,6 +471,10 @@ async fn run(args: Args) -> Result<(), String> {
                         }
                         Command::Start { file, device_id, subtitles, subtitle_delay_ms, position } => {
                             if active.is_some() || converting.is_some() { send(&output,error(Some(id),"busy","a session is already active")).await?; continue; }
+                            let settings = match werp_core::config::load(None) {
+                                Ok(settings) => settings,
+                                Err(error) => { send(&output,self::error(Some(id),"config_error",error)).await?; continue; }
+                            };
                             let Some(device) = devices.get(&device_id).cloned() else {
                                 send(&output,error(Some(id),"invalid_device","select a discovered device")).await?; continue;
                             };
@@ -493,7 +495,7 @@ async fn run(args: Args) -> Result<(), String> {
                             request.subtitle_delay_ms = subtitle_delay_ms;
                             request.probe = probe.clone(); request.ffmpeg = args.ffmpeg.clone();
                             request.inhibit_sleep = !args.no_inhibit_sleep;
-                            request.http_port = args.http_port;
+                            request.http_port = settings.http_port;
                             request.subtitles = match subtitles {
                                 Subtitle::None => subtitles::Request::Off,
                                 Subtitle::Embedded { index } => subtitles::Request::Embedded(index),

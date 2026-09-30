@@ -1,7 +1,11 @@
 # Copy to ~/.config/werp/config.toml (or $XDG_CONFIG_HOME/werp/config.toml).
-# Omitted fields use these defaults. These preferences apply only to the CLI.
+# Omitted fields use these defaults. Global settings apply to CLI and GUI casting.
 # Model capabilities belong in devices.toml; see devices.example.toml.
 
+# OS-assigned port by default; set e.g. 8010 for an existing firewall rule.
+http_port = 0
+
+# Preferences below apply only to the CLI.
 [cli.subtitles]
 auto_load = true
 languages = ["en", "nl"]

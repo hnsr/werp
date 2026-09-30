@@ -29,10 +29,10 @@ struct Cli {
     /// Show debug diagnostics on stderr
     #[arg(short, long, global = true)]
     verbose: bool,
-    /// Read CLI preferences from this TOML file (device overrides stay in the user config directory)
+    /// Read shared settings and CLI preferences from this TOML file (device overrides stay in the user config directory)
     #[arg(long, global = true, conflicts_with = "no_config")]
     config: Option<PathBuf>,
-    /// Ignore CLI preferences and user device overrides; retain bundled model rules
+    /// Ignore shared settings, CLI preferences and user device overrides; retain bundled model rules
     #[arg(long, global = true)]
     no_config: bool,
     #[command(subcommand)]
@@ -178,9 +178,9 @@ struct PlaybackArgs {
     /// Reachable local IP to advertise to the receiver
     #[arg(long)]
     bind_address: Option<IpAddr>,
-    /// Local serving port (0 lets the OS choose)
-    #[arg(long, default_value_t = 0)]
-    http_port: u16,
+    /// Override the configured local serving port (0 lets the OS choose)
+    #[arg(long)]
+    http_port: Option<u16>,
     #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u64).range(1..=60))]
     scan_seconds: u64,
     #[arg(long, default_value = "ffprobe")]
@@ -403,7 +403,7 @@ async fn execute(
             let _ = no_inhibit_sleep; // The CLI owns inhibition across preflight and playback.
             request.cache.directory = cache_dir;
             request.bind_address = bind_address;
-            request.http_port = http_port;
+            request.http_port = http_port.unwrap_or(preferences.http_port);
             let scan_duration = Duration::from_secs(scan_seconds);
             request.probe = ProbeOptions {
                 executable: ffprobe,

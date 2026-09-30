@@ -45,7 +45,7 @@ KDE Frameworks >= 6 and C++17. From the repository root:
 ```sh
 cmake -S apps/werp-kde -B target/kde -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build target/kde
-./target/kde/werp-kde /path/to/video.mkv --http-port 8010
+./target/kde/werp-kde /path/to/video.mkv
 ```
 
 CMake builds/copies the Rust helper beside the UI; rebuild after Rust or C++ changes.
@@ -68,7 +68,7 @@ To register or repair them after moving it, run from the repository root:
 ```sh
 bash scripts/install-app-icons.sh
 desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
-  --set-key=Exec --set-value="\"$PWD/target/kde/werp-kde\" --http-port 8010 %f" \
+  --set-key=Exec --set-value="\"$PWD/target/kde/werp-kde\" %f" \
   apps/werp-kde/nl.hnsr.Werp.desktop
 desktop-file-install --dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
   --set-key=Exec --set-value="\"$PWD/target/kde/werp-kde\" --convert-only %f" \
@@ -132,8 +132,9 @@ works. These are development/testing flags, separate from the
 [normal GUI options](docs/gui.md#launch-options).
 
 `werp-backend` is normally launched by the GUI, not managed as a separate app.
-For integration/testing it accepts `--http-port PORT` (default `0`, OS-assigned),
-`--ffprobe PATH`, `--ffmpeg PATH` and `--no-inhibit-sleep`. GUI launch options are
+For integration/testing it accepts `--ffprobe PATH`, `--ffmpeg PATH` and
+`--no-inhibit-sleep`. The serving port uses the shared `http_port` setting in
+`config.toml`, defaulting to an OS-assigned port. GUI launch options are
 not arbitrary helper/CLI pass-through arguments. Frontend implementations use the
 [private protocol](docs/backend-protocol.md).
 

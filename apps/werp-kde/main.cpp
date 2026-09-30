@@ -22,12 +22,8 @@ int main(int argc,char **argv) {
     parser.addPositionalArgument("file",i18n("Local video to open"),"[file]");
     parser.addOption({"backend",i18n("Backend helper executable"),"path"});
     parser.addOption({"no-discovery",i18n("Skip the initial device scan (development/testing)")});
-    parser.addOption({"http-port",i18n("Fixed local media server port (0 chooses automatically)"),"port","0"});
     parser.addOption({"convert-only",i18n("Prepare a compatible MP4 without casting")});
     parser.process(app);
-    bool validPort=false;
-    const auto port=parser.value("http-port").toUInt(&validPort);
-    if (!validPort || port>65535) parser.showHelp(2);
     if (parser.positionalArguments().size()>1) parser.showHelp(2);
     QString backend=parser.value("backend");
     if (backend.isEmpty()) {
@@ -41,6 +37,6 @@ int main(int argc,char **argv) {
         if (file.isEmpty()) return 0;
         ConversionWindow window(backend,file,{}, {},!parser.isSet("no-discovery")); window.show(); return app.exec();
     }
-    Window window(backend,parser.positionalArguments().value(0),!parser.isSet("no-discovery"),{"--http-port",QString::number(port)});
+    Window window(backend,parser.positionalArguments().value(0),!parser.isSet("no-discovery"));
     window.show(); return app.exec();
 }
