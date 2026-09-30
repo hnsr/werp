@@ -2,15 +2,15 @@
 
 The CLI and GUI share subtitle selection and rendering in the Rust core. This
 guide covers their common behavior. See the [CLI guide](cli.md#subtitles) for
-flags and configurable preferences, or the [GUI guide](gui.md#player-interaction)
+command-line overrides, or the [GUI guide](gui.md#player-interaction)
 for the subtitle picker and playback controls.
 
 ## Selection
 
-> Configurable automatic selection and language preferences (`cli.subtitles.*`)
-> apply only to the CLI. The GUI already preselects a subtitle in its dropdown
-> using a fixed English-then-Dutch order; it does not read those CLI settings.
-> You can review or change that selection before casting.
+> The shared [`[subtitles]` settings](configuration.md) control CLI automatic selection and GUI
+> dropdown preselection. `languages` defaults to English then Dutch. With
+> `auto_load = false`, the GUI initially selects None; manual selection remains
+> available. Explicit CLI options and manual GUI choices take precedence.
 
 Automatic selection first looks for a supported embedded track matching the
 ordered language preferences, then an exact-basename `.srt` beside the real
@@ -34,8 +34,8 @@ English aliases include `en`, `eng`, `English`, and region variants such as
 `en-GB`/`en_US`. Dutch aliases include `nl`, `nld`, `dut`, `Dutch`, `Nederlands`,
 `Flemish`, and `Vlaams`. User preferences and otherwise untagged titles also accept
 UK/GB as English shorthand. A media language tag `uk` is Ukrainian and is never
-treated as English. CLI language preferences currently support only English and
-Dutch; tracks in other languages can be selected explicitly in either frontend.
+treated as English. Configured language preferences currently support only
+English and Dutch; tracks in other languages can be selected explicitly in either frontend.
 
 ## Text subtitles
 

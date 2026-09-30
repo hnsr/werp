@@ -380,7 +380,7 @@ async fn execute(
             } else {
                 selection::Target::Auto
             };
-            let mut subtitle_preferences = preferences.cli.subtitles.clone();
+            let mut subtitle_preferences = preferences.subtitles.clone();
             if auto_subtitles {
                 subtitle_preferences.auto_load = true;
             }

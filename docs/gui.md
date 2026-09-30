@@ -27,13 +27,13 @@ playback. The selected-video panel stays visible through all three states:
    Space toggles pause/play without key-repeat. Stop waits for cleanup and returns
    to choices. Quit/Ctrl+Q/window close cancels active work and waits for helper exit.
 
-The last-used eligible device is restored after discovery. Subtitles default to
-English then Dutch using the [shared selection rules](subtitles.md#selection),
-then exact-name SRT fallback. Unsupported tracks are skipped; ambiguous sidecars leave None selected with a warning. The
-combined list also includes matching VTT/ASS/SSA; an explicit picker file need
+The last-used eligible device is restored after discovery. Subtitles are preselected
+using the shared `[subtitles]` settings and [selection rules](subtitles.md#selection):
+English then Dutch by default, followed by exact-name SRT fallback. With
+`subtitles.auto_load = false`, None is selected initially. Unsupported tracks are
+skipped; ambiguous sidecars leave None selected with a warning. The combined list also includes matching VTT/ASS/SSA; an explicit picker file need
 not match the video name. Manual choices survive stop/restart of the same video.
-CLI preferences do not change these UI defaults. See the [subtitle guide](subtitles.md)
-for supported formats, rendering and limitations.
+See the [subtitle guide](subtitles.md) for supported formats, rendering and limitations.
 
 **Cast** starts at zero; **Cast from last position** appears when a usable
 checkpoint exists. The UI saves progress but never resumes implicitly.
@@ -51,7 +51,8 @@ by default it closes after five seconds. Errors and cancellation stay open.
 The player and converter remember their last device after an accepted start or
 conversion. Merely changing the selection does not save it. This state lives in
 `$XDG_STATE_HOME/werp/gui.toml` (normally `~/.local/state/werp/gui.toml`), separately
-from configuration. CLI subtitle and resume preferences do not change GUI behavior.
+from configuration. Device selection and resume preferences under `cli.*` do not
+change GUI behavior.
 
 ## Convert-only window
 

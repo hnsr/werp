@@ -36,9 +36,9 @@ GUI interaction is covered in the [GUI guide](gui.md).
 ## Subtitles
 
 Automatic selection is enabled by default, using English then Dutch. Configure
-`cli.subtitles.auto_load` and `cli.subtitles.languages` in
-[`config.toml`](configuration.md) to change this behavior. These preferences apply
-only to the CLI. The selected file or stream index is printed before playback.
+`subtitles.auto_load` and `subtitles.languages` in
+[`config.toml`](configuration.md) to change this behavior. The GUI uses the same settings for dropdown
+preselection. The selected file or stream index is printed before playback.
 See the [shared subtitle guide](subtitles.md) for selection rules, supported
 formats, rendering and limitations.
 

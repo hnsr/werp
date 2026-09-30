@@ -153,19 +153,18 @@ async fn send(output: &mpsc::Sender<Value>, message: Value) -> Result<(), String
         .map_err(|_| "frontend stopped reading protocol messages".to_string())?
         .map_err(|_| "frontend output closed".into())
 }
-// Read-only recommendation for native frontends. CLI configuration is not read.
+// Read-only recommendation using shared preferences; frontend choices stay explicit.
 async fn suggested_subtitles(
     info: &media::MediaInfo,
     file: &std::path::Path,
 ) -> Result<Value, String> {
-    let selection = subtitles::select(
-        &subtitles::Request::Auto,
-        info,
-        file,
-        &werp_core::config::SubtitlePreferences::default(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let settings = werp_core::config::load(None).map_err(|error| error.to_string())?;
+    for warning in &settings.warnings {
+        eprintln!("Warning: {warning}");
+    }
+    let selection = subtitles::select(&subtitles::Request::Auto, info, file, &settings.subtitles)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(match selection {
         None => json!({"kind":"none"}),
         Some(subtitles::Selection::Text { index, .. } | subtitles::Selection::Bitmap { index }) => {

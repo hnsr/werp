@@ -217,6 +217,90 @@ fn missing_config_defaults_and_bad_state_is_nonfatal_and_repairable() {
     helper.wait();
 }
 #[test]
+fn inspection_uses_shared_subtitle_preferences_without_hiding_manual_choices() {
+    let dir = tempfile::tempdir().unwrap();
+    let probe = dir.path().join("probe");
+    fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut metadata: Value =
+        serde_json::from_str(include_str!("../../werp-core/tests/fixtures/h264.json")).unwrap();
+    for (index, language) in [(2, "eng"), (3, "dut")] {
+        metadata["streams"].as_array_mut().unwrap().push(json!({
+            "index":index,"codec_type":"subtitle","codec_name":"subrip","tags":{"language":language}
+        }));
+    }
+    fs::write(dir.path().join("probe.json"), metadata.to_string()).unwrap();
+    let file = dir.path().join("video.mp4");
+    fs::write(&file, "source").unwrap();
+    fs::write(
+        file.with_extension("srt"),
+        "1\n00:00:00,000 --> 00:00:01,000\nCaption\n",
+    )
+    .unwrap();
+    let state = dir.path().join("state");
+    let config = state.with_extension("config").join("werp/config.toml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let mut helper = Helper::new(Some(&probe), &state);
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
+    assert_eq!(helper.read()["ok"], true);
+    for (settings, expected) in [
+        ("", json!({"kind":"embedded","index":2})),
+        (
+            "[subtitles]\nlanguages=['Dutch','English']\n",
+            json!({"kind":"embedded","index":3}),
+        ),
+        (
+            "[subtitles]\nauto_load=false\nlanguages=['nl']\n",
+            json!({"kind":"none"}),
+        ),
+        (
+            "[subtitles]\nlanguages=[]\n",
+            json!({"kind":"external","path":file.with_extension("srt")}),
+        ),
+        (
+            "[subtitles]\nlanguages=['nl']\nfuture_option=true\n",
+            json!({"kind":"embedded","index":3}),
+        ),
+    ] {
+        fs::write(&config, settings).unwrap();
+        helper.send(json!({"id":2,"method":"inspect","params":{"file":file}}));
+        let reply = helper.read();
+        assert_eq!(reply["ok"], true, "{reply}");
+        assert_eq!(
+            reply["result"]["suggested_subtitles"], expected,
+            "{settings}"
+        );
+        assert_eq!(reply["result"]["subtitles"].as_array().unwrap().len(), 3);
+        assert!(reply["result"]["subtitle_warning"].is_null(), "{reply}");
+    }
+    for invalid in [
+        "[subtitles]\nauto_load='yes'",
+        "[subtitles]\nlanguages=['unsupported']",
+        "invalid = [",
+    ] {
+        fs::write(&config, invalid).unwrap();
+        helper.send(json!({"id":3,"method":"inspect","params":{"file":file}}));
+        let reply = helper.read();
+        assert_eq!(reply["ok"], true, "{reply}");
+        assert_eq!(
+            reply["result"]["suggested_subtitles"],
+            json!({"kind":"none"})
+        );
+        assert_eq!(reply["result"]["subtitles"].as_array().unwrap().len(), 3);
+        assert!(
+            reply["result"]["subtitle_warning"]
+                .as_str()
+                .unwrap()
+                .contains("config.toml")
+        );
+    }
+    assert!(!state.exists(), "inspection must not write state");
+    helper.send(json!({"id":4,"method":"shutdown"}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.wait();
+}
+
+#[test]
 fn handshake_inspection_framing_validation_and_explicit_shutdown() {
     let dir = tempfile::tempdir().unwrap();
     let probe = dir.path().join("probe");
@@ -246,7 +330,11 @@ fn handshake_inspection_framing_validation_and_explicit_shutdown() {
     let state = dir.path().join("state");
     let config = state.with_extension("config").join("werp");
     fs::create_dir_all(&config).unwrap();
-    fs::write(config.join("config.toml"), "invalid = [").unwrap();
+    fs::write(
+        config.join("config.toml"),
+        "[cli.playback]\nauto_resume=false\n",
+    )
+    .unwrap();
     let mut helper = Helper::new(Some(&probe), &state);
     helper.send(json!({"id":1,"method":"hello","params":{"version":99}}));
     assert_eq!(helper.read()["error"]["code"], "protocol_version");
@@ -471,7 +559,7 @@ exec sleep 60
 }
 
 #[test]
-fn convert_uses_baseline_without_reading_cli_or_device_settings() {
+fn convert_uses_baseline_without_reading_subtitle_or_device_settings() {
     let dir = tempfile::tempdir().unwrap();
     let probe = dir.path().join("probe");
     fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
@@ -495,7 +583,7 @@ fn convert_uses_baseline_without_reading_cli_or_device_settings() {
     let mut helper = Helper::with_ffmpeg(Some(&probe), Some(&dir.path().join("no-ffmpeg")), &state);
     helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
     assert_eq!(helper.read()["ok"], true);
-    fs::write(&config, "[cli.subtitles]\nlanguages=['unsupported']\n").unwrap();
+    fs::write(&config, "[subtitles]\nlanguages=['unsupported']\n").unwrap();
     fs::write(config.with_file_name("devices.toml"), "invalid TOML").unwrap();
     helper.send(json!({"id":10,"method":"preview_conversion","params":{"file":file}}));
     let preview = helper.read();

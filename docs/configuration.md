@@ -17,15 +17,16 @@ on stdout usable. The backend returns preference warnings to the GUI.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `http_port` | `0` | Shared casting HTTP port, from 0 to 65535. Zero lets the OS choose; use a fixed port such as 8010 for an existing firewall rule. |
-| `cli.subtitles.auto_load` | `true` | Automatically select CLI subtitles. |
-| `cli.subtitles.languages` | `["en", "nl"]` | Ordered CLI language preferences. English and Dutch aliases are supported; see [language names](subtitles.md#language-names). |
+| `subtitles.auto_load` | `true` | Automatically select CLI subtitles and preselect the GUI dropdown. False starts the GUI with None selected. |
+| `subtitles.languages` | `["en", "nl"]` | Ordered language preferences for both frontends. English and Dutch aliases are supported; see [language names](subtitles.md#language-names). |
 | `cli.devices.preferred` | `[]` | Ordered exact friendly names or stable IDs for CLI device selection. Entries must not be blank. |
 | `cli.playback.auto_resume` | `true` | Start CLI playback at a saved position when available. Disabling automatic resume still records progress. |
 | `gui.conversion.auto_close` | `true` | Close the GUI converter five seconds after success, including reused or already-compatible output. Errors and cancellation stay open. |
 
-`cli.*` affects only the CLI. The GUI keeps its own subtitle choices and explicit
-resume action. `gui.*` affects native GUIs only. The HTTP port has no effect on
-inspection or convert-only operations. Werp never changes firewall rules.
+`subtitles.*` applies to both frontends. Explicit CLI options and manual GUI
+choices take precedence. `cli.*` controls CLI device selection and resume; the GUI
+keeps its explicit resume action. `gui.*` affects native GUIs only. The HTTP port
+has no effect on inspection or convert-only operations. Werp never changes firewall rules.
 
 ## CLI overrides
 

@@ -13,6 +13,7 @@ use crate::WerpError;
 pub struct Config {
     /// Local media server port; zero lets the OS choose an available port.
     pub http_port: u16,
+    pub subtitles: SubtitlePreferences,
     pub cli: CliPreferences,
     pub gui: GuiPreferences,
     /// Nonfatal diagnostics for ignored keys, including their full TOML path.
@@ -41,7 +42,6 @@ impl Default for ConversionPreferences {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct CliPreferences {
-    pub subtitles: SubtitlePreferences,
     pub devices: DevicePreferences,
     pub playback: PlaybackPreferences,
 }
@@ -101,7 +101,7 @@ pub fn parse(text: &str) -> Result<Config, WerpError> {
     })
     .map_err(|e| WerpError::Config(e.to_string()))?;
     config.warnings = warnings;
-    for language in &mut config.cli.subtitles.languages {
+    for language in &mut config.subtitles.languages {
         let original = language.clone();
         *language = normalize_preference(language)
             .ok_or_else(|| {
@@ -111,7 +111,7 @@ pub fn parse(text: &str) -> Result<Config, WerpError> {
             })?
             .into();
     }
-    config.cli.subtitles.languages.dedup();
+    config.subtitles.languages.dedup();
     if config
         .cli
         .devices
@@ -245,15 +245,15 @@ mod tests {
     #[test]
     fn defaults_aliases_and_invalid_preferences() {
         let config = parse("").unwrap();
-        assert!(config.cli.subtitles.auto_load && config.cli.playback.auto_resume);
-        assert_eq!(config.cli.subtitles.languages, ["en", "nl"]);
-        let config = parse("[cli.subtitles]\nauto_load = false\nlanguages = ['Dutch', 'en-GB', 'eng']\n[cli.devices]\npreferred = ['TV', 'tv-id']\n[cli.playback]\nauto_resume = false").unwrap();
-        assert_eq!(config.cli.subtitles.languages, ["nl", "en"]);
-        assert!(!config.cli.subtitles.auto_load && !config.cli.playback.auto_resume);
+        assert!(config.subtitles.auto_load && config.cli.playback.auto_resume);
+        assert_eq!(config.subtitles.languages, ["en", "nl"]);
+        let config = parse("[subtitles]\nauto_load = false\nlanguages = ['Dutch', 'en-GB', 'eng']\n[cli.devices]\npreferred = ['TV', 'tv-id']\n[cli.playback]\nauto_resume = false").unwrap();
+        assert_eq!(config.subtitles.languages, ["nl", "en"]);
+        assert!(!config.subtitles.auto_load && !config.cli.playback.auto_resume);
         for invalid in [
-            "[cli.subtitles]\nlanguages=['German']",
+            "[subtitles]\nlanguages=['German']",
             "[cli.devices]\npreferred=['']",
-            "[cli.subtitles]\nauto_load='yes'",
+            "[subtitles]\nauto_load='yes'",
         ] {
             assert!(parse(invalid).is_err(), "{invalid}");
         }

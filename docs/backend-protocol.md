@@ -81,16 +81,17 @@ Display the message; do not parse its prose to drive frontend behavior.
 ## Inspection and discovery data
 
 Inspection is read-only and never starts a session or selects a device or starting position.
-It does not create checkpoint files or prepare media. Inspection does not load
-`config.toml`; the helper uses independent subtitle defaults and GUI choices.
+It does not create checkpoint files or prepare media. The helper reads shared
+`[subtitles]` preferences from `config.toml` to recommend the initial GUI choice.
 `resume_position` is a usable saved position, already adjusted five
 seconds backwards, or null; `resume_warning` is null or a read error string.
 
 `suggested_subtitles` has the same shape as the `start` subtitle parameter and
-uses the shared subtitle selector with fixed English-then-Dutch preferences.
+uses the shared subtitle selector with the configured language order (English
+then Dutch by default). Disabling `subtitles.auto_load` recommends None.
 It recommends a supported embedded track, then an exact-basename SRT, or None.
 External paths are canonical to match enumeration. `subtitle_warning` is null
-or a selection warning (such as ambiguous sidecars); a warning leaves None
+or a configuration/selection warning (such as invalid settings or ambiguous sidecars); a warning leaves None
 recommended without making inspection fail. This suggestion never prepares or
 activates subtitles by itself: the frontend still sends an explicit selection
 in `start` and can preserve manual user choices instead.

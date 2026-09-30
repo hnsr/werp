@@ -5,11 +5,12 @@
 # OS-assigned port by default; set e.g. 8010 for an existing firewall rule.
 http_port = 0
 
-# Preferences below apply only to the CLI.
-[cli.subtitles]
+# Shared automatic selection and GUI dropdown preselection.
+[subtitles]
 auto_load = true
 languages = ["en", "nl"]
 
+# Preferences below apply only to the CLI.
 [cli.devices]
 # Exact friendly names or stable IDs, highest priority first.
 # Example: preferred = ["Living Room", "Bedroom"]

@@ -6,6 +6,7 @@
 #include <QComboBox>
 #include <QFile>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSignalSpy>
@@ -423,6 +424,45 @@ private slots:
         QSignalSpy exited(window.findChild<Backend *>(),&Backend::exited);
         window.activateWindow(); QTest::keyClick(&window,Qt::Key_Q,Qt::ControlModifier);
         QTRY_COMPARE_WITH_TIMEOUT(exited.count(),1,5000);
+    }
+    void real_helper_applies_shared_subtitle_preferences_to_dropdown() {
+        QTemporaryDir dir;
+        const auto file=dir.filePath("video.mp4");
+        writeGui(file,"source");
+        QFile fixture(QStringLiteral(WERP_TEST_METADATA));
+        QVERIFY(fixture.open(QIODevice::ReadOnly));
+        auto metadata=QJsonDocument::fromJson(fixture.readAll()).object();
+        auto streams=metadata["streams"].toArray();
+        for (const auto &language : {QString("eng"),QString("dut")}) {
+            streams.append(QJsonObject{{"index",streams.size()},{"codec_type","subtitle"},
+                {"codec_name","subrip"},{"tags",QJsonObject{{"language",language}}}});
+        }
+        metadata["streams"]=streams;
+        const auto probe=dir.filePath("probe");
+        writeGui(probe,"#!/bin/sh\ncat \"$0.json\"\n");
+        writeGui(probe+".json",QJsonDocument(metadata).toJson());
+        QVERIFY(QFile::setPermissions(probe,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        const auto configDirectory=m_environment->filePath("config/werp");
+        QVERIFY(QDir().mkpath(configDirectory));
+        for (bool automatic : {true,false}) {
+            writeGui(configDirectory+"/config.toml",automatic
+                ? "[subtitles]\nlanguages = ['nl', 'en']\n"
+                : "[subtitles]\nauto_load = false\nlanguages = ['nl', 'en']\n");
+            Window window(QStringLiteral(WERP_REAL_HELPER),file,false,{"--ffprobe",probe,"--no-inhibit-sleep"});
+            window.show();
+            auto *subtitles=window.findChild<QComboBox *>("subtitles");
+            QTRY_COMPARE(subtitles->count(),3);
+            QTRY_VERIFY(subtitles->isEnabled());
+            const auto selected=QJsonDocument::fromJson(subtitles->currentData().toString().toUtf8()).object();
+            if (automatic) QCOMPARE(selected["index"].toInt(),3);
+            else QCOMPARE(selected["kind"].toString(),QString("none"));
+            // Manual choices remain available even with automatic loading disabled.
+            subtitles->setCurrentIndex(1);
+            QCOMPARE(QJsonDocument::fromJson(subtitles->currentData().toString().toUtf8()).object()["index"].toInt(),2);
+            QVERIFY(!window.findChild<QPushButton *>("werp")->isEnabled());
+            QSignalSpy exited(window.findChild<Backend *>(),&Backend::exited);
+            window.close(); QTRY_COMPARE_WITH_TIMEOUT(exited.count(),1,5000);
+        }
     }
     void real_helper_handshake_and_readonly_inspection() {
         QTemporaryDir dir;
