@@ -5,6 +5,7 @@
 #include <QRegularExpression>
 #include <QComboBox>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QProgressBar>
@@ -306,6 +307,42 @@ private slots:
         QTRY_COMPARE(delay->value(),-600); QTest::qWait(200); QCOMPARE(delay->value(),-600);
         window.close(); QTRY_VERIFY(!window.isVisible());
     }
+    void live_delay_edits_wait_for_apply_and_submit_focused_text() {
+        QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        Window window(helper,dir.filePath("movie.mp4")); window.show();
+        auto *devices=window.findChild<QComboBox *>("devices");
+        auto *delay=window.findChild<QSpinBox *>("subtitleDelay");
+        auto *apply=window.findChild<QPushButton *>("applySubtitleDelay");
+        auto *start=window.findChild<QPushButton *>("werp");
+        auto *pause=window.findChild<QPushButton *>("pause");
+        auto *pages=window.findChild<QStackedWidget *>("pages");
+        const auto log=helper+".log";
+        auto changes=[&] { QList<QJsonObject> result; for (const auto &call:calls(log)) if (call["method"]=="set_subtitles") result << call["params"].toObject(); return result; };
+        QTRY_COMPARE(devices->count(),3); devices->setCurrentIndex(2); QTRY_VERIFY(start->isEnabled());
+        QVERIFY(!apply->isVisible());
+        QTest::mouseClick(start,Qt::LeftButton); QTRY_COMPARE(pages->currentIndex(),1); QVERIFY(!apply->isVisible());
+        QTRY_COMPARE(pages->currentIndex(),2); QVERIFY(apply->isVisible()); QVERIFY(!apply->isEnabled());
+        window.activateWindow(); delay->setFocus(); QTRY_VERIFY(delay->hasFocus());
+        QTest::keyClick(delay,Qt::Key_A,Qt::ControlModifier); QTest::keyClicks(delay,"-1250");
+        QCOMPARE(delay->value(),-1250); QVERIFY(delay->hasFocus()); QVERIFY(apply->isEnabled());
+        QTest::qWait(400); QVERIFY(changes().isEmpty());
+        screenshot(window,"subtitle-delay-edit");
+        apply->click(); QVERIFY(!apply->isEnabled());
+        QTRY_COMPARE(changes().size(),1); QCOMPARE(changes().last()["subtitle_delay_ms"].toInt(),-1250);
+        QTRY_VERIFY(delay->isEnabled()); QVERIFY(!apply->isEnabled());
+        delay->stepUp(); QCOMPARE(delay->value(),-1150); QVERIFY(apply->isEnabled());
+        QTest::mouseClick(pause,Qt::LeftButton); QTRY_COMPARE(pause->text(),QString("Play"));
+        QTest::qWait(400); QCOMPARE(changes().size(),1);
+        delay->setFocus(); QTest::keyClick(delay,Qt::Key_A,Qt::ControlModifier); QTest::keyClicks(delay,"900");
+        QVERIFY(delay->hasFocus()); apply->click();
+        QTRY_COMPARE(changes().size(),2); QCOMPARE(changes().last()["subtitle_delay_ms"].toInt(),900);
+        QTRY_VERIFY(delay->isEnabled()); QCOMPARE(pause->text(),QString("Play")); QVERIFY(!apply->isEnabled());
+        QTest::mouseClick(window.findChild<QPushButton *>("stop"),Qt::LeftButton);
+        QTRY_COMPARE(pages->currentIndex(),0); QVERIFY(!apply->isVisible());
+        window.close(); QTRY_VERIFY(!window.isVisible());
+    }
     void burned_in_sessions_disable_live_subtitle_controls() {
         QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
         QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
@@ -318,6 +355,7 @@ private slots:
         devices->setCurrentIndex(2); subtitles->setCurrentIndex(4); QTRY_VERIFY(start->isEnabled());
         QTest::mouseClick(start,Qt::LeftButton); QTRY_COMPARE(window.findChild<QStackedWidget *>("pages")->currentIndex(),2);
         QVERIFY(!subtitles->isEnabled()); QVERIFY(!delay->isEnabled()); QVERIFY(!window.findChild<QPushButton *>("browseSubtitles")->isEnabled());
+        QVERIFY(!window.findChild<QPushButton *>("applySubtitleDelay")->isVisible());
         window.close(); QTRY_VERIFY(!window.isVisible());
     }
     void explicit_choices_preparation_controls_and_stop() {
@@ -392,11 +430,13 @@ private slots:
         seek->setValue(50000); QVERIFY(QMetaObject::invokeMethod(seek,"sliderReleased",Qt::DirectConnection));
         QTest::keyClick(seek,Qt::Key_Space); QTRY_COMPARE(pause->text(),QString("Pause"));
         subtitles->setCurrentIndex(1); delay->setValue(900);
+        QTest::mouseClick(window.findChild<QPushButton *>("applySubtitleDelay"),Qt::LeftButton);
         QTRY_VERIFY([&] { for (const auto &call:calls(log)) if (call["method"]=="set_subtitles") return true; return false; }());
         QTRY_VERIFY(subtitles->isEnabled());
         QCOMPARE(activeSubtitle->text(),subtitles->currentText());
         QCOMPARE(starts(log).size(),1);
         subtitles->setCurrentIndex(2); delay->setValue(-1500);
+        QTest::mouseClick(window.findChild<QPushButton *>("applySubtitleDelay"),Qt::LeftButton);
         QTRY_VERIFY([&] { int n=0; for (const auto &call:calls(log)) if (call["method"]=="set_subtitles") ++n; return n>=2; }());
         QTRY_VERIFY(subtitles->isEnabled());
         QTest::mouseClick(window.findChild<QPushButton *>("stop"),Qt::LeftButton);
@@ -468,6 +508,40 @@ private slots:
         QSignalSpy exited(window.findChild<Backend *>(),&Backend::exited);
         window.activateWindow(); QTest::keyClick(&window,Qt::Key_Q,Qt::ControlModifier);
         QTRY_COMPARE_WITH_TIMEOUT(exited.count(),1,5000);
+    }
+    void subtitle_drops_select_apply_refresh_and_preserve_paused_playback() {
+        QTemporaryDir dir; const auto helper=dir.filePath("backend.py");
+        QVERIFY(QFile::copy(QStringLiteral(WERP_TEST_BACKEND),helper));
+        QVERIFY(QFile::setPermissions(helper,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
+        const auto video=dir.filePath("movie.mp4"), captions=dir.filePath("captions #1.SRT"), invalid=dir.filePath("invalid.vtt");
+        for (const auto &file:{video,captions,invalid}) { QFile output(file); QVERIFY(output.open(QIODevice::WriteOnly)); output.write("fixture"); }
+        Window window(helper,video); window.show();
+        auto *subtitles=window.findChild<QComboBox *>("subtitles"); auto *devices=window.findChild<QComboBox *>("devices");
+        auto *start=window.findChild<QPushButton *>("werp"); auto *pages=window.findChild<QStackedWidget *>("pages");
+        auto *pause=window.findChild<QPushButton *>("pause"); auto *active=window.findChild<QLabel *>("activeSubtitle");
+        const auto log=helper+".log";
+        auto changes=[&] { int n=0; for (const auto &call:calls(log)) if (call["method"]=="set_subtitles") ++n; return n; };
+        auto enter=[&](const QList<QUrl> &urls) { QMimeData mime; mime.setUrls(urls); QDragEnterEvent event(QPoint(30,30),Qt::CopyAction,&mime,Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(&window,&event); return event.isAccepted(); };
+        auto drop=[&](const QString &file) {
+            QMimeData mime; mime.setUrls({QUrl::fromLocalFile(file)});
+            QDragEnterEvent entering(QPoint(30,30),Qt::CopyAction|Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(&window,&entering); QVERIFY(entering.isAccepted());
+            QDropEvent event(QPointF(30,30),Qt::CopyAction|Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier); QApplication::sendEvent(&window,&event); QVERIFY(event.isAccepted()); QCOMPARE(event.dropAction(),Qt::CopyAction);
+        };
+        QTRY_COMPARE(subtitles->count(),4); QTRY_COMPARE(devices->count(),3);
+        drop(captions); QCOMPARE(subtitles->count(),5); QVERIFY(starts(log).isEmpty());
+        QCOMPARE(QJsonDocument::fromJson(subtitles->currentData().toString().toUtf8()).object()["path"].toString(),QFileInfo(captions).canonicalFilePath());
+        subtitles->setCurrentIndex(1); devices->setCurrentIndex(2); QTRY_VERIFY(start->isEnabled()); QTest::mouseClick(start,Qt::LeftButton);
+        QTRY_COMPARE(pages->currentIndex(),1); QVERIFY(!enter({QUrl::fromLocalFile(captions)}));
+        QTRY_COMPARE(pages->currentIndex(),2); QTest::mouseClick(pause,Qt::LeftButton); QTRY_COMPARE(pause->text(),QString("Play"));
+        for (const auto &urls:{QList<QUrl>{QUrl("https://example.org/captions.srt")},QList<QUrl>{QUrl::fromLocalFile(dir.path())},QList<QUrl>{QUrl::fromLocalFile(video)},QList<QUrl>{QUrl::fromLocalFile(captions),QUrl::fromLocalFile(invalid)}}) QVERIFY(!enter(urls));
+        drop(captions); QTRY_COMPARE(changes(),1); QTRY_VERIFY(subtitles->isEnabled());
+        QVERIFY(active->text().contains("captions #1.SRT")); QCOMPARE(pause->text(),QString("Play")); QCOMPARE(starts(log).size(),1);
+        drop(captions); QTRY_COMPARE(changes(),2); QTRY_VERIFY(subtitles->isEnabled()); QCOMPARE(subtitles->count(),5);
+        drop(invalid); QTRY_COMPARE(changes(),3); QTRY_VERIFY(subtitles->isEnabled());
+        QVERIFY(window.findChild<QLabel *>("message")->text().contains("Invalid subtitle")); QVERIFY(active->text().contains("captions #1.SRT"));
+        QCOMPARE(QJsonDocument::fromJson(subtitles->currentData().toString().toUtf8()).object()["path"].toString(),QFileInfo(captions).canonicalFilePath());
+        QCOMPARE(pause->text(),QString("Play")); QCOMPARE(starts(log).size(),1);
+        window.close(); QTRY_VERIFY(!window.isVisible());
     }
     void real_helper_applies_shared_subtitle_preferences_to_dropdown() {
         QTemporaryDir dir;

@@ -28,6 +28,8 @@ private:
     void discover();
     void loadSubtitleDelay();
     void applySubtitleChange();
+    bool canSelectSubtitles() const;
+    void selectSubtitleFile(const QString &path);
     void restoreActiveSubtitles();
     void startPlayback(bool resume);
     void stopPlayback();
@@ -48,7 +50,7 @@ private:
     bool m_inspected = false, m_dragging = false, m_delayLoading = false;
     bool m_autoDiscover;
     bool m_discovering = false, m_canClose = false, m_applySuggestedSubtitle = true;
-    bool m_subtitleChangeable = true, m_subtitleUpdating = false;
+    bool m_subtitleChangeable = true, m_subtitleUpdating = false, m_forceSubtitleUpdate = false;
     QString m_activeSubtitleData, m_activeSubtitleText;
     int m_activeDelay = 0;
     QTimer *m_subtitleTimer;
@@ -61,4 +63,5 @@ private:
     QProgressBar *m_progress, *m_discoveryProgress;
     QSlider *m_seek;
     QSpinBox *m_subtitleDelay;
+    QPushButton *m_applySubtitleDelay;
 };
