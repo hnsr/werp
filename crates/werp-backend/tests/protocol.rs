@@ -628,3 +628,54 @@ fn convert_uses_baseline_without_reading_subtitle_or_device_settings() {
     helper.wait();
     assert!(!state.exists());
 }
+
+#[test]
+fn subtitle_delay_lookup_restores_per_video_track_state_without_preparing_media() {
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("video.mp4");
+    fs::write(&video, "video").unwrap();
+    let probe = dir.path().join("probe");
+    fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(
+        dir.path().join("probe.json"),
+        include_str!("../../werp-core/tests/fixtures/h264.json"),
+    )
+    .unwrap();
+    let state = dir.path().join("state");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let info = werp_core::media::inspect(
+            &video,
+            &werp_core::media::ProbeOptions {
+                executable: probe.clone(),
+                ..Default::default()
+            },
+            &werp_core::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        werp_core::subtitle_offsets::save(
+            &info,
+            &werp_core::subtitles::Request::Embedded(2),
+            -1500,
+            Some(&state.join("werp/subtitle-offsets")),
+        )
+        .await
+        .unwrap();
+    });
+    let mut helper = Helper::new(Some(&probe), &state);
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
+    assert_eq!(helper.read()["ok"], true);
+    for (id, index, expected) in [(2, 2, -1500), (3, 3, 0)] {
+        helper.send(json!({"id":id,"method":"get_subtitle_delay","params":{"file":video,"subtitles":{"kind":"embedded","index":index}}}));
+        assert_eq!(helper.read()["result"]["subtitle_delay_ms"], expected);
+    }
+    assert!(!state.join("werp/resume").exists());
+    helper.send(json!({"id":4,"method":"shutdown"}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.wait();
+}

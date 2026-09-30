@@ -43,6 +43,10 @@ enum Command {
     Inspect {
         file: PathBuf,
     },
+    GetSubtitleDelay {
+        file: PathBuf,
+        subtitles: Subtitle,
+    },
     Discover,
     GetGuiPreferences {
         path: Option<PathBuf>,
@@ -91,6 +95,15 @@ enum Subtitle {
     None,
     Embedded { index: u32 },
     External { path: PathBuf },
+}
+impl Subtitle {
+    fn request(self) -> subtitles::Request {
+        match self {
+            Self::None => subtitles::Request::Off,
+            Self::Embedded { index } => subtitles::Request::Embedded(index),
+            Self::External { path } => subtitles::Request::External(path),
+        }
+    }
 }
 struct Active {
     id: u64,
@@ -370,6 +383,22 @@ async fn run(args: Args) -> Result<(), String> {
                                     Ok(QueryResult::Data(json!({"media":info,"subtitles":choices,"resume_position":checkpoint,"resume_warning":warning,"suggested_subtitles":suggested_subtitles,"subtitle_warning":subtitle_warning})))
                                 }.await;
                                 (id,result)
+                            });
+                        }
+                        Command::GetSubtitleDelay { file, subtitles } => {
+                            if queries.len() >= 16 { send(&output,error(Some(id),"busy","too many queries")).await?; continue; }
+                            pending.insert(id); let probe = probe.clone(); let cancel = lifetime.clone();
+                            queries.spawn(async move {
+                                let result = async {
+                                    let info = media::inspect(&file, &probe, &cancel).await.map_err(|e| e.to_string())?;
+                                    let subtitle = subtitles.request();
+                                    let delay = tokio::select! {
+                                        _ = cancel.cancelled() => return Err("cancelled".into()),
+                                        delay = werp_core::subtitle_offsets::load(&info, &subtitle, None) => delay.map_err(|e| e.to_string())?,
+                                    };
+                                    Ok(QueryResult::Data(json!({"subtitle_delay_ms": delay})))
+                                }.await;
+                                (id, result)
                             });
                         }
                         Command::Discover => {

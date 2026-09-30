@@ -14,6 +14,7 @@ mod process;
 pub mod resume;
 pub mod serve;
 pub mod session;
+pub mod subtitle_offsets;
 pub mod subtitles;
 pub mod transcode;
 

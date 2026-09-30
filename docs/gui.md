@@ -38,7 +38,8 @@ See the [subtitle guide](subtitles.md) for supported formats, rendering and limi
 **Cast** starts at zero; **Cast from last position** appears when a usable
 checkpoint exists. The UI saves progress but never resumes implicitly.
 **Subtitle delay** is in signed milliseconds: positive later, negative earlier.
-It resets for a new file, survives stop/restart, and is fixed for each session,
+It restores the saved offset for each video/subtitle pair and survives stop/restart.
+It is fixed for each session,
 including burn-in. Subtitle selection/delay cannot change during preparation or
 playback. Multiple-file, directory, remote-URL and active-session drops are ignored.
 

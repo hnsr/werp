@@ -137,8 +137,8 @@ struct PlaybackArgs {
     #[arg(long, group = "subtitle_selection")]
     subtitles: Option<PathBuf>,
     /// Subtitle delay in milliseconds: positive is later, negative is earlier
-    #[arg(long, default_value_t = 0, allow_hyphen_values = true)]
-    subtitle_delay_ms: i32,
+    #[arg(long, allow_hyphen_values = true)]
+    subtitle_delay_ms: Option<i32>,
     /// Select an embedded subtitle by its absolute stream index from inspect
     #[arg(long, group = "subtitle_selection")]
     subtitle_track: Option<u32>,
@@ -385,7 +385,7 @@ async fn execute(
                 subtitle_preferences.auto_load = true;
             }
             request.save_position = !no_resume;
-            request.subtitle_delay_ms = subtitle_delay_ms;
+            request.subtitle_delay_ms = subtitle_delay_ms.unwrap_or(0);
             request.subtitles = if let Some(path) = subtitles {
                 werp_core::subtitles::Request::External(path)
             } else if let Some(index) = subtitle_track {
@@ -448,6 +448,12 @@ async fn execute(
                     ) => werp_core::subtitles::Request::Embedded(index),
                     None => werp_core::subtitles::Request::Off,
                 };
+            }
+            if subtitle_delay_ms.is_none() {
+                match werp_core::subtitle_offsets::load(&info, &request.subtitles, None).await {
+                    Ok(delay) => request.subtitle_delay_ms = delay,
+                    Err(error) => eprintln!("Warning: saved subtitle offset unavailable: {error}"),
+                }
             }
             if request.save_position && !restart && (resume || preferences.cli.playback.auto_resume)
             {
@@ -664,7 +670,7 @@ mod tests {
                 Cli::try_from_args(["werp", "movie.mp4", "--subtitle-delay-ms", value]).unwrap();
             assert_eq!(
                 cli.playback.subtitle_delay_ms,
-                value.parse::<i32>().unwrap()
+                Some(value.parse::<i32>().unwrap())
             );
         }
     }
