@@ -7,15 +7,18 @@ for the subtitle picker and playback controls.
 
 ## Selection
 
+> Configurable automatic selection and language preferences (`cli.subtitles.*`)
+> apply only to the CLI. The GUI already preselects a subtitle in its dropdown
+> using a fixed English-then-Dutch order; it does not read those CLI settings.
+> You can review or change that selection before casting.
+
 Automatic selection first looks for a supported embedded track matching the
 ordered language preferences, then an exact-basename `.srt` beside the real
 source file. If necessary it also checks beside a supplied alias. The extension
 is case-insensitive; the basename must match exactly. Unrelated SRTs and language
 variants with different basenames are not guessed.
 
-The CLI uses its configured language order. The GUI recommends English then
-Dutch independently of CLI preferences, and lets the user review or change the
-choice before casting. Multiple matching SRT sidecars require explicit selection:
+Multiple matching SRT sidecars require explicit selection:
 the CLI reports an error; the GUI leaves None selected with a warning.
 
 Within the first matching language, prefer full dialogue over forced/signs-only
