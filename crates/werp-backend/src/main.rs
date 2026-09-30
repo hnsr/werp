@@ -1,6 +1,6 @@
 //! Private frontend helper. stdout is exclusively protocol JSON; stderr is logging.
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 use tokio::{
@@ -14,7 +14,9 @@ use werp_core::{
     subtitles,
 };
 
-const VERSION: u32 = 1;
+mod gui_state;
+
+const VERSION: u32 = 2;
 const MAX_LINE: u64 = 64 * 1024;
 #[derive(Parser)]
 struct Args {
@@ -46,7 +48,6 @@ enum Command {
         path: Option<PathBuf>,
     },
     SetGuiLastDevice {
-        path: Option<PathBuf>,
         device_id: String,
     },
     PreviewConversion {
@@ -84,72 +85,6 @@ enum Command {
     Shutdown,
 }
 
-#[derive(Default, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
-struct GuiPreferences {
-    last_device_id: String,
-    conversion: ConversionPreferences,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
-struct ConversionPreferences {
-    auto_close: bool,
-}
-impl Default for ConversionPreferences {
-    fn default() -> Self {
-        Self { auto_close: true }
-    }
-}
-
-fn gui_path(override_path: Option<PathBuf>) -> Result<PathBuf, String> {
-    override_path
-        .or_else(|| werp_core::config::default_path().map(|path| path.with_file_name("gui.toml")))
-        .ok_or_else(|| "no config directory is available".to_string())
-}
-
-fn read_gui(path: &std::path::Path) -> Result<GuiPreferences, String> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(GuiPreferences::default());
-        }
-        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
-    };
-    if text.len() > 65536 {
-        return Err("GUI config exceeds 64 KiB".into());
-    }
-    toml::from_str(&text).map_err(|error| format!("invalid {}: {error}", path.display()))
-}
-
-fn write_gui(path: &std::path::Path, preferences: &GuiPreferences) -> Result<(), String> {
-    let parent = path.parent().ok_or("invalid GUI config path")?;
-    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let text = toml::to_string_pretty(preferences).map_err(|error| error.to_string())?;
-    let temporary = parent.join(format!(".gui.toml.{}.tmp", std::process::id()));
-    let result = (|| -> std::io::Result<()> {
-        use std::io::Write;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)?;
-        if let Ok(metadata) = std::fs::metadata(path) {
-            file.set_permissions(metadata.permissions())?;
-        }
-        file.write_all(text.as_bytes())?;
-        file.sync_all()?;
-        std::fs::rename(&temporary, path)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result.map_err(|error| format!("cannot write {}: {error}", path.display()))
-}
-
-fn gui_result(preferences: &GuiPreferences) -> Value {
-    json!({"last_device_id":preferences.last_device_id,
-           "conversion_auto_close":preferences.conversion.auto_close})
-}
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Subtitle {
@@ -218,19 +153,18 @@ async fn send(output: &mpsc::Sender<Value>, message: Value) -> Result<(), String
         .map_err(|_| "frontend stopped reading protocol messages".to_string())?
         .map_err(|_| "frontend output closed".into())
 }
-// Read-only recommendation for native frontends. CLI configuration is not read.
+// Read-only recommendation using shared preferences; frontend choices stay explicit.
 async fn suggested_subtitles(
     info: &media::MediaInfo,
     file: &std::path::Path,
 ) -> Result<Value, String> {
-    let selection = subtitles::select(
-        &subtitles::Request::Auto,
-        info,
-        file,
-        &werp_core::config::SubtitlePreferences::default(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let settings = werp_core::config::load(None).map_err(|error| error.to_string())?;
+    for warning in &settings.warnings {
+        eprintln!("Warning: {warning}");
+    }
+    let selection = subtitles::select(&subtitles::Request::Auto, info, file, &settings.subtitles)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(match selection {
         None => json!({"kind":"none"}),
         Some(subtitles::Selection::Text { index, .. } | subtitles::Selection::Bitmap { index }) => {
@@ -379,7 +313,7 @@ async fn run(args: Args) -> Result<(), String> {
                                 hello = true;
                                 send(&output,ok(id,json!({"version":VERSION,"application":"werp-backend"}))).await?;
                             }
-                            _ => send(&output,error(Some(id),"protocol_version","send hello with version 1 first")).await?,
+                            _ => send(&output,error(Some(id),"protocol_version","send hello with version 2 first")).await?,
                         }
                         continue;
                     }
@@ -387,19 +321,28 @@ async fn run(args: Args) -> Result<(), String> {
                         Command::Hello { .. } => send(&output,error(Some(id),"invalid_request","already connected")).await?,
                         Command::Shutdown => { shutdown_id = Some(id); break; }
                         Command::GetGuiPreferences { path } => {
-                            let reply = match gui_path(path).and_then(|path| read_gui(&path)) {
-                                Ok(preferences) => ok(id,gui_result(&preferences)),
+                            let reply = match werp_core::config::load(path.as_deref()) {
+                                Ok(settings) => {
+                                    let mut warnings = settings.warnings;
+                                    let state = gui_state::load().unwrap_or_else(|message| {
+                                        warnings.push(message);
+                                        Default::default()
+                                    });
+                                    ok(id,json!({"last_device_id":state.last_device_id,
+                                        "conversion_auto_close":settings.gui.conversion.auto_close,
+                                        "warnings":warnings}))
+                                }
                                 Err(message) => error(Some(id),"config_error",message),
                             };
                             send(&output,reply).await?;
                         }
-                        Command::SetGuiLastDevice { path, device_id } => {
-                            let reply = gui_path(path).and_then(|path| read_gui(&path).and_then(|mut preferences| {
-                                preferences.last_device_id = device_id;
-                                write_gui(&path,&preferences)?;
-                                Ok(gui_result(&preferences))
-                            }));
-                            send(&output,match reply { Ok(value) => ok(id,value), Err(message) => error(Some(id),"config_error",message) }).await?;
+                        Command::SetGuiLastDevice { device_id } => {
+                            let state = gui_state::GuiState { last_device_id: device_id };
+                            let reply = match gui_state::save(&state) {
+                                Ok(()) => ok(id,json!({"last_device_id":state.last_device_id})),
+                                Err(message) => error(Some(id),"state_error",message),
+                            };
+                            send(&output,reply).await?;
                         }
                         Command::Inspect { file } => {
                             if queries.len() >= 16 { send(&output,error(Some(id),"busy","too many queries")).await?; continue; }
@@ -475,6 +418,7 @@ async fn run(args: Args) -> Result<(), String> {
                                 Ok(settings) => settings,
                                 Err(error) => { send(&output,self::error(Some(id),"config_error",error)).await?; continue; }
                             };
+                            for warning in &settings.warnings { eprintln!("Warning: {warning}"); }
                             let Some(device) = devices.get(&device_id).cloned() else {
                                 send(&output,error(Some(id),"invalid_device","select a discovered device")).await?; continue;
                             };

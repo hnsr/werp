@@ -51,8 +51,7 @@ required.
 Video encoding of PQ/HLG-tagged sources is also allowed experimentally, including
 automatic fallback, forced transcoding and subtitle burn-in. It uses the existing
 8-bit H.264 pipeline without tone mapping; accepting tags does not guarantee HDR
-preservation or correct SDR rendering. We removed the guard to permit practical
-trials, and will revisit colour handling if playback issues arise.
+preservation or correct SDR rendering.
 
 Dolby Vision, ambiguous multiple audio/video tracks, and missing required metadata
 remain errors. Tone mapping and explicit audio-track selection are not implemented.
@@ -61,7 +60,7 @@ remain errors. Tone mapping and explicit audio-track selection are not implement
 or Baseline for **Broad compatibility**, without launching a receiver. It leaves
 subtitles with the original file. During casting, text subtitles are served as
 WebVTT; selected image subtitles require full video encoding with burn-in.
-See [subtitle selection and delay](preferences-and-subtitles.md). Preparation
+See [subtitle selection and delay](subtitles.md). Preparation
 omits unselected tracks, attachments, source titles and chapters.
 
 ## Encoding and progress

@@ -17,8 +17,8 @@ Backend::Backend(QString program, QObject *parent, const QStringList &arguments)
         m_diagnostics = m_diagnostics.right(4096);
     });
     connect(&m_process, &QProcess::started, this, [this] {
-        request("hello", {{"version", 1}}, [this](const QJsonObject &reply) {
-            if (reply["ok"].toBool() && reply["result"].toObject()["version"].toInt() == 1) {
+        request("hello", {{"version", 2}}, [this](const QJsonObject &reply) {
+            if (reply["ok"].toBool() && reply["result"].toObject()["version"].toInt() == 2) {
                 m_handshakeTimer.stop();
                 m_ready = true;
                 emit connected();

@@ -96,7 +96,7 @@ fn shared_config_is_validated_at_start_and_can_be_corrected_without_restart() {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "http_port = 65536\n").unwrap();
     let mut helper = Helper::new(None, &state);
-    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
     assert_eq!(helper.read()["ok"], true);
     let start = |id| json!({"id":id,"method":"start","params":{"file":"video.mp4","device_id":"test-id","subtitles":{"kind":"none"},"position":0}});
     helper.send(start(2));
@@ -125,74 +125,181 @@ fn shared_config_is_validated_at_start_and_can_be_corrected_without_restart() {
 }
 
 #[test]
-fn gui_preferences_are_separate_from_cli_config() {
+fn gui_preferences_use_shared_config_and_save_only_state() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");
-    let gui = dir.path().join("settings/gui.toml");
-    let cli = dir.path().join("settings/config.toml");
-    fs::create_dir_all(gui.parent().unwrap()).unwrap();
-    fs::write(&cli, "[cli.playback]\nauto_resume = false\n").unwrap();
-    let mut helper = Helper::new(None, &state);
-    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
-    assert_eq!(helper.read()["ok"], true);
-    helper.send(json!({"id":2,"method":"get_gui_preferences","params":{"path":gui}}));
-    let initial = helper.read();
-    assert_eq!(initial["result"]["last_device_id"], "");
-    assert_eq!(initial["result"]["conversion_auto_close"], true);
+    let config = state.with_extension("config").join("werp/config.toml");
+    let saved_state = state.join("werp/gui.toml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let contents = "# Keep this comment and formatting\nhttp_port = 8010\n[cli.playback]\nauto_resume = false\n[gui.conversion]\nauto_close = false\nauto_clsoe = true\n";
+    fs::write(&config, contents).unwrap();
+    // Legacy files are deliberately ignored, with no migration or fallback.
     fs::write(
-        &gui,
-        "last_device_id = \"living-room\"\n[conversion]\nauto_close = false\n",
+        config.with_file_name("gui.toml"),
+        "last_device_id='legacy'\n",
     )
     .unwrap();
-    helper.send(
-        json!({"id":3,"method":"set_gui_last_device","params":{"path":gui,"device_id":"bedroom"}}),
+    let mut helper = Helper::new(None, &state);
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.send(json!({"id":2,"method":"get_gui_preferences","params":{}}));
+    let initial = helper.read();
+    assert_eq!(initial["result"]["last_device_id"], "");
+    assert_eq!(initial["result"]["conversion_auto_close"], false);
+    assert!(
+        initial["result"]["warnings"][0]
+            .as_str()
+            .unwrap()
+            .contains("gui.conversion.auto_clsoe")
     );
-    let saved = helper.read();
-    assert_eq!(saved["result"]["last_device_id"], "bedroom");
-    assert_eq!(saved["result"]["conversion_auto_close"], false);
-    assert!(fs::read_to_string(&gui).unwrap().contains("bedroom"));
+    helper.send(json!({"id":3,"method":"set_gui_last_device","params":{"device_id":"bedroom"}}));
+    assert_eq!(helper.read()["result"]["last_device_id"], "bedroom");
+    assert_eq!(fs::read_to_string(&config).unwrap(), contents);
     assert_eq!(
-        fs::read_to_string(&cli).unwrap(),
-        "[cli.playback]\nauto_resume = false\n"
+        fs::read_to_string(&saved_state).unwrap(),
+        "last_device_id = \"bedroom\"\n"
     );
-    fs::write(&gui, "[conversion]\nauto_clsoe = false\n").unwrap();
-    helper.send(
-        json!({"id":4,"method":"set_gui_last_device","params":{"path":gui,"device_id":"tv"}}),
+    assert_eq!(
+        fs::metadata(&saved_state).unwrap().permissions().mode() & 0o777,
+        0o600
     );
+    helper.send(json!({"id":4,"method":"shutdown"}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.wait();
+
+    let mut helper = Helper::new(None, &state);
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.send(json!({"id":2,"method":"get_gui_preferences","params":{"path":null}}));
+    assert_eq!(helper.read()["result"]["last_device_id"], "bedroom");
+    let alternate = dir.path().join("alternate.toml");
+    fs::write(&alternate, "[gui.conversion]\nauto_close=true\n").unwrap();
+    helper.send(json!({"id":3,"method":"get_gui_preferences","params":{"path":alternate}}));
+    let reply = helper.read();
+    assert_eq!(reply["result"]["conversion_auto_close"], true);
+    assert_eq!(reply["result"]["last_device_id"], "bedroom");
+    fs::write(&alternate, "[gui.conversion]\nauto_close='invalid'\n").unwrap();
+    helper.send(json!({"id":4,"method":"get_gui_preferences","params":{"path":alternate}}));
     assert_eq!(helper.read()["error"]["code"], "config_error");
-    assert!(fs::read_to_string(&gui).unwrap().contains("auto_clsoe"));
     helper.send(json!({"id":5,"method":"shutdown"}));
     assert_eq!(helper.read()["ok"], true);
     helper.wait();
 }
 
 #[test]
-fn gui_preferences_use_the_backend_xdg_path_by_default() {
+fn missing_config_defaults_and_bad_state_is_nonfatal_and_repairable() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");
-    let path = state.with_extension("config").join("werp/gui.toml");
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(
-        &path,
-        "last_device_id = \"living-room\"\n[conversion]\nauto_close = false\n",
-    )
-    .unwrap();
+    let saved_state = state.join("werp/gui.toml");
     let mut helper = Helper::new(None, &state);
-    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
     assert_eq!(helper.read()["ok"], true);
     helper.send(json!({"id":2,"method":"get_gui_preferences","params":{"path":null}}));
-    let loaded = helper.read();
-    assert_eq!(loaded["result"]["last_device_id"], "living-room");
-    assert_eq!(loaded["result"]["conversion_auto_close"], false);
-    helper.send(json!({"id":3,"method":"set_gui_last_device","params":{"device_id":"bedroom"}}));
-    let saved = helper.read();
-    assert_eq!(saved["result"]["last_device_id"], "bedroom");
-    assert_eq!(saved["result"]["conversion_auto_close"], false);
-    assert!(fs::read_to_string(&path).unwrap().contains("bedroom"));
+    let reply = helper.read();
+    assert_eq!(reply["result"]["conversion_auto_close"], true);
+    assert_eq!(reply["result"]["warnings"], json!([]));
+    assert!(!saved_state.exists());
+    fs::create_dir_all(saved_state.parent().unwrap()).unwrap();
+    fs::write(&saved_state, "last_device_id = [").unwrap();
+    helper.send(json!({"id":3,"method":"get_gui_preferences","params":{}}));
+    let reply = helper.read();
+    assert_eq!(reply["ok"], true);
+    assert_eq!(reply["result"]["last_device_id"], "");
+    assert_eq!(reply["result"]["warnings"].as_array().unwrap().len(), 1);
+    helper.send(json!({"id":4,"method":"set_gui_last_device","params":{"device_id":"tv"}}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.send(json!({"id":5,"method":"get_gui_preferences","params":{}}));
+    assert_eq!(helper.read()["result"]["last_device_id"], "tv");
+    helper.send(json!({"id":6,"method":"get_gui_preferences","params":{"path":dir.path().join("missing.toml")}}));
+    assert_eq!(helper.read()["error"]["code"], "config_error");
+    helper.send(json!({"id":7,"method":"shutdown"}));
+    assert_eq!(helper.read()["ok"], true);
+    helper.wait();
+}
+#[test]
+fn inspection_uses_shared_subtitle_preferences_without_hiding_manual_choices() {
+    let dir = tempfile::tempdir().unwrap();
+    let probe = dir.path().join("probe");
+    fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut metadata: Value =
+        serde_json::from_str(include_str!("../../werp-core/tests/fixtures/h264.json")).unwrap();
+    for (index, language) in [(2, "eng"), (3, "dut")] {
+        metadata["streams"].as_array_mut().unwrap().push(json!({
+            "index":index,"codec_type":"subtitle","codec_name":"subrip","tags":{"language":language}
+        }));
+    }
+    fs::write(dir.path().join("probe.json"), metadata.to_string()).unwrap();
+    let file = dir.path().join("video.mp4");
+    fs::write(&file, "source").unwrap();
+    fs::write(
+        file.with_extension("srt"),
+        "1\n00:00:00,000 --> 00:00:01,000\nCaption\n",
+    )
+    .unwrap();
+    let state = dir.path().join("state");
+    let config = state.with_extension("config").join("werp/config.toml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let mut helper = Helper::new(Some(&probe), &state);
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
+    assert_eq!(helper.read()["ok"], true);
+    for (settings, expected) in [
+        ("", json!({"kind":"embedded","index":2})),
+        (
+            "[subtitles]\nlanguages=['Dutch','English']\n",
+            json!({"kind":"embedded","index":3}),
+        ),
+        (
+            "[subtitles]\nauto_load=false\nlanguages=['nl']\n",
+            json!({"kind":"none"}),
+        ),
+        (
+            "[subtitles]\nlanguages=[]\n",
+            json!({"kind":"external","path":file.with_extension("srt")}),
+        ),
+        (
+            "[subtitles]\nlanguages=['nl']\nfuture_option=true\n",
+            json!({"kind":"embedded","index":3}),
+        ),
+    ] {
+        fs::write(&config, settings).unwrap();
+        helper.send(json!({"id":2,"method":"inspect","params":{"file":file}}));
+        let reply = helper.read();
+        assert_eq!(reply["ok"], true, "{reply}");
+        assert_eq!(
+            reply["result"]["suggested_subtitles"], expected,
+            "{settings}"
+        );
+        assert_eq!(reply["result"]["subtitles"].as_array().unwrap().len(), 3);
+        assert!(reply["result"]["subtitle_warning"].is_null(), "{reply}");
+    }
+    for invalid in [
+        "[subtitles]\nauto_load='yes'",
+        "[subtitles]\nlanguages=['unsupported']",
+        "invalid = [",
+    ] {
+        fs::write(&config, invalid).unwrap();
+        helper.send(json!({"id":3,"method":"inspect","params":{"file":file}}));
+        let reply = helper.read();
+        assert_eq!(reply["ok"], true, "{reply}");
+        assert_eq!(
+            reply["result"]["suggested_subtitles"],
+            json!({"kind":"none"})
+        );
+        assert_eq!(reply["result"]["subtitles"].as_array().unwrap().len(), 3);
+        assert!(
+            reply["result"]["subtitle_warning"]
+                .as_str()
+                .unwrap()
+                .contains("config.toml")
+        );
+    }
+    assert!(!state.exists(), "inspection must not write state");
     helper.send(json!({"id":4,"method":"shutdown"}));
     assert_eq!(helper.read()["ok"], true);
     helper.wait();
 }
+
 #[test]
 fn handshake_inspection_framing_validation_and_explicit_shutdown() {
     let dir = tempfile::tempdir().unwrap();
@@ -223,11 +330,15 @@ fn handshake_inspection_framing_validation_and_explicit_shutdown() {
     let state = dir.path().join("state");
     let config = state.with_extension("config").join("werp");
     fs::create_dir_all(&config).unwrap();
-    fs::write(config.join("config.toml"), "invalid = [").unwrap();
+    fs::write(
+        config.join("config.toml"),
+        "[cli.playback]\nauto_resume=false\n",
+    )
+    .unwrap();
     let mut helper = Helper::new(Some(&probe), &state);
     helper.send(json!({"id":1,"method":"hello","params":{"version":99}}));
     assert_eq!(helper.read()["error"]["code"], "protocol_version");
-    helper.send(json!({"id":2,"method":"hello","params":{"version":1}}));
+    helper.send(json!({"id":2,"method":"hello","params":{"version":2}}));
     assert_eq!(helper.read()["ok"], true);
     helper.send(json!({"id":3,"method":"inspect","params":{"file":file}}));
     // An unrelated completion must not discard a partially received frame.
@@ -299,7 +410,7 @@ fn eof_cancels_and_reaps_an_active_probe() {
     let file = dir.path().join("video");
     fs::write(&file, "source").unwrap();
     let mut helper = Helper::new(Some(&probe), &dir.path().join("state"));
-    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
     assert_eq!(helper.read()["ok"], true);
     helper.send(json!({"id":2,"method":"inspect","params":{"file":file}}));
     let deadline = std::time::Instant::now();
@@ -328,7 +439,7 @@ fn conversion_reports_noop_and_failure_without_device_or_resume_state() {
     fs::write(&file, "fixture").unwrap();
     let state = dir.path().join("state");
     let mut helper = Helper::with_ffmpeg(Some(&probe), Some(&dir.path().join("no-ffmpeg")), &state);
-    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
     assert_eq!(helper.read()["ok"], true);
     for (id, source, phase) in [
         (2, file.clone(), "completed"),
@@ -389,7 +500,7 @@ exec sleep 60
         fs::write(&file, "source").unwrap();
         let state = dir.path().join("state");
         let mut helper = Helper::with_ffmpeg(Some(&probe), Some(&ffmpeg), &state);
-        helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+        helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
         assert_eq!(helper.read()["ok"], true);
         helper.send(json!({"id":2,"method":"convert","params":{"file":file}}));
         let ack = helper.read();
@@ -448,7 +559,7 @@ exec sleep 60
 }
 
 #[test]
-fn convert_uses_baseline_without_reading_cli_or_device_settings() {
+fn convert_uses_baseline_without_reading_subtitle_or_device_settings() {
     let dir = tempfile::tempdir().unwrap();
     let probe = dir.path().join("probe");
     fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
@@ -470,9 +581,9 @@ fn convert_uses_baseline_without_reading_cli_or_device_settings() {
     let config = state.with_extension("config").join("werp/config.toml");
     fs::create_dir_all(config.parent().unwrap()).unwrap();
     let mut helper = Helper::with_ffmpeg(Some(&probe), Some(&dir.path().join("no-ffmpeg")), &state);
-    helper.send(json!({"id":1,"method":"hello","params":{"version":1}}));
+    helper.send(json!({"id":1,"method":"hello","params":{"version":2}}));
     assert_eq!(helper.read()["ok"], true);
-    fs::write(&config, "[cli.subtitles]\nlanguages=['unsupported']\n").unwrap();
+    fs::write(&config, "[subtitles]\nlanguages=['unsupported']\n").unwrap();
     fs::write(config.with_file_name("devices.toml"), "invalid TOML").unwrap();
     helper.send(json!({"id":10,"method":"preview_conversion","params":{"file":file}}));
     let preview = helper.read();

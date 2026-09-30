@@ -1,4 +1,4 @@
-//! Shared settings and CLI preferences; device capabilities live separately.
+//! Shared settings and frontend preferences; device capabilities live separately.
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -9,23 +9,45 @@ use serde::Deserialize;
 use crate::WerpError;
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct Config {
     /// Local media server port; zero lets the OS choose an available port.
     pub http_port: u16,
+    pub subtitles: SubtitlePreferences,
     pub cli: CliPreferences,
+    pub gui: GuiPreferences,
+    /// Nonfatal diagnostics for ignored keys, including their full TOML path.
+    #[serde(skip)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
+pub struct GuiPreferences {
+    pub conversion: ConversionPreferences,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct ConversionPreferences {
+    pub auto_close: bool,
+}
+
+impl Default for ConversionPreferences {
+    fn default() -> Self {
+        Self { auto_close: true }
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 pub struct CliPreferences {
-    pub subtitles: SubtitlePreferences,
     pub devices: DevicePreferences,
     pub playback: PlaybackPreferences,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct SubtitlePreferences {
     pub auto_load: bool,
     pub languages: Vec<String>,
@@ -41,13 +63,13 @@ impl Default for SubtitlePreferences {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct DevicePreferences {
     pub preferred: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct PlaybackPreferences {
     pub auto_resume: bool,
 }
@@ -71,8 +93,15 @@ pub fn default_path() -> Option<PathBuf> {
 }
 
 pub fn parse(text: &str) -> Result<Config, WerpError> {
-    let mut config: Config = toml::from_str(text).map_err(|e| WerpError::Config(e.to_string()))?;
-    for language in &mut config.cli.subtitles.languages {
+    let mut warnings = Vec::new();
+    let deserializer =
+        toml::Deserializer::parse(text).map_err(|e| WerpError::Config(e.to_string()))?;
+    let mut config: Config = serde_ignored::deserialize(deserializer, |path| {
+        warnings.push(format!("unknown configuration key `{path}`; ignored"));
+    })
+    .map_err(|e| WerpError::Config(e.to_string()))?;
+    config.warnings = warnings;
+    for language in &mut config.subtitles.languages {
         let original = language.clone();
         *language = normalize_preference(language)
             .ok_or_else(|| {
@@ -82,7 +111,7 @@ pub fn parse(text: &str) -> Result<Config, WerpError> {
             })?
             .into();
     }
-    config.cli.subtitles.languages.dedup();
+    config.subtitles.languages.dedup();
     if config
         .cli
         .devices
@@ -121,7 +150,15 @@ pub fn normalize_preference(value: &str) -> Option<&'static str> {
 }
 
 pub fn load(explicit: Option<&Path>) -> Result<Config, WerpError> {
-    load_with(explicit, parse)
+    load_with(explicit, |text| {
+        let mut config = parse(text)?;
+        if let Some(path) = explicit.map(Path::to_path_buf).or_else(default_path) {
+            for warning in &mut config.warnings {
+                *warning = format!("{}: {warning}", path.display());
+            }
+        }
+        Ok(config)
+    })
 }
 
 fn load_with<T: Default>(
@@ -175,28 +212,48 @@ mod tests {
             "http_port = 65536",
             "http_port = '8010'",
             "http_port = 1.5",
-            "[cli]\nhttp_port = 8010",
         ] {
             assert!(parse(invalid).is_err(), "{invalid}");
         }
     }
     #[test]
-    fn removed_global_compatibility_settings_are_rejected() {
-        assert!(parse("[compatibility]\nallow_hevc=true").is_err());
+    fn unknown_keys_warn_at_each_level_without_losing_known_settings() {
+        let config = parse("unexpected = true\n[compatibility]\nallow_hevc=true\n[cli]\nhttp_port=8010\n[cli.playback]\nresuem=true\nauto_resume=false\n[gui.conversion]\nauto_clsoe=true\nauto_close=false").unwrap();
+        assert!(!config.cli.playback.auto_resume);
+        assert!(!config.gui.conversion.auto_close);
+        assert_eq!(config.warnings.len(), 5);
+        for key in [
+            "unexpected",
+            "compatibility",
+            "cli.http_port",
+            "cli.playback.resuem",
+            "gui.conversion.auto_clsoe",
+        ] {
+            assert!(
+                config
+                    .warnings
+                    .iter()
+                    .any(|w| w.contains(&format!("`{key}`"))),
+                "{key}: {:?}",
+                config.warnings
+            );
+        }
+        assert!(parse("").unwrap().gui.conversion.auto_close);
+        assert!(parse("[gui.conversion]\nauto_close='yes'").is_err());
+        assert!(parse("[gui.conversion").is_err());
     }
     #[test]
     fn defaults_aliases_and_invalid_preferences() {
         let config = parse("").unwrap();
-        assert!(config.cli.subtitles.auto_load && config.cli.playback.auto_resume);
-        assert_eq!(config.cli.subtitles.languages, ["en", "nl"]);
-        let config = parse("[cli.subtitles]\nauto_load = false\nlanguages = ['Dutch', 'en-GB', 'eng']\n[cli.devices]\npreferred = ['TV', 'tv-id']\n[cli.playback]\nauto_resume = false").unwrap();
-        assert_eq!(config.cli.subtitles.languages, ["nl", "en"]);
-        assert!(!config.cli.subtitles.auto_load && !config.cli.playback.auto_resume);
+        assert!(config.subtitles.auto_load && config.cli.playback.auto_resume);
+        assert_eq!(config.subtitles.languages, ["en", "nl"]);
+        let config = parse("[subtitles]\nauto_load = false\nlanguages = ['Dutch', 'en-GB', 'eng']\n[cli.devices]\npreferred = ['TV', 'tv-id']\n[cli.playback]\nauto_resume = false").unwrap();
+        assert_eq!(config.subtitles.languages, ["nl", "en"]);
+        assert!(!config.subtitles.auto_load && !config.cli.playback.auto_resume);
         for invalid in [
-            "[cli.subtitles]\nlanguages=['German']",
+            "[subtitles]\nlanguages=['German']",
             "[cli.devices]\npreferred=['']",
-            "[cli.playback]\nresuem=true",
-            "[cli.subtitles]\nauto_load='yes'",
+            "[subtitles]\nauto_load='yes'",
         ] {
             assert!(parse(invalid).is_err(), "{invalid}");
         }

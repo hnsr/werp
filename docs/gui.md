@@ -11,9 +11,6 @@ bindings and lets other native frontends reuse the [versioned protocol](backend-
 The core owns media/Cast/lifecycle logic; the UI owns presentation and choices.
 See [project decisions](plan.md#decisions-and-rationale).
 
-The user confirmed initial KDE playback and subsequent UI improvements. Future
-playback issues are handled as bugs; there is no pending manual acceptance checklist.
-
 ## Player interaction
 
 Opening a video or dropping one local file on the idle player does not start
@@ -30,12 +27,13 @@ playback. The selected-video panel stays visible through all three states:
    Space toggles pause/play without key-repeat. Stop waits for cleanup and returns
    to choices. Quit/Ctrl+Q/window close cancels active work and waits for helper exit.
 
-The last-used eligible device is restored after discovery. Subtitles default to
-English then Dutch using shared ranking, then exact-name SRT fallback. Unsupported
-tracks are skipped; ambiguous sidecars leave None selected with a warning. The
-combined list also includes matching VTT/ASS/SSA; an explicit picker file need
+The last-used eligible device is restored after discovery. Subtitles are preselected
+using the shared `[subtitles]` settings and [selection rules](subtitles.md#selection):
+English then Dutch by default, followed by exact-name SRT fallback. With
+`subtitles.auto_load = false`, None is selected initially. Unsupported tracks are
+skipped; ambiguous sidecars leave None selected with a warning. The combined list also includes matching VTT/ASS/SSA; an explicit picker file need
 not match the video name. Manual choices survive stop/restart of the same video.
-CLI preferences do not change these UI defaults.
+See the [subtitle guide](subtitles.md) for supported formats, rendering and limitations.
 
 **Cast** starts at zero; **Cast from last position** appears when a usable
 checkpoint exists. The UI saves progress but never resumes implicitly.
@@ -44,25 +42,17 @@ It resets for a new file, survives stop/restart, and is fixed for each session,
 including burn-in. Subtitle selection/delay cannot change during preparation or
 playback. Multiple-file, directory, remote-URL and active-session drops are ignored.
 
-## KDE frontend preferences
+## Preferences and saved state
 
-`$XDG_CONFIG_HOME/werp/gui.toml` (normally `~/.config/werp/gui.toml`) stores
-the KDE GUI preferences. The player and converter share the last device; an accepted
-start/convert with a device records it. Merely changing a selection does not.
-The helper snapshots [device rules](device-compatibility.md) per operation and
-never reads `[cli.*]` preferences.
+GUI preferences live in the shared [`config.toml`](configuration.md). Set
+`gui.conversion.auto_close = false` to leave the converter open after success;
+by default it closes after five seconds. Errors and cancellation stay open.
 
-```toml
-last_device_id = "your-device-id"
-
-[conversion]
-auto_close = true
-```
-
-Auto-close defaults to five seconds after successful conversion, including reuse
-or already-compatible input. Set false to retain the window with **Auto-close
-disabled** shown. Errors/cancellation stay open. The setting is read when the
-window opens and has no CLI effect.
+The player and converter remember their last device after an accepted start or
+conversion. Merely changing the selection does not save it. This state lives in
+`$XDG_STATE_HOME/werp/gui.toml` (normally `~/.local/state/werp/gui.toml`), separately
+from configuration. Device selection and resume preferences under `cli.*` do not
+change GUI behavior.
 
 ## Convert-only window
 
@@ -112,7 +102,7 @@ the same resolved policy; another device or bitmap burn-in may need another reci
 
 Casting uses an OS-assigned HTTP port by default. For an existing firewall rule,
 set the global `http_port = 8010` in
-[`config.toml`](preferences-and-subtitles.md#configuration). This setting applies
+[`config.toml`](configuration.md). This setting applies
 to both GUI and CLI casting and has no effect in convert-only. The GUI does not
 create firewall rules.
 CLI flags such as `--profile`, `--mode`, `--config` and `--no-config` are not GUI
@@ -121,5 +111,5 @@ options. Both apps do use the same [device override file](device-compatibility.m
 Build, local installation, development flags and automated checks are in
 [DEVELOPMENT.md](../DEVELOPMENT.md).
 
-Subtitle switching during playback, a settings window, MPRIS, single-instance
+Subtitle switching during playback, a settings window, single-instance
 behavior, packaging and additional native frontends remain in [the roadmap](plan.md).

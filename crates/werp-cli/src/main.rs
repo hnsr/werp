@@ -227,6 +227,9 @@ async fn run(cli: Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
     } else {
         werp_core::config::load(cli.config.as_deref())?
     };
+    for warning in &preferences.warnings {
+        eprintln!("Warning: {warning}");
+    }
     // Register before starting any work, including in noninteractive runs.
     #[cfg(unix)]
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
@@ -377,7 +380,7 @@ async fn execute(
             } else {
                 selection::Target::Auto
             };
-            let mut subtitle_preferences = preferences.cli.subtitles.clone();
+            let mut subtitle_preferences = preferences.subtitles.clone();
             if auto_subtitles {
                 subtitle_preferences.auto_load = true;
             }

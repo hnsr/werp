@@ -43,7 +43,7 @@ frontends can reuse the backend protocol; they are not implemented yet.
 | Model rules backed by observations | Container extensions and advertised hardware features do not establish Cast playback support. Exact model/alias matches are predictable; unknown models use Baseline. |
 | Local model overrides instead of global codec opt-ins | A permission should affect the intended model, not every receiver. Overrides may restrict or extend bundled rules without rebuilding. |
 | Retain prepared files beside the canonical source | Avoid repeating expensive work and make outputs discoverable. Use full fingerprints and output validation for correctness; fall back to the user cache when unwritable. |
-| Separate CLI and GUI policy | CLI users can automate devices/subtitles/resume. GUI users review choices before starting, with independent convenience defaults. |
+| Frontend interaction policy | Subtitle preferences are shared. CLI users can automate device selection and resume; GUI users review choices and choose whether to resume before starting. |
 | No blind playback retry | A network failure or silent audio does not prove that video encoding is needed. Preserve diagnostic errors instead of silently restarting. |
 | Small Linux sleep-inhibitor adapter | `systemd-inhibit` works with the tested KDE setup without desktop bindings. It is best-effort; other platform integrations remain open. |
 
@@ -109,7 +109,9 @@ manual acceptance checklist; reproduce and investigate issues as they arise.
 | Reference | Owns |
 | --- | --- |
 | [Media conversion](media-conversion.md) | Path selection, profiles, encoding, storage and downmix |
-| [Preferences and subtitles](preferences-and-subtitles.md) | CLI config, subtitle selection/delay and resume |
+| [CLI guide](cli.md) | Commands, CLI preferences and resume |
+| [Subtitles](subtitles.md) | Shared selection rules, formats, rendering and delay |
+| [Configuration](configuration.md) | Settings, defaults, overrides and file locations |
 | [Device database](device-compatibility.md) | Model matching, overrides and TOML schema |
 | [GUI guide](gui.md) | Interaction, launch options and settings |
 | [Development guide](../DEVELOPMENT.md) | Setup, builds, local installation, contributor workflows and validation |

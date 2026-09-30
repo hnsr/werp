@@ -2,6 +2,48 @@
 use std::{fs, net::TcpListener, os::unix::fs::PermissionsExt, process::Command};
 
 #[test]
+fn unknown_settings_warn_on_stderr_without_breaking_json_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    fs::write(
+        &config,
+        "future_option = true\n[gui.conversion]\nauto_close = false\n",
+    )
+    .unwrap();
+    let video = dir.path().join("movie.mp4");
+    fs::write(&video, "video").unwrap();
+    let probe = dir.path().join("probe");
+    fs::write(&probe, "#!/bin/sh\ncat \"$0.json\"\n").unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(
+        dir.path().join("probe.json"),
+        include_str!("../../werp-core/tests/fixtures/h264.json"),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_werp"))
+        .args(["inspect", "--json", "--config"])
+        .arg(&config)
+        .arg("--ffprobe")
+        .arg(&probe)
+        .arg(&video)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let warning = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        warning.contains("Warning:") && warning.contains("future_option"),
+        "{warning}"
+    );
+    assert!(warning.contains(config.to_str().unwrap()), "{warning}");
+    assert!(!warning.contains("auto_close"), "{warning}");
+}
+
+#[test]
 fn shared_http_port_and_cli_overrides_reach_the_media_server() {
     let dir = tempfile::tempdir().unwrap();
     let config_dir = dir.path().join("config/werp");
@@ -112,7 +154,7 @@ fn config_location_language_order_and_cli_subtitle_overrides() {
         assert_eq!(output.status.code(), Some(1));
         String::from_utf8(output.stderr).unwrap()
     };
-    fs::write(&config, "[cli.subtitles]\nlanguages=['nl','en']\n").unwrap();
+    fs::write(&config, "[subtitles]\nlanguages=['nl','en']\n").unwrap();
     assert!(run(&[]).contains("embedded stream #3"));
     assert!(
         fs::read_to_string(dir.path().join("converter.args"))
@@ -122,14 +164,14 @@ fn config_location_language_order_and_cli_subtitle_overrides() {
     assert!(run(&["--subtitle-track", "2"]).contains("embedded stream #2"));
     assert!(run(&["--no-subtitles"]).contains("Subtitles: none selected"));
     assert!(run(&["--no-config"]).contains("embedded stream #2"));
-    fs::write(&config, "[cli.subtitles]\nauto_load=false\n").unwrap();
+    fs::write(&config, "[subtitles]\nauto_load=false\n").unwrap();
     assert!(run(&[]).contains("Subtitles: none selected"));
     assert!(run(&["--auto-subtitles"]).contains("embedded stream #2"));
     assert!(run(&["--subtitles", "missing.vtt"]).contains("missing.vtt"));
     let alternate = dir.path().join("alternate.toml");
-    fs::write(&alternate, "[cli.subtitles]\nlanguages=['nl']\n").unwrap();
+    fs::write(&alternate, "[subtitles]\nlanguages=['nl']\n").unwrap();
     assert!(run(&["--config", alternate.to_str().unwrap()]).contains("embedded stream #3"));
-    fs::write(&config, "[cli.subtitles]\nlanguages=['nl']\n").unwrap();
+    fs::write(&config, "[subtitles]\nlanguages=['nl']\n").unwrap();
     let overrides = config_dir.join("devices.toml");
     fs::write(&overrides, "schema_version=1\nunknown=true").unwrap();
     assert!(run(&[]).contains("device database"));
@@ -139,6 +181,10 @@ fn config_location_language_order_and_cli_subtitle_overrides() {
     assert!(run(&["--profile", "extended"]).contains("embedded stream #3"));
     fs::write(&overrides, "schema_version=1").unwrap();
     assert!(run(&[]).contains("embedded stream #3"));
-    fs::write(&config, "[cli.subtitles]\nauto_lod=true\n").unwrap();
-    assert!(run(&[]).contains("invalid configuration"));
+    fs::write(&config, "[subtitles]\nauto_lod=true\n").unwrap();
+    let stderr = run(&[]);
+    assert!(stderr.contains("Warning:"), "{stderr}");
+    assert!(stderr.contains("subtitles.auto_lod"), "{stderr}");
+    assert!(stderr.contains("embedded stream #2"), "{stderr}");
+    assert!(!run(&["--no-config"]).contains("auto_lod"));
 }
