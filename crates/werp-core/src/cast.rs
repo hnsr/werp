@@ -569,6 +569,10 @@ fn load_payload(
         }
     });
     if let Some(subtitles) = subtitles {
+        payload["media"]["textTrackStyle"] = json!({
+            "foregroundColor":"#FFFFFFFF", "backgroundColor":"#00000000",
+            "edgeType":"OUTLINE", "edgeColor":"#000000FF", "windowType":"NONE"
+        });
         payload["activeTrackIds"] = json!([1]);
         payload["media"]["tracks"] = json!([{"trackId":1,"type":"TEXT","subtype":"SUBTITLES",
                 "trackContentId":subtitles,"trackContentType":"text/vtt",
@@ -580,6 +584,28 @@ fn load_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn text_subtitles_use_outlined_glyphs_without_background_boxes() {
+        let payload = load_payload(
+            "session",
+            "video",
+            "video/mp4",
+            Some("captions"),
+            "title",
+            0.0,
+        );
+        let style = &payload["media"]["textTrackStyle"];
+        assert_eq!(style["backgroundColor"], "#00000000");
+        assert_eq!(style["edgeType"], "OUTLINE");
+        assert_eq!(style["edgeColor"], "#000000FF");
+        assert_eq!(style["foregroundColor"], "#FFFFFFFF");
+        assert_eq!(style["windowType"], "NONE");
+        assert!(
+            load_payload("session", "video", "video/mp4", None, "title", 0.0)["media"]
+                .get("textTrackStyle")
+                .is_none()
+        );
+    }
     #[test]
     fn rejects_load_errors_and_does_not_own_another_senders_media() {
         assert!(check_response(&json!({"type":"LOAD_FAILED","detailedErrorCode":104})).is_err());
